@@ -1,0 +1,152 @@
+{
+  "name": "LactateAI Single-Page Dashboard",
+  "nodes": [
+    {
+      "id": "FormWebhook",
+      "name": "Lactate Form Page",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [260, 260],
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "lactate",
+        "responseMode": "onReceived",
+        "responseData": "text",
+        "responseContentType": "text/html",
+        "options": {
+          "rawBody": false
+        },
+        "responseBody": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <title>Lactate Test Input</title>\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <script src=\"https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js\"></script>\n  <style>\n    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 0; background: #0f172a; color: #e5e7eb; }\n    .wrapper { max-width: 960px; margin: 40px auto; padding: 24px; background: #111827; border-radius: 18px; box-shadow: 0 20px 40px rgba(0,0,0,0.35); }\n    h1 { margin-top: 0; font-size: 24px; letter-spacing: 0.03em; }\n    p { color: #9ca3af; font-size: 14px; }\n    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }\n    th, td { padding: 8px; border-bottom: 1px solid #1f2937; text-align: center; }\n    th { font-weight: 500; color: #9ca3af; }\n    input { width: 90%; padding: 6px; border-radius: 8px; border: 1px solid #374151; background: #020817; color: #e5e7eb; font-size: 12px; }\n    button { margin-top: 18px; padding: 10px 18px; border-radius: 999px; border: none; cursor: pointer; font-size: 13px; background: linear-gradient(to right, #22c55e, #22d3ee); color: #020817; font-weight: 600; }\n    button:hover { opacity: 0.9; }\n    .row-add { margin-top: 10px; font-size: 11px; cursor: pointer; color: #22c55e; }\n    .note { font-size: 11px; color: #6b7280; margin-top: 6px; }\n    .methods { margin-top: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; font-size: 11px; }\n    label { display: flex; gap: 6px; align-items: center; cursor: pointer; }\n    input[type=checkbox] { width: auto; }\n    #chart { width: 100%; height: 420px; margin-top: 18px; border-radius: 18px; background: #020817; border: 1px solid #111827; }\n    #diag { white-space: pre-wrap; margin-top: 10px; }\n  </style>\n</head>\n<body>\n<div class=\"wrapper\">\n  <h1>Lactate Test Input (AI + ECharts)</h1>\n  <p>Enter step test data (no personal identifiers). The analysis runs in n8n and the result appears below as a lactate curve + thresholds.</p>\n  <table id=\"measurements-table\">\n    <thead>\n      <tr>\n        <th>Stage</th>\n        <th>Power [W] / Pace</th>\n        <th>Lactate [mmol/L]</th>\n        <th>Heart Rate [bpm]</th>\n      </tr>\n    </thead>\n    <tbody>\n      <tr>\n        <td><input type=\"number\" value=\"1\" /></td>\n        <td><input type=\"number\" step=\"1\" /></td>\n        <td><input type=\"number\" step=\"0.1\" /></td>\n        <td><input type=\"number\" step=\"1\" /></td>\n      </tr>\n      <tr>\n        <td><input type=\"number\" value=\"2\" /></td>\n        <td><input type=\"number\" step=\"1\" /></td>\n        <td><input type=\"number\" step=\"0.1\" /></td>\n        <td><input type=\"number\" step=\"1\" /></td>\n      </tr>\n      <tr>\n        <td><input type=\"number\" value=\"3\" /></td>\n        <td><input type=\"number\" step=\"1\" /></td>\n        <td><input type=\"number\" step=\"0.1\" /></td>\n        <td><input type=\"number\" step=\"1\" /></td>\n      </tr>\n    </tbody>\n  </table>\n  <div class=\"row-add\" onclick=\"addRow()\">+ Add stage</div>\n  <div class=\"methods\">\n    <label><input type=\"checkbox\" value=\"MADER_4MMOL\" checked /> Fixed 4 mmol/L (Mader)</label>\n    <label><input type=\"checkbox\" value=\"LT1_LT2_CURVE\" checked /> LT1 / LT2 by curve shape</label>\n    <label><input type=\"checkbox\" value=\"DMAX\" checked /> Dmax method</label>\n    <label><input type=\"checkbox\" value=\"LOG_LOG\" /> Log-Log / IAT</label>\n  </div>\n  <div class=\"note\">No names, email, or IDs are sent. Only stage data + chosen methods.</div>\n  <button onclick=\"submitForm()\">Analyze Lactate Test</button>\n  <div id=\"status\" class=\"note\"></div>\n  <div id=\"chart\"></div>\n  <pre id=\"diag\" class=\"note\"></pre>\n</div>\n<script>\n  function addRow() {\n    const tbody = document.querySelector('#measurements-table tbody');\n    const rowCount = tbody.querySelectorAll('tr').length;\n    const tr = document.createElement('tr');\n    tr.innerHTML = `\n      <td><input type=\"number\" value=\"${rowCount + 1}\" /></td>\n      <td><input type=\"number\" step=\"1\" /></td>\n      <td><input type=\"number\" step=\"0.1\" /></td>\n      <td><input type=\"number\" step=\"1\" /></td>`;\n    tbody.appendChild(tr);\n  }\n\n  async function submitForm() {\n    const statusEl = document.getElementById('status');\n    statusEl.textContent = 'Analyzing...';\n\n    const rows = Array.from(document.querySelectorAll('#measurements-table tbody tr'));\n    const measurements = rows.map(r => {\n      const cells = r.querySelectorAll('input');\n      return {\n        stage: Number(cells[0].value || 0),\n        load: Number(cells[1].value || 0),\n        lactate: Number(cells[2].value || 0),\n        heartRate: cells[3].value ? Number(cells[3].value) : null\n      };\n    }).filter(m => m.load > 0 && m.lactate > 0);\n\n    const methods = Array.from(document.querySelectorAll('.methods input[type=checkbox]:checked')).map(c => c.value);\n\n    if (!measurements.length) {\n      statusEl.textContent = 'Please enter at least one valid stage with load + lactate.';\n      return;\n    }\n\n    try {\n      const res = await fetch('/webhook/lactate-analyze', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ measurements, methods })\n      });\n      const payload = await res.json();\n      renderChart(payload);\n      statusEl.textContent = 'Analysis updated below.';\n    } catch (err) {\n      console.error(err);\n      statusEl.textContent = 'Error during analysis.';\n    }\n  }\n\n  function renderChart(payload) {\n    const chartEl = document.getElementById('chart');\n    if (!chartEl) return;\n\n    let chart = window._lactateChart || echarts.init(chartEl);\n    window._lactateChart = chart;\n\n    const analysis = payload.analysis || {};\n    const curve = (analysis.curvePoints || []).map(p => [p.load, p.lactate]);\n    const markLines = [];\n    const th = analysis.thresholds || {};\n\n    if (th.MADER_4MMOL) markLines.push({ xAxis: th.MADER_4MMOL.load, name: '4 mmol/L' });\n    if (th.LT1_LT2_CURVE) {\n      markLines.push({ xAxis: th.LT1_LT2_CURVE.lt1_load, name: 'LT1' });\n      markLines.push({ xAxis: th.LT1_LT2_CURVE.lt2_load, name: 'LT2' });\n    }\n    if (th.DMAX) markLines.push({ xAxis: th.DMAX.load, name: 'Dmax' });\n    if (th.LOG_LOG) markLines.push({ xAxis: th.LOG_LOG.load, name: 'Log-Log IAT' });\n\n    const option = {\n      backgroundColor: '#020817',\n      tooltip: { trigger: 'axis' },\n      grid: { left: 40, right: 20, top: 40, bottom: 40 },\n      xAxis: {\n        type: 'value',\n        name: 'Load (W / pace units)',\n        nameTextStyle: { color: '#9ca3af', fontSize: 10 },\n        axisLine: { lineStyle: { color: '#374151' } },\n        axisLabel: { color: '#9ca3af', fontSize: 10 },\n        splitLine: { lineStyle: { color: '#111827' } }\n      },\n      yAxis: {\n        type: 'value',\n        name: 'Lactate [mmol/L]',\n        nameTextStyle: { color: '#9ca3af', fontSize: 10 },\n        axisLine: { lineStyle: { color: '#374151' } },\n        axisLabel: { color: '#9ca3af', fontSize: 10 },\n        splitLine: { lineStyle: { color: '#111827' } }\n      },\n      series: [\n        {\n          name: 'Lactate curve',\n          type: 'line',\n          smooth: true,\n          showSymbol: true,\n          symbolSize: 6,\n          data: curve,\n          markLine: {\n            symbol: 'none',\n            label: { color: '#9ca3af', fontSize: 9 },\n            lineStyle: { type: 'dashed' },\n            data: markLines\n          }\n        }\n      ]\n    };\n\n    chart.setOption(option, true);\n\n    const diagEl = document.getElementById('diag');\n    if (diagEl) diagEl.textContent = analysis.diagnosis || '';\n  }\n</script>\n</body>\n</html>"
+      }
+    },
+    {
+      "id": "AnalyzeWebhook",
+      "name": "Lactate Analyze (API)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [260, 640],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lactate-analyze",
+        "responseMode": "responseNode",
+        "responseNode": "Respond JSON",
+        "options": {
+          "rawBody": false
+        }
+      }
+    },
+    {
+      "id": "ParseInput",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [520, 640],
+      "parameters": {
+        "functionCode": "const item = items[0].json;\n\nconst measurements = Array.isArray(item.measurements)\n  ? item.measurements.map((m, idx) => ({\n      stage: Number(m.stage || idx + 1),\n      load: Number(m.load),\n      lactate: Number(m.lactate),\n      heartRate: m.heartRate !== undefined && m.heartRate !== null ? Number(m.heartRate) : null\n    }))\n    .filter(m => !isNaN(m.load) && !isNaN(m.lactate))\n  : [];\n\nconst methods = Array.isArray(item.methods) && item.methods.length\n  ? item.methods\n  : [\"MADER_4MMOL\", \"LT1_LT2_CURVE\", \"DMAX\"]; // defaults\n\nreturn [{\n  json: {\n    measurements,\n    methods,\n    meta: {\n      testId: `LT-${Date.now()}`,\n      timestamp: new Date().toISOString()\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "LactateAI",
+      "name": "Lactate AI",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 2,
+      "position": [800, 640],
+      "credentials": {
+        "openAiApi": {
+          "id": "",
+          "name": "OpenAI API"
+        }
+      },
+      "parameters": {
+        "resource": "chat",
+        "mode": "chat",
+        "model": "gpt-4.1-mini",
+        "options": {
+          "temperature": 0,
+          "response_format": "json_object"
+        },
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a lactate test analysis engine. Input JSON:\n{\n  \"measurements\": [ {\"stage\":number,\"load\":number,\"lactate\":number,\"heartRate\"?:number} ],\n  \"methods\": [\"MADER_4MMOL\"|\"LT1_LT2_CURVE\"|\"DMAX\"|\"LOG_LOG\"],\n  \"meta\": {\"testId\":string,\"timestamp\":string}\n}\nRespond with STRICT JSON ONLY (no commentary):\n{\n  \"curvePoints\": [ {\"load\":number,\"lactate\":number} ],\n  \"methodsUsed\": [string],\n  \"thresholds\": {\n    \"MADER_4MMOL\"?: {\"load\":number,\"lactate\":number},\n    \"LT1_LT2_CURVE\"?: {\"lt1_load\":number,\"lt1_lactate\":number,\"lt2_load\":number,\"lt2_lactate\":number},\n    \"DMAX\"?: {\"load\":number,\"lactate\":number},\n    \"LOG_LOG\"?: {\"load\":number,\"lactate\":number}\n  },\n  \"diagnosis\": string\n}\nUse only methods listed in input.methods. If data are insufficient for a method, omit that method from thresholds and mention it in diagnosis. No personal data."
+          },
+          {
+            "role": "user",
+            "content": "{{$json}}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "BuildResult",
+      "name": "Build Result JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1060, 640],
+      "parameters": {
+        "functionCode": "const input = $items('Parse Input')[0].json;\nconst analysis = items[0].json;\n\nreturn [{\n  json: {\n    testId: input.meta.testId,\n    timestamp: input.meta.timestamp,\n    measurements: input.measurements,\n    methods: input.methods,\n    analysis\n  }\n}];"
+      }
+    },
+    {
+      "id": "RespondJSON",
+      "name": "Respond JSON",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1320, 640],
+      "parameters": {
+        "responseBody": "={{$json}}",
+        "responseContentType": "application/json"
+      }
+    }
+  ],
+  "connections": {
+    "AnalyzeWebhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          {
+            "node": "Lactate AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lactate AI": {
+      "main": [
+        [
+          {
+            "node": "Build Result JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Result JSON": {
+      "main": [
+        [
+          {
+            "node": "Respond JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
