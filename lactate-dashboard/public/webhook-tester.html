@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laktat Webhook Tester</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .danger {
+            background-color: #dc3545;
+        }
+        .danger:hover {
+            background-color: #c82333;
+        }
+        .success {
+            background-color: #28a745;
+        }
+        .response {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .success-response {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error-response {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Laktat Webhook Tester</h1>
+        <p>Senden Sie Test-Daten an das Laktat Dashboard über den Webhook.</p>
+        
+        <form id="webhookForm">
+            <div class="form-group">
+                <label for="power">Leistung (W) *</label>
+                <input type="number" id="power" name="power" required min="0" step="1" value="200">
+            </div>
+            
+            <div class="form-group">
+                <label for="lactate">Laktat (mmol/L) *</label>
+                <input type="number" id="lactate" name="lactate" required min="0" step="0.1" value="2.5">
+            </div>
+            
+            <div class="form-group">
+                <label for="heartRate">Herzfrequenz (bpm)</label>
+                <input type="number" id="heartRate" name="heartRate" min="0" step="1" value="150">
+            </div>
+            
+            <div class="form-group">
+                <label for="fatOxidation">Fettoxidation (g/min)</label>
+                <input type="number" id="fatOxidation" name="fatOxidation" min="0" step="0.01" value="0.35">
+            </div>
+            
+            <div class="form-group">
+                <label for="sessionId">Session ID</label>
+                <input type="text" id="sessionId" name="sessionId" value="test_session">
+            </div>
+            
+            <div class="form-group">
+                <label for="testType">Test Typ</label>
+                <select id="testType" name="testType">
+                    <option value="incremental">Stufentest</option>
+                    <option value="steady-state">Dauermethode</option>
+                </select>
+            </div>
+            
+            <button type="submit">📤 Daten Senden</button>
+            <button type="button" id="clearBtn" class="danger">🗑️ Daten Löschen</button>
+            <button type="button" id="simulateBtn" class="success">🎯 Stufentest Simulieren</button>
+        </form>
+        
+        <div id="response"></div>
+        
+        <div style="margin-top: 30px;">
+            <h3>📡 Webhook URL</h3>
+            <code id="webhookUrl">http://localhost:3000/api/lactate-webhook</code>
+            
+            <h3>📊 Dashboard</h3>
+            <p><a href="/" target="_blank">→ Laktat Dashboard öffnen</a></p>
+            
+            <h3>📝 Beispiel cURL Befehl</h3>
+            <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto;">
+curl -X POST http://localhost:3000/api/lactate-webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "power": 200,
+    "lactate": 2.5,
+    "heartRate": 150,
+    "fatOxidation": 0.35,
+    "sessionId": "test_session",
+    "testType": "incremental"
+  }'</pre>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('webhookForm');
+        const responseDiv = document.getElementById('response');
+        const clearBtn = document.getElementById('clearBtn');
+        const simulateBtn = document.getElementById('simulateBtn');
+        
+        // Set webhook URL based on current location
+        document.getElementById('webhookUrl').textContent = 
+            window.location.origin + '/api/lactate-webhook';
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(form);
+            const data = {
+                power: parseFloat(formData.get('power')),
+                lactate: parseFloat(formData.get('lactate')),
+                heartRate: formData.get('heartRate') ? parseFloat(formData.get('heartRate')) : undefined,
+                fatOxidation: formData.get('fatOxidation') ? parseFloat(formData.get('fatOxidation')) : undefined,
+                sessionId: formData.get('sessionId') || 'test_session',
+                testType: formData.get('testType'),
+                timestamp: new Date().toISOString()
+            };
+            
+            try {
+                const response = await fetch('/api/lactate-webhook', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                responseDiv.className = 'response ' + (response.ok ? 'success-response' : 'error-response');
+                responseDiv.textContent = JSON.stringify(result, null, 2);
+                
+            } catch (error) {
+                responseDiv.className = 'response error-response';
+                responseDiv.textContent = 'Fehler: ' + error.message;
+            }
+        });
+        
+        clearBtn.addEventListener('click', async () => {
+            try {
+                const sessionId = document.getElementById('sessionId').value;
+                const response = await fetch(`/api/lactate-webhook?sessionId=${sessionId}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                responseDiv.className = 'response success-response';
+                responseDiv.textContent = JSON.stringify(result, null, 2);
+                
+            } catch (error) {
+                responseDiv.className = 'response error-response';
+                responseDiv.textContent = 'Fehler: ' + error.message;
+            }
+        });
+        
+        simulateBtn.addEventListener('click', async () => {
+            const sessionId = document.getElementById('sessionId').value;
+            const testData = [
+                { power: 100, lactate: 1.2, heartRate: 120, fatOxidation: 0.35 },
+                { power: 150, lactate: 1.5, heartRate: 135, fatOxidation: 0.42 },
+                { power: 200, lactate: 1.8, heartRate: 150, fatOxidation: 0.48 },
+                { power: 250, lactate: 2.3, heartRate: 165, fatOxidation: 0.45 },
+                { power: 300, lactate: 3.2, heartRate: 175, fatOxidation: 0.38 },
+                { power: 350, lactate: 5.1, heartRate: 185, fatOxidation: 0.25 },
+                { power: 400, lactate: 8.5, heartRate: 195, fatOxidation: 0.15 }
+            ];
+            
+            responseDiv.className = 'response success-response';
+            responseDiv.textContent = 'Sende Stufentest-Daten...';
+            
+            for (let i = 0; i < testData.length; i++) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                const data = {
+                    ...testData[i],
+                    sessionId: sessionId,
+                    testType: 'incremental',
+                    timestamp: new Date().toISOString()
+                };
+                
+                try {
+                    const response = await fetch('/api/lactate-webhook', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(data)
+                    });
+                    
+                    const result = await response.json();
+                    responseDiv.textContent += `\n[${i+1}/${testData.length}] ${data.power}W → ${data.lactate} mmol/L`;
+                    
+                } catch (error) {
+                    responseDiv.className = 'response error-response';
+                    responseDiv.textContent += '\nFehler: ' + error.message;
+                    break;
+                }
+            }
+            
+            responseDiv.textContent += '\n\n✅ Stufentest-Simulation abgeschlossen!';
+        });
+    </script>
+</body>
+</html>

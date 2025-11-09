@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import LactateInput from './LactateInput'
 import LactateGraph from './LactateGraph'
+import LactatePerformanceCurve from './LactatePerformanceCurve'
 
-type TabType = 'input' | 'graph'
+type TabType = 'input' | 'graph' | 'performance'
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('input')
@@ -18,10 +19,10 @@ export default function Dashboard() {
         
         {/* Tab Navigation */}
         <div className="flex justify-center mb-8">
-          <div className="flex bg-white dark:bg-zinc-900 rounded-lg p-1 shadow-md">
+          <div className="flex bg-white dark:bg-zinc-900 rounded-lg p-1 shadow-md overflow-x-auto">
             <button
               onClick={() => setActiveTab('input')}
-              className={`px-6 py-3 rounded-md font-medium transition-all duration-200 ${
+              className={`px-6 py-3 rounded-md font-medium transition-all duration-200 whitespace-nowrap ${
                 activeTab === 'input'
                   ? 'bg-blue-500 text-white shadow-sm'
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -31,7 +32,7 @@ export default function Dashboard() {
             </button>
             <button
               onClick={() => setActiveTab('graph')}
-              className={`px-6 py-3 rounded-md font-medium transition-all duration-200 ${
+              className={`px-6 py-3 rounded-md font-medium transition-all duration-200 whitespace-nowrap ${
                 activeTab === 'graph'
                   ? 'bg-blue-500 text-white shadow-sm'
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -39,13 +40,24 @@ export default function Dashboard() {
             >
               Lactate Graph
             </button>
+            <button
+              onClick={() => setActiveTab('performance')}
+              className={`px-6 py-3 rounded-md font-medium transition-all duration-200 whitespace-nowrap ${
+                activeTab === 'performance'
+                  ? 'bg-blue-500 text-white shadow-sm'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+              }`}
+            >
+              Performance Kurve
+            </button>
           </div>
         </div>
 
         {/* Tab Content */}
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           {activeTab === 'input' && <LactateInput />}
           {activeTab === 'graph' && <LactateGraph />}
+          {activeTab === 'performance' && <LactatePerformanceCurve />}
         </div>
       </div>
     </div>
