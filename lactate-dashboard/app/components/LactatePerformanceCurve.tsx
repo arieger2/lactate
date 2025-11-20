@@ -30,17 +30,99 @@ interface ThresholdData {
   }
 }
 
-type OverlayType = 'mader' | 'stegmann' | 'fes' | 'coggan' | 'seiler' | 'inscyd'
+type OverlayType = 'dmax' | 'lt2ians' | 'mader' | 'stegmann' | 'fes' | 'coggan' | 'seiler' | 'inscyd'
 
 const LactatePerformanceCurve = () => {
   const [webhookData, setWebhookData] = useState<LactateWebhookData[]>([])
   const [sessionId, setSessionId] = useState<string>('')
   const [isReceivingData, setIsReceivingData] = useState(false)
   const [thresholds, setThresholds] = useState<ThresholdData | null>(null)
-  const [activeOverlay, setActiveOverlay] = useState<OverlayType | null>(null)
+  const [activeOverlay, setActiveOverlay] = useState<OverlayType | null>('dmax')
 
   // Threshold calculation methods
   const thresholdMethods: Record<OverlayType, { name: string; color: string; description: string; calculate: (data: LactateWebhookData[]) => ThresholdData | null }> = {
+    dmax: {
+      name: 'DMAX',
+      color: '#dc2626',
+      description: 'Maximum lactate steady state (MLSS) method',
+      calculate: (data: LactateWebhookData[]) => {
+        if (data.length < 4) return null
+        const sortedData = [...data].sort((a, b) => a.power - b.power)
+        
+        // Calculate maximum perpendicular distance from baseline to lactate curve
+        const startPoint = sortedData[0]
+        const endPoint = sortedData[sortedData.length - 1]
+        
+        let maxDistance = 0
+        let dmaxIndex = Math.floor(sortedData.length / 2)
+        
+        // Line equation: y = mx + b from start to end point
+        const m = (endPoint.lactate - startPoint.lactate) / (endPoint.power - startPoint.power)
+        const b = startPoint.lactate - m * startPoint.power
+        
+        for (let i = 1; i < sortedData.length - 1; i++) {
+          const point = sortedData[i]
+          const lineY = m * point.power + b
+          const distance = Math.abs(point.lactate - lineY)
+          
+          if (distance > maxDistance) {
+            maxDistance = distance
+            dmaxIndex = i
+          }
+        }
+        
+        // LT1 at ~70% of DMAX power
+        const dmaxPower = sortedData[dmaxIndex].power
+        const lt1Power = dmaxPower * 0.7
+        const lt1Point = sortedData.reduce((prev, curr) => 
+          Math.abs(curr.power - lt1Power) < Math.abs(prev.power - lt1Power) ? curr : prev
+        )
+        
+        return {
+          lt1: { power: lt1Point.power, lactate: lt1Point.lactate, heartRate: lt1Point.heartRate },
+          lt2: { power: sortedData[dmaxIndex].power, lactate: sortedData[dmaxIndex].lactate, heartRate: sortedData[dmaxIndex].heartRate }
+        }
+      }
+    },
+    lt2ians: {
+      name: 'LT2/IANS',
+      color: '#7c2d12',
+      description: 'Individual Anaerobic Threshold based on lactate kinetics',
+      calculate: (data: LactateWebhookData[]) => {
+        if (data.length < 4) return null
+        const sortedData = [...data].sort((a, b) => a.power - b.power)
+        
+        // Calculate lactate accumulation rate (IANS method)
+        let maxAccumulation = 0
+        let iansIndex = sortedData.length - 2
+        
+        for (let i = 2; i < sortedData.length - 1; i++) {
+          // Rate of lactate accumulation over 3 points
+          const rate1 = (sortedData[i].lactate - sortedData[i-1].lactate) / (sortedData[i].power - sortedData[i-1].power)
+          const rate2 = (sortedData[i+1].lactate - sortedData[i].lactate) / (sortedData[i+1].power - sortedData[i].power)
+          const acceleration = rate2 - rate1
+          
+          if (acceleration > maxAccumulation && sortedData[i].lactate > 2.0) {
+            maxAccumulation = acceleration
+            iansIndex = i
+          }
+        }
+        
+        // LT1 at point where lactate starts rising consistently
+        let lt1Index = 1
+        for (let i = 1; i < iansIndex; i++) {
+          if (sortedData[i].lactate > sortedData[0].lactate + 0.8) {
+            lt1Index = i
+            break
+          }
+        }
+        
+        return {
+          lt1: { power: sortedData[lt1Index].power, lactate: sortedData[lt1Index].lactate, heartRate: sortedData[lt1Index].heartRate },
+          lt2: { power: sortedData[iansIndex].power, lactate: sortedData[iansIndex].lactate, heartRate: sortedData[iansIndex].heartRate }
+        }
+      }
+    },
     mader: {
       name: 'Mader',
       color: '#ef4444',
@@ -322,45 +404,12 @@ const LactatePerformanceCurve = () => {
     }
   }, [webhookData])
 
-  // Calculate thresholds automatically when new data arrives
+  // Calculate thresholds automatically when new data arrives (using DMAX as default)
   const calculateThresholds = useCallback((data: LactateWebhookData[]) => {
     if (data.length < 4) return null
 
-    const sortedData = [...data].sort((a, b) => a.power - b.power)
-    
-    // LT1 (aerobic threshold) - first significant rise above baseline
-    let lt1Index = 1
-    const baseline = sortedData[0].lactate
-    for (let i = 1; i < sortedData.length; i++) {
-      if (sortedData[i].lactate > baseline + 1.0) {
-        lt1Index = i - 1
-        break
-      }
-    }
-
-    // LT2 (anaerobic threshold) - exponential rise point
-    let lt2Index = sortedData.length - 2
-    for (let i = lt1Index + 1; i < sortedData.length - 1; i++) {
-      const current = sortedData[i].lactate
-      const next = sortedData[i + 1].lactate
-      if (next - current > 2.0) {
-        lt2Index = i
-        break
-      }
-    }
-
-    return {
-      lt1: {
-        power: sortedData[lt1Index].power,
-        lactate: sortedData[lt1Index].lactate,
-        heartRate: sortedData[lt1Index].heartRate
-      },
-      lt2: {
-        power: sortedData[lt2Index].power,
-        lactate: sortedData[lt2Index].lactate,
-        heartRate: sortedData[lt2Index].heartRate
-      }
-    }
+    // Use DMAX method as default
+    return thresholdMethods.dmax.calculate(data)
   }, [])
 
   const getLactateChartOption = () => {
@@ -634,27 +683,27 @@ const LactatePerformanceCurve = () => {
             <button
               onClick={startReceiving}
               disabled={isReceivingData}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-md transition-colors"
+              className="button-press px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-md"
             >
               {isReceivingData ? 'Empfängt...' : 'Start Empfang'}
             </button>
             <button
               onClick={stopReceiving}
               disabled={!isReceivingData}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white rounded-md transition-colors"
+              className="button-press px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white rounded-md"
             >
               Stop
             </button>
             <button
               onClick={simulateData}
               disabled={isReceivingData}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-md transition-colors"
+              className="button-press px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-md"
             >
               Simulieren
             </button>
             <button
               onClick={clearData}
-              className="px-4 py-2 bg-zinc-600 hover:bg-zinc-700 text-white rounded-md transition-colors"
+              className="button-press px-4 py-2 bg-zinc-600 hover:bg-zinc-700 text-white rounded-md"
             >
               Löschen
             </button>
@@ -677,15 +726,16 @@ const LactatePerformanceCurve = () => {
             <button
               key={key}
               onClick={() => handleOverlaySelect(key as OverlayType)}
-              className={`p-3 rounded-lg border-2 transition-all hover:scale-105 ${
+              className={`p-3 rounded-lg border-2 transition-all duration-200 transform ${
                 activeOverlay === key
-                  ? 'border-current shadow-lg scale-105'
-                  : 'border-zinc-300 dark:border-zinc-600 hover:border-zinc-400'
-              }`}
+                  ? 'border-current shadow-xl scale-95 ring-2 ring-opacity-50 pressed'
+                  : 'border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 hover:scale-105 hover:shadow-md'
+              } active:scale-90 active:shadow-inner`}
               style={{
-                backgroundColor: activeOverlay === key ? `${method.color}20` : 'transparent',
+                backgroundColor: activeOverlay === key ? `${method.color}30` : 'transparent',
                 borderColor: activeOverlay === key ? method.color : undefined,
-                color: activeOverlay === key ? method.color : undefined
+                color: activeOverlay === key ? method.color : undefined,
+                boxShadow: activeOverlay === key ? `inset 0 2px 4px rgba(0,0,0,0.15), 0 0 0 2px ${method.color}40` : undefined
               }}
             >
               <div className="text-center">
