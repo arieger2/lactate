@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import ReactEcharts from 'echarts-for-react'
+import { lactateDataService } from '@/lib/lactateDataService'
 
 // Types for the webhook data
 interface LactateWebhookData {
@@ -588,74 +589,37 @@ const LactatePerformanceCurve = () => {
     }
   }
 
-  // Generate a unique session ID
+  // Subscribe to global data service
   useEffect(() => {
-    const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    setSessionId(newSessionId)
+    const state = lactateDataService.getState()
+    setSessionId(state.sessionId)
+    setIsReceivingData(state.isReceiving)
+    
+    // Subscribe to data changes
+    const unsubscribe = lactateDataService.subscribe((data) => {
+      setWebhookData(data)
+    })
+    
+    return unsubscribe
   }, [])
 
-  // Poll for new data when receiving
-  useEffect(() => {
-    if (!isReceivingData || !sessionId) return
-
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/lactate-webhook?sessionId=${sessionId}`)
-        const data = await response.json()
-        
-        if (data.success && data.data.length > 0) {
-          setWebhookData(data.data)
-        }
-      } catch (error) {
-        console.error('Error polling data:', error)
-      }
-    }, 2000)
-
-    return () => clearInterval(interval)
-  }, [isReceivingData, sessionId])
-
   const startReceiving = () => {
+    lactateDataService.startReceiving()
     setIsReceivingData(true)
   }
 
   const stopReceiving = () => {
+    lactateDataService.stopReceiving()
     setIsReceivingData(false)
   }
 
   const simulateData = () => {
-    const simulatedData = [
-      { timestamp: new Date().toISOString(), power: 150, lactate: 1.5, heartRate: 140, fatOxidation: 0.8 },
-      { timestamp: new Date().toISOString(), power: 200, lactate: 2.1, heartRate: 155, fatOxidation: 1.2 },
-      { timestamp: new Date().toISOString(), power: 250, lactate: 2.8, heartRate: 170, fatOxidation: 1.0 },
-      { timestamp: new Date().toISOString(), power: 300, lactate: 4.2, heartRate: 185, fatOxidation: 0.6 },
-      { timestamp: new Date().toISOString(), power: 350, lactate: 6.8, heartRate: 195, fatOxidation: 0.3 },
-      { timestamp: new Date().toISOString(), power: 400, lactate: 9.5, heartRate: 200, fatOxidation: 0.1 }
-    ]
-
-    simulatedData.forEach((data, index) => {
-      setTimeout(() => {
-        setWebhookData(prev => [...prev, data])
-        if (index === simulatedData.length - 1) {
-          setIsReceivingData(false)
-        }
-      }, index * 1000)
-    })
+    lactateDataService.simulateData()
   }
 
   const clearData = async () => {
-    try {
-      if (sessionId) {
-        await fetch(`/api/lactate-webhook?sessionId=${sessionId}`, {
-          method: 'DELETE'
-        })
-      }
-    } catch (error) {
-      console.error('Error clearing server data:', error)
-    }
-    
-    setWebhookData([])
+    await lactateDataService.clearData()
     setThresholds(null)
-    setIsReceivingData(false)
   }
 
   return (

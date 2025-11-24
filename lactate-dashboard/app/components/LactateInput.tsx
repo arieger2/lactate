@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { lactateDataService } from '@/lib/lactateDataService'
 
 interface MeasurementData {
   stepWorkload: number // W (watts) or speed
@@ -50,6 +51,40 @@ export default function LactateInput() {
     { stepWorkload: 300, bloodLactate: 8.2, heartRate: 180, vo2: 55 }
   ])
   const [structuredNotes, setStructuredNotes] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Send data to global lactate service
+  const sendToGlobalService = async (data: { power: number; lactate: number; heartRate?: number; fatOxidation?: number }) => {
+    try {
+      const state = lactateDataService.getState()
+      const response = await fetch(`/api/lactate-webhook?sessionId=${state.sessionId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          timestamp: new Date().toISOString(),
+          power: data.power,
+          lactate: data.lactate,
+          heartRate: data.heartRate,
+          fatOxidation: data.fatOxidation,
+          sessionId: state.sessionId,
+          testType: 'incremental'
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const result = await response.json()
+      console.log('Data sent to global service:', result)
+      return result
+    } catch (error) {
+      console.error('Error sending to global service:', error)
+      throw error
+    }
+  }
 
   // Update measurements when number changes
   const updateNumberOfMeasurements = (newCount: number) => {
@@ -81,7 +116,7 @@ export default function LactateInput() {
     ))
   }
 
-  const handleSimpleSubmit = (e: React.FormEvent) => {
+  const handleSimpleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!currentValue || isNaN(Number(currentValue))) {
@@ -89,25 +124,48 @@ export default function LactateInput() {
       return
     }
 
-    const newReading: LactateReading = {
-      id: Date.now().toString(),
-      timestamp: new Date().toISOString(),
-      value: Number(currentValue),
-      workload: currentWorkload ? Number(currentWorkload) : undefined,
-      heartRate: currentHeartRate ? Number(currentHeartRate) : undefined,
-      vo2: currentVo2 ? Number(currentVo2) : undefined,
-      notes: currentNotes.trim() || undefined
+    if (!currentWorkload || isNaN(Number(currentWorkload))) {
+      alert('Please enter a valid power/workload value')
+      return
     }
 
-    setReadings(prev => [newReading, ...prev])
-    setCurrentValue('')
-    setCurrentWorkload('')
-    setCurrentHeartRate('')
-    setCurrentVo2('')
-    setCurrentNotes('')
+    setIsSubmitting(true)
+
+    try {
+      // Send to global service
+      await sendToGlobalService({
+        power: Number(currentWorkload),
+        lactate: Number(currentValue),
+        heartRate: currentHeartRate ? Number(currentHeartRate) : undefined,
+        fatOxidation: currentVo2 ? Number(currentVo2) / 100 : undefined // Convert VO2 to approximate fat oxidation
+      })
+
+      const newReading: LactateReading = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        value: Number(currentValue),
+        workload: Number(currentWorkload),
+        heartRate: currentHeartRate ? Number(currentHeartRate) : undefined,
+        vo2: currentVo2 ? Number(currentVo2) : undefined,
+        notes: currentNotes.trim() || undefined
+      }
+
+      setReadings(prev => [newReading, ...prev])
+      setCurrentValue('')
+      setCurrentWorkload('')
+      setCurrentHeartRate('')
+      setCurrentVo2('')
+      setCurrentNotes('')
+      
+      alert('✅ Data sent successfully to dashboard and database!')
+    } catch (error) {
+      alert('❌ Error sending data. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const handleStructuredSubmit = (e: React.FormEvent) => {
+  const handleStructuredSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Validate measurements
@@ -121,25 +179,48 @@ export default function LactateInput() {
       return
     }
 
-    const newTest: StructuredTest = {
-      id: Date.now().toString(),
-      timestamp: new Date().toISOString(),
-      measurements: [...measurements],
-      testType,
-      notes: structuredNotes.trim() || undefined
-    }
+    setIsSubmitting(true)
 
-    setStructuredTests(prev => [newTest, ...prev])
-    
-    // Reset form with default values
-    setMeasurements([
-      { stepWorkload: 100, bloodLactate: 1.1, heartRate: 120, vo2: 28 },
-      { stepWorkload: 150, bloodLactate: 1.5, heartRate: 135, vo2: 34 },
-      { stepWorkload: 200, bloodLactate: 2.1, heartRate: 150, vo2: 40 },
-      { stepWorkload: 250, bloodLactate: 4.0, heartRate: 165, vo2: 47 },
-      { stepWorkload: 300, bloodLactate: 8.2, heartRate: 180, vo2: 55 }
-    ])
-    setStructuredNotes('')
+    try {
+      // Send each measurement to global service
+      for (const measurement of measurements) {
+        await sendToGlobalService({
+          power: measurement.stepWorkload,
+          lactate: measurement.bloodLactate,
+          heartRate: measurement.heartRate,
+          fatOxidation: measurement.vo2 ? measurement.vo2 / 100 : undefined
+        })
+        
+        // Small delay between measurements to maintain order
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
+      const newTest: StructuredTest = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        measurements: [...measurements],
+        testType,
+        notes: structuredNotes.trim() || undefined
+      }
+
+      setStructuredTests(prev => [newTest, ...prev])
+      
+      // Reset form with default values
+      setMeasurements([
+        { stepWorkload: 100, bloodLactate: 1.1, heartRate: 120, vo2: 28 },
+        { stepWorkload: 150, bloodLactate: 1.5, heartRate: 135, vo2: 34 },
+        { stepWorkload: 200, bloodLactate: 2.1, heartRate: 150, vo2: 40 },
+        { stepWorkload: 250, bloodLactate: 4.0, heartRate: 165, vo2: 47 },
+        { stepWorkload: 300, bloodLactate: 8.2, heartRate: 180, vo2: 55 }
+      ])
+      setStructuredNotes('')
+      
+      alert(`✅ All ${measurements.length} measurements sent successfully to dashboard and database!`)
+    } catch (error) {
+      alert('❌ Error sending structured data. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleDelete = (id: string) => {
@@ -276,12 +357,23 @@ export default function LactateInput() {
               />
             </div>
 
-            <button
-              type="submit"
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-md transition-colors"
-            >
-              Add Reading
-            </button>
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white font-medium py-2 px-4 rounded-md transition-all duration-150 active:scale-95 active:shadow-inner transform"
+              >
+                {isSubmitting ? '⏳ Sending to Dashboard...' : '📊 Send to Dashboard & Database'}
+              </button>
+              
+              <p className="text-xs text-zinc-600 dark:text-zinc-400 text-center">
+                💡 Data will be sent to "Laktat Performance Kurve" tab and saved to PostgreSQL database
+              </p>
+              
+              <div className="text-xs bg-zinc-50 dark:bg-zinc-800 p-2 rounded border">
+                <strong>Global Session ID:</strong> <code className="text-blue-600 dark:text-blue-400">{lactateDataService.getState().sessionId}</code>
+              </div>
+            </div>
           </form>
         </div>
       )}
@@ -428,12 +520,23 @@ export default function LactateInput() {
               />
             </div>
 
-            <button
-              type="submit"
-              className="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-md transition-colors"
-            >
-              Save Test Protocol
-            </button>
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white font-medium py-2 px-4 rounded-md transition-all duration-150 active:scale-95 active:shadow-inner transform"
+              >
+                {isSubmitting ? '⏳ Sending Test Protocol...' : `🚀 Send All ${measurements.length} Measurements to Dashboard`}
+              </button>
+              
+              <p className="text-xs text-zinc-600 dark:text-zinc-400 text-center">
+                💡 Complete test protocol will be sent to "Laktat Performance Kurve" for analysis
+              </p>
+              
+              <div className="text-xs bg-zinc-50 dark:bg-zinc-800 p-2 rounded border">
+                <strong>Global Session ID:</strong> <code className="text-green-600 dark:text-green-400">{lactateDataService.getState().sessionId}</code>
+              </div>
+            </div>
           </form>
         </div>
       )}
