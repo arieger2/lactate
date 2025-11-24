@@ -8,8 +8,7 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || 'LisgumuM20251!',
   ssl: process.env.DB_SSL === 'true' ? { 
     rejectUnauthorized: false,
-    requestCert: false,
-    agent: false
+    requestCert: false
   } : false,
   max: parseInt(process.env.DB_POOL_MAX || '10'),
   min: parseInt(process.env.DB_POOL_MIN || '2'),
