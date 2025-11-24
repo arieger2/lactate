@@ -1,0 +1,32 @@
+{
+  "database": {
+    "host": "192.168.5.220",
+    "port": 5432,
+    "database": "laktat",
+    "user": "arieger",
+    "password": "LisgumuM20251!",
+    "ssl": false,
+    "pool": {
+      "min": 2,
+      "max": 10,
+      "acquire": 30000,
+      "idle": 10000
+    }
+  },
+  "application": {
+    "name": "Lactate Dashboard",
+    "version": "1.0.0",
+    "environment": "development",
+    "port": 3000
+  },
+  "features": {
+    "webhook": {
+      "enabled": true,
+      "endpoint": "/api/lactate-webhook"
+    },
+    "realtime": {
+      "enabled": true,
+      "polling_interval": 1000
+    }
+  }
+}
