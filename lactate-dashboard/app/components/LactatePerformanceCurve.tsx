@@ -57,11 +57,12 @@ const LactatePerformanceCurve = () => {
   
   // Custom zone boundaries (user-adjustable)
   const [customZoneBoundaries, setCustomZoneBoundaries] = useState<ZoneBoundaries | null>(null)
-  const [hasZoneChanges, setHasZoneChanges] = useState(false)
-  const [isSavingZones, setIsSavingZones] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [dragBoundary, setDragBoundary] = useState<string | null>(null)
   const [hoverBoundary, setHoverBoundary] = useState<string | null>(null)
+  const [hasSavedAdjustedZones, setHasSavedAdjustedZones] = useState(false)
+  const [savedAdjustedBoundaries, setSavedAdjustedBoundaries] = useState<ZoneBoundaries | null>(null)
   const chartRef = useRef<any>(null)
   const chartContainerRef = useRef<HTMLDivElement>(null)
 
@@ -454,8 +455,46 @@ const LactatePerformanceCurve = () => {
     return zones
   }, [webhookData, activeOverlay, getActiveThresholds, customZoneBoundaries, getDefaultZoneBoundaries])
 
-  // Handle zone boundary change from slider
-  const handleZoneBoundaryChange = (boundaryKey: keyof ZoneBoundaries, newValue: number) => {
+  // Auto-save zone boundaries to database (silent, no alerts, debounced)
+  const autoSaveZoneBoundaries = useCallback(async (boundariesToSave: ZoneBoundaries) => {
+    if (!selectedCustomer || !sessionId) {
+      console.log('Cannot auto-save: no customer or session selected')
+      return
+    }
+    
+    try {
+      const response = await fetch('/api/training-zones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: selectedCustomer.customer_id,
+          sessionId: sessionId,
+          method: 'adjusted', // Mark as manually adjusted
+          boundaries: boundariesToSave,
+          zones: getFiveTrainingZones().map(z => ({
+            zoneId: z.id,
+            name: z.name,
+            powerStart: z.range[0],
+            powerEnd: z.range[1]
+          }))
+        })
+      })
+      
+      if (response.ok) {
+        console.log('✅ Zones auto-saved successfully')
+        // Update the saved adjusted boundaries so "Adjusted" button appears
+        setSavedAdjustedBoundaries(boundariesToSave)
+        setHasSavedAdjustedZones(true)
+      } else {
+        console.error('Failed to auto-save zones')
+      }
+    } catch (error) {
+      console.error('Error auto-saving zones:', error)
+    }
+  }, [selectedCustomer, sessionId, getFiveTrainingZones])
+
+  // Handle zone boundary change - updates state and triggers debounced auto-save
+  const handleZoneBoundaryChange = useCallback((boundaryKey: keyof ZoneBoundaries, newValue: number) => {
     const currentBoundaries = customZoneBoundaries || getDefaultZoneBoundaries()
     if (!currentBoundaries) return
     
@@ -477,55 +516,21 @@ const LactatePerformanceCurve = () => {
     newBoundaries.z4End = Math.max(newBoundaries.z3End + 10, Math.min(maxPower, newBoundaries.z4End))
     
     setCustomZoneBoundaries(newBoundaries)
-    setHasZoneChanges(true)
-    // Don't increment chartKey during drag - let the chart update naturally
-  }
-
-  // Reset to default boundaries
-  const resetZoneBoundaries = () => {
-    setCustomZoneBoundaries(null)
-    setHasZoneChanges(false)
-    setChartKey(prev => prev + 1)  // Force re-render on reset
-  }
-
-  // Save zone boundaries to database
-  const saveZoneBoundaries = async () => {
-    if (!customZoneBoundaries || !selectedCustomer || !sessionId) {
-      alert('Bitte wählen Sie einen Kunden und eine Session aus.')
-      return
-    }
     
-    setIsSavingZones(true)
-    try {
-      const response = await fetch('/api/training-zones', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId: selectedCustomer.customer_id,
-          sessionId: sessionId,
-          method: activeOverlay,
-          boundaries: customZoneBoundaries,
-          zones: getFiveTrainingZones().map(z => ({
-            zoneId: z.id,
-            name: z.name,
-            powerStart: z.range[0],
-            powerEnd: z.range[1]
-          }))
-        })
-      })
-      
-      if (response.ok) {
-        setHasZoneChanges(false)
-        alert('Zonen erfolgreich gespeichert!')
-      } else {
-        const error = await response.json()
-        alert(`Fehler beim Speichern: ${error.message || 'Unbekannter Fehler'}`)
-      }
-    } catch (error) {
-      console.error('Error saving zones:', error)
-      alert('Fehler beim Speichern der Zonen')
-    } finally {
-      setIsSavingZones(false)
+    // Debounced auto-save: clear previous timeout and set new one
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      autoSaveZoneBoundaries(newBoundaries)
+    }, 300) // Save 300ms after last change
+  }, [customZoneBoundaries, getDefaultZoneBoundaries, webhookData, autoSaveZoneBoundaries])
+
+  // Apply saved adjusted zones
+  const applyAdjustedZones = () => {
+    if (savedAdjustedBoundaries) {
+      setCustomZoneBoundaries(savedAdjustedBoundaries)
+      setChartKey(prev => prev + 1)
     }
   }
 
@@ -533,7 +538,6 @@ const LactatePerformanceCurve = () => {
   const handleOverlaySelect = (method: OverlayType) => {
     setActiveOverlay(activeOverlay === method ? null : method)
     setCustomZoneBoundaries(null) // Reset custom boundaries when changing method
-    setHasZoneChanges(false)
     setChartKey(prev => prev + 1) // Force chart re-render
   }
 
@@ -654,6 +658,7 @@ const LactatePerformanceCurve = () => {
     if (isDragging) {
       setIsDragging(false)
       setDragBoundary(null)
+      // Auto-save is already triggered by debounced handleZoneBoundaryChange
     }
   }, [isDragging])
 
@@ -968,20 +973,30 @@ const LactatePerformanceCurve = () => {
           
           if (zoneData.boundaries) {
             console.log('📂 Loaded saved zones for session:', sessionIdToLoad, zoneData.boundaries)
-            setCustomZoneBoundaries(zoneData.boundaries)
-            setHasZoneChanges(false)
+            
+            // Store the saved adjusted boundaries - these are always available via "Adjusted" button
+            setSavedAdjustedBoundaries(zoneData.boundaries)
+            setHasSavedAdjustedZones(true)
+            
+            // Don't auto-apply - let user choose "Adjusted" button to apply
+            // setCustomZoneBoundaries(zoneData.boundaries)
             
             // Restore the saved method if available
-            if (savedZones.method && savedZones.method !== 'custom') {
+            if (savedZones.method && savedZones.method !== 'custom' && savedZones.method !== 'adjusted') {
               setActiveOverlay(savedZones.method as OverlayType)
             }
             return true
           }
         }
       }
+      // No saved zones found
+      setHasSavedAdjustedZones(false)
+      setSavedAdjustedBoundaries(null)
       return false
     } catch (error) {
       console.error('Failed to load saved zones:', error)
+      setHasSavedAdjustedZones(false)
+      setSavedAdjustedBoundaries(null)
       return false
     }
   }
@@ -998,7 +1013,8 @@ const LactatePerformanceCurve = () => {
         
         // Reset zone boundaries - will be recalculated or loaded from DB
         setCustomZoneBoundaries(null)
-        setHasZoneChanges(false)
+        setHasSavedAdjustedZones(false)
+        setSavedAdjustedBoundaries(null)
         setChartKey(prev => prev + 1) // Force chart refresh
         
         // Try to load saved zones for this session
@@ -1043,7 +1059,8 @@ const LactatePerformanceCurve = () => {
     fetchAvailableSessions()
     // Reset zones when customer changes
     setCustomZoneBoundaries(null)
-    setHasZoneChanges(false)
+    setHasSavedAdjustedZones(false)
+    setSavedAdjustedBoundaries(null)
   }, [selectedCustomer])
 
   // Load saved zones when session and customer are available
@@ -1164,21 +1181,21 @@ const LactatePerformanceCurve = () => {
         <h3 className="text-lg font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
           Wissenschaftliche Schwellenmethoden
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
           {Object.entries(thresholdMethods).map(([key, method]) => (
             <button
               key={key}
               onClick={() => handleOverlaySelect(key as OverlayType)}
               className={`p-3 rounded-lg border-2 transition-all duration-200 transform ${
-                activeOverlay === key
+                activeOverlay === key && !customZoneBoundaries
                   ? 'border-current shadow-xl scale-95 ring-2 ring-opacity-50 pressed'
                   : 'border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 hover:scale-105 hover:shadow-md'
               } active:scale-90 active:shadow-inner`}
               style={{
-                backgroundColor: activeOverlay === key ? `${method.color}30` : 'transparent',
-                borderColor: activeOverlay === key ? method.color : undefined,
-                color: activeOverlay === key ? method.color : undefined,
-                boxShadow: activeOverlay === key ? `inset 0 2px 4px rgba(0,0,0,0.15), 0 0 0 2px ${method.color}40` : undefined
+                backgroundColor: activeOverlay === key && !customZoneBoundaries ? `${method.color}30` : 'transparent',
+                borderColor: activeOverlay === key && !customZoneBoundaries ? method.color : undefined,
+                color: activeOverlay === key && !customZoneBoundaries ? method.color : undefined,
+                boxShadow: activeOverlay === key && !customZoneBoundaries ? `inset 0 2px 4px rgba(0,0,0,0.15), 0 0 0 2px ${method.color}40` : undefined
               }}
             >
               <div className="text-center">
@@ -1187,7 +1204,36 @@ const LactatePerformanceCurve = () => {
               </div>
             </button>
           ))}
+          
+          {/* Adjusted Button - shows when saved adjusted zones exist OR when user has made manual changes */}
+          {(hasSavedAdjustedZones || customZoneBoundaries !== null) && (
+            <button
+              onClick={applyAdjustedZones}
+              disabled={!savedAdjustedBoundaries && !customZoneBoundaries}
+              className={`p-3 rounded-lg border-2 transition-all duration-200 transform ${
+                customZoneBoundaries !== null
+                  ? 'border-purple-500 shadow-xl scale-95 ring-2 ring-purple-300 ring-opacity-50'
+                  : 'border-zinc-300 dark:border-zinc-600 hover:border-purple-400 hover:scale-105 hover:shadow-md'
+              } active:scale-90 active:shadow-inner`}
+              style={{
+                backgroundColor: customZoneBoundaries !== null ? 'rgba(147, 51, 234, 0.2)' : 'transparent',
+                color: customZoneBoundaries !== null ? '#9333ea' : undefined
+              }}
+            >
+              <div className="text-center">
+                <div className="font-bold text-sm mb-1">✏️ Adjusted</div>
+                <div className="text-xs opacity-80">Manuell angepasst</div>
+              </div>
+            </button>
+          )}
         </div>
+        
+        {/* Info about current selection */}
+        {customZoneBoundaries && (
+          <div className="mt-3 text-sm text-purple-600 dark:text-purple-400 flex items-center gap-2">
+            <span>✏️ Manuelle Anpassungen aktiv (automatisch gespeichert)</span>
+          </div>
+        )}
       </div>
 
       {/* Chart */}
@@ -1245,36 +1291,13 @@ const LactatePerformanceCurve = () => {
               <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                 🎯 Trainingszonen Übersicht
               </h3>
-              <div className="flex gap-2">
-                {hasZoneChanges && (
-                  <>
-                    <button
-                      onClick={resetZoneBoundaries}
-                      className="px-3 py-1.5 text-sm bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-md transition-colors"
-                    >
-                      ↩️ Zurücksetzen
-                    </button>
-                    <button
-                      onClick={saveZoneBoundaries}
-                      disabled={isSavingZones || !selectedCustomer}
-                      className="px-4 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-md transition-colors flex items-center gap-2"
-                    >
-                      {isSavingZones ? (
-                        <>⏳ Speichern...</>
-                      ) : (
-                        <>💾 Zonen speichern</>
-                      )}
-                    </button>
-                  </>
-                )}
-              </div>
+              {customZoneBoundaries && (
+                <span className="text-sm text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                  ✏️ Manuell angepasst
+                  {!selectedCustomer && <span className="text-orange-500">(nicht gespeichert)</span>}
+                </span>
+              )}
             </div>
-            
-            {hasZoneChanges && !selectedCustomer && (
-              <div className="mb-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 rounded-md text-sm text-yellow-800 dark:text-yellow-200">
-                ⚠️ Bitte wählen Sie einen Kunden aus, um die Zonen zu speichern.
-              </div>
-            )}
             
             {/* Visual zone bar */}
             <div className="mb-4">

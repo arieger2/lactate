@@ -5,11 +5,15 @@ export async function GET() {
   try {
     const client = await pool.connect();
     
-    // Create the training_zones table if it doesn't exist
+    // Drop and recreate the training_zones table with correct structure
     await client.query(`
-      CREATE TABLE IF NOT EXISTS training_zones (
+      DROP TABLE IF EXISTS training_zones CASCADE;
+    `);
+    
+    await client.query(`
+      CREATE TABLE training_zones (
         id SERIAL PRIMARY KEY,
-        customer_id INTEGER NOT NULL,
+        customer_id VARCHAR(255) NOT NULL,
         session_id VARCHAR(255) NOT NULL,
         zone_boundaries JSONB NOT NULL,
         method VARCHAR(50) NOT NULL,
@@ -18,11 +22,16 @@ export async function GET() {
       );
     `);
     
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_training_zones_customer_session 
+      ON training_zones(customer_id, session_id);
+    `);
+    
     client.release();
     
     return NextResponse.json({ 
       success: true, 
-      message: 'training_zones table created successfully' 
+      message: 'training_zones table recreated successfully with correct structure' 
     });
   } catch (error) {
     console.error('Error creating training_zones table:', error);
