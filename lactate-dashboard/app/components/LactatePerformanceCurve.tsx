@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import ReactEcharts from 'echarts-for-react'
 import { lactateDataService } from '@/lib/lactateDataService'
+import { useCustomer } from '@/lib/CustomerContext'
 
 // Types for the webhook data
 interface LactateWebhookData {
@@ -34,10 +35,14 @@ interface ThresholdData {
 type OverlayType = 'dmax' | 'lt2ians' | 'mader' | 'stegmann' | 'fes' | 'coggan' | 'seiler' | 'inscyd'
 
 const LactatePerformanceCurve = () => {
+  // Use global customer context
+  const { selectedCustomer } = useCustomer()
+  
   const [webhookData, setWebhookData] = useState<LactateWebhookData[]>([])
   const [sessionId, setSessionId] = useState<string>('')
   const [availableSessions, setAvailableSessions] = useState<{id: string, lastUpdated: string, pointCount: number}[]>([])
   const [isReceivingData, setIsReceivingData] = useState(false)
+  const [isSimulating, setIsSimulating] = useState(false)
   const [thresholds, setThresholds] = useState<ThresholdData | null>(null)
   const [activeOverlay, setActiveOverlay] = useState<OverlayType | null>('dmax')
 
@@ -439,11 +444,11 @@ const LactatePerformanceCurve = () => {
 
     return {
       title: {
-        text: `5-Zonen Laktat-Leistungskurve${activeOverlay ? ` (${methodName})` : ''}`,
+        text: `5-Zonen Laktat-Leistungskurve${activeOverlay ? ` (${methodName})` : ''}${isSimulating ? ' 🎭 SIMULATION' : ''}`,
         textStyle: {
           fontSize: 16,
           fontWeight: 'bold',
-          color: methodColor
+          color: isSimulating ? '#ea580c' : methodColor
         }
       },
       tooltip: {
@@ -590,16 +595,29 @@ const LactatePerformanceCurve = () => {
     }
   }
 
-  // Fetch available sessions from database
+  // Fetch available sessions from database (filtered by selected customer)
   const fetchAvailableSessions = async () => {
     try {
-      const response = await fetch('/api/sessions')
-      if (response.ok) {
-        const sessions = await response.json()
-        setAvailableSessions(sessions)
+      if (selectedCustomer) {
+        // Fetch sessions for the selected customer
+        const response = await fetch(`/api/customer-sessions?customerId=${selectedCustomer.customer_id}`)
+        if (response.ok) {
+          const sessions = await response.json()
+          setAvailableSessions(sessions.map((session: any) => ({
+            id: session.session_id,
+            lastUpdated: session.last_updated,
+            pointCount: session.point_count
+          })))
+        } else {
+          setAvailableSessions([])
+        }
+      } else {
+        // No customer selected, don't show any sessions
+        setAvailableSessions([])
       }
     } catch (error) {
       console.error('Failed to fetch sessions:', error)
+      setAvailableSessions([])
     }
   }
 
@@ -623,10 +641,14 @@ const LactatePerformanceCurve = () => {
     const state = lactateDataService.getState()
     setSessionId(state.sessionId)
     setIsReceivingData(state.isReceiving)
+    setIsSimulating(state.isSimulating || false)
     
     // Subscribe to data changes
     const unsubscribe = lactateDataService.subscribe((data) => {
       setWebhookData(data)
+      // Update simulation state
+      const currentState = lactateDataService.getState()
+      setIsSimulating(currentState.isSimulating || false)
     })
     
     // Fetch available sessions on mount
@@ -640,6 +662,11 @@ const LactatePerformanceCurve = () => {
       clearInterval(sessionInterval)
     }
   }, [])
+
+  // Refetch sessions when selected customer changes
+  useEffect(() => {
+    fetchAvailableSessions()
+  }, [selectedCustomer])
 
   const startReceiving = () => {
     lactateDataService.startReceiving()
@@ -660,13 +687,25 @@ const LactatePerformanceCurve = () => {
     setThresholds(null)
   }
 
+  const clearSimulation = () => {
+    lactateDataService.clearSimulation()
+    setThresholds(null)
+  }
+
   return (
     <div className="space-y-6">
       {/* Webhook Controls */}
       <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
-          Laktat-Performance-Kurve (Live Daten)
-        </h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+            Laktat-Performance-Kurve (Live Daten)
+          </h2>
+          {selectedCustomer && (
+            <div className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full">
+              👤 {selectedCustomer.name} ({selectedCustomer.customer_id})
+            </div>
+          )}
+        </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
@@ -701,28 +740,67 @@ const LactatePerformanceCurve = () => {
               disabled={isReceivingData}
               className="button-press px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-md"
             >
-              Simulieren
+              🎭 Simulieren
             </button>
+            {isSimulating && (
+              <button
+                onClick={clearSimulation}
+                className="button-press px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md"
+              >
+                🗑️ Simulation Löschen
+              </button>
+            )}
             <button
               onClick={clearData}
               className="button-press px-4 py-2 bg-zinc-600 hover:bg-zinc-700 text-white rounded-md"
             >
-              Löschen
+              🗑️ Alle Daten Löschen
             </button>
           </div>
         </div>
         
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Empfangene Datenpunkte: <span className="font-semibold">{webhookData.length}</span>
-          {isReceivingData && <span className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>}
-        </p>
+        <div className="flex flex-wrap items-center gap-4 text-sm text-zinc-600 dark:text-zinc-400">
+          <div>
+            {isSimulating ? (
+              <span className="text-orange-600 dark:text-orange-400">
+                🎭 Simulierte Datenpunkte: <span className="font-semibold">{webhookData.length}</span>
+                <span className="ml-2 text-xs">(nicht in Datenbank gespeichert)</span>
+              </span>
+            ) : (
+              <span>
+                📊 Empfangene Datenpunkte: <span className="font-semibold">{webhookData.length}</span>
+              </span>
+            )}
+          </div>
+          {isReceivingData && (
+            <div className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              <span className="text-green-600 dark:text-green-400">Live empfangen</span>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Customer Selection Hint */}
+      {!selectedCustomer && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+          <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+            <span className="text-lg">ℹ️</span>
+            <div>
+              <p className="font-medium">Kein Kunde ausgewählt</p>
+              <p className="text-sm text-blue-600 dark:text-blue-300">
+                Gehen Sie zum "Lactate Input" Tab und wählen Sie einen Kunden aus, um nur deren Sessions anzuzeigen.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Session Management */}
       {availableSessions.length > 0 && (
         <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
           <h3 className="text-lg font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
-            Verfügbare Sessions
+            Verfügbare Sessions {selectedCustomer ? `für ${selectedCustomer.name}` : '(Alle Kunden)'}
           </h3>
           <div className="space-y-2">
             {availableSessions.map((session) => (

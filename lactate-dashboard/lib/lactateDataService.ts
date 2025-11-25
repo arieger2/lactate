@@ -4,6 +4,8 @@ class LactateDataService {
   private isReceiving = false
   private sessionId: string = ''
   private data: any[] = []
+  private simulatedData: any[] = []
+  private isSimulating = false
   private intervalId: NodeJS.Timeout | null = null
   private listeners: Set<(data: any[]) => void> = new Set()
 
@@ -37,7 +39,9 @@ class LactateDataService {
 
   // Notify all listeners of data changes
   private notifyListeners(): void {
-    this.listeners.forEach(listener => listener(this.data))
+    // Use simulated data if simulating, otherwise use real data
+    const currentData = this.isSimulating ? this.simulatedData : this.data
+    this.listeners.forEach(listener => listener(currentData))
   }
 
   // Start receiving data
@@ -81,6 +85,10 @@ class LactateDataService {
   // Clear all data
   async clearData(): Promise<void> {
     try {
+      // Clear simulation data first
+      this.clearSimulation()
+      
+      // Then clear database data
       await fetch(`/api/lactate-webhook?sessionId=${this.sessionId}`, {
         method: 'DELETE'
       })
@@ -92,9 +100,9 @@ class LactateDataService {
     }
   }
 
-  // Simulate test data
-  async simulateData(): Promise<void> {
-    const simulatedData = [
+  // Simulate test data (temporary, not saved to database)
+  simulateData(): void {
+    this.simulatedData = [
       { timestamp: new Date().toISOString(), power: 150, lactate: 1.5, heartRate: 140, fatOxidation: 0.8, sessionId: this.sessionId },
       { timestamp: new Date().toISOString(), power: 200, lactate: 2.1, heartRate: 155, fatOxidation: 1.2, sessionId: this.sessionId },
       { timestamp: new Date().toISOString(), power: 250, lactate: 2.8, heartRate: 170, fatOxidation: 1.0, sessionId: this.sessionId },
@@ -103,27 +111,19 @@ class LactateDataService {
       { timestamp: new Date().toISOString(), power: 400, lactate: 9.5, heartRate: 200, fatOxidation: 0.1, sessionId: this.sessionId }
     ]
 
-    console.log('🎭 Simulating data for session:', this.sessionId)
+    this.isSimulating = true
+    console.log('🎭 Simulating temporary data (not saved to database):', this.simulatedData.length, 'points')
+    
+    // Notify listeners with simulated data
+    this.notifyListeners()
+  }
 
-    for (let i = 0; i < simulatedData.length; i++) {
-      try {
-        await fetch(`/api/lactate-webhook`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(simulatedData[i])
-        })
-        
-        // Small delay between data points
-        await new Promise(resolve => setTimeout(resolve, 500))
-      } catch (error) {
-        console.error('❌ Error sending simulated data:', error)
-      }
-    }
-
-    // Force refresh after simulation
-    setTimeout(() => {
-      this.pollDataOnce()
-    }, 1000)
+  // Clear simulation data
+  clearSimulation(): void {
+    this.simulatedData = []
+    this.isSimulating = false
+    console.log('🗑️ Cleared simulation data')
+    this.notifyListeners()
   }
 
   // Manual data refresh
@@ -142,11 +142,13 @@ class LactateDataService {
 
   // Get current state
   getState() {
+    const currentData = this.isSimulating ? this.simulatedData : this.data
     return {
       isReceiving: this.isReceiving,
       sessionId: this.sessionId,
-      data: this.data,
-      dataCount: this.data.length
+      data: currentData,
+      dataCount: currentData.length,
+      isSimulating: this.isSimulating
     }
   }
 

@@ -2,17 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { lactateDataService } from '@/lib/lactateDataService'
-
-interface Customer {
-  customer_id: string
-  name: string
-  email?: string
-  phone?: string
-  date_of_birth?: string
-  notes?: string
-  created_at?: string
-  updated_at?: string
-}
+import { useCustomer, Customer } from '@/lib/CustomerContext'
 
 interface CustomerSession {
   session_id: string
@@ -34,8 +24,10 @@ interface MeasurementRow {
 }
 
 export default function LactateInput() {
+  // Use global customer context
+  const { selectedCustomer, setSelectedCustomer } = useCustomer()
+  
   // Customer Management States
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerResults, setCustomerResults] = useState<Customer[]>([])
   const [isSearching, setIsSearching] = useState(false)
