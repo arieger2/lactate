@@ -185,11 +185,25 @@ CMD ["npm", "start"]
 - **Real-time Data**: Webhook API with live polling
 - **PostgreSQL Integration**: Persistent data storage with memory fallback
 
+### 🆕 Enhanced Lactate Input Features (V0.2)
+- **Customer Management**: Search, create, and manage customer profiles
+- **Manual Measurement Entry**: Structured input with editable measurement table
+- **Device Interface**: API endpoint for automatic measurement device integration
+- **Real-time Table**: Live display of entered measurements with edit/delete capabilities
+- **Batch Operations**: Send multiple measurements to dashboard at once
+
 ### 🔧 API Endpoints
 - `POST /api/lactate-webhook` - Send measurement data
 - `GET /api/lactate-webhook?sessionId=X` - Retrieve session data
 - `DELETE /api/lactate-webhook?sessionId=X` - Clear session data
 - `GET /api/db-status` - Check database connection
+
+### 🆕 Customer & Device API Endpoints (V0.2)
+- `GET /api/customers?search=query` - Search customers
+- `POST /api/customers` - Create new customer
+- `GET /api/customers/[id]` - Get specific customer
+- `POST /api/device-interface` - Receive automatic device measurements
+- `GET /api/device-interface` - Get device integration documentation
 
 ### 📊 Usage
 1. **Input Data**: Use "Lactate Input" tab for manual data entry

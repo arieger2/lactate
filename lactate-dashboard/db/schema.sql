@@ -1,16 +1,31 @@
 -- Lactate Dashboard Database Schema
 -- Database: laktat
 
+-- Create customers table for managing customer information
+CREATE TABLE IF NOT EXISTS customers (
+    id SERIAL PRIMARY KEY,
+    customer_id VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    phone VARCHAR(50),
+    date_of_birth DATE,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create sessions table for tracking test sessions
 CREATE TABLE IF NOT EXISTS sessions (
     id SERIAL PRIMARY KEY,
     session_id VARCHAR(255) UNIQUE NOT NULL,
+    customer_id VARCHAR(255),
     athlete_name VARCHAR(255),
     test_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     test_type VARCHAR(100),
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE SET NULL
 );
 
 -- Create lactate_data table for storing measurement points
@@ -56,6 +71,9 @@ CREATE TABLE IF NOT EXISTS training_zones (
 );
 
 -- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_customers_customer_id ON customers(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
+CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON sessions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_lactate_data_session_id ON lactate_data(session_id);
 CREATE INDEX IF NOT EXISTS idx_lactate_data_timestamp ON lactate_data(timestamp);
 CREATE INDEX IF NOT EXISTS idx_threshold_results_session_id ON threshold_results(session_id);
@@ -66,6 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_training_zones_session_id ON training_zones(sessi
 -- VALUES ('sample-session-1', 'Max Mustermann', 'Stufentest');
 
 -- Add comments to tables
+COMMENT ON TABLE customers IS 'Stores customer/athlete information';
 COMMENT ON TABLE sessions IS 'Stores lactate test sessions';
 COMMENT ON TABLE lactate_data IS 'Stores individual lactate measurement points';
 COMMENT ON TABLE threshold_results IS 'Stores calculated lactate thresholds for different methods';
