@@ -428,26 +428,48 @@ export default function LactateInput() {
         <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg mb-6">
           <h3 className="font-medium text-green-800 dark:text-green-200 mb-2">🔗 Automatic Device Interface Available</h3>
           <p className="text-sm text-green-700 dark:text-green-300 mb-2">
-            Measurement devices can automatically send data to: <code className="bg-green-100 dark:bg-green-800 px-1 rounded">/api/device-interface</code>
+            Measurement devices can automatically send data to: <code className="bg-green-100 dark:bg-green-800 px-1 rounded">http://localhost:3000/api/device-interface</code>
           </p>
+          <div className="text-xs text-green-600 dark:text-green-400 mb-2">
+            💡 <strong>Test page available:</strong> <a href="/device-test.html" target="_blank" className="underline hover:text-green-800">http://localhost:3000/device-test.html</a>
+          </div>
           <details className="text-sm text-green-600 dark:text-green-400">
             <summary className="cursor-pointer hover:text-green-800 dark:hover:text-green-200">Show device integration format</summary>
             <pre className="mt-2 bg-green-100 dark:bg-green-800 p-2 rounded text-xs overflow-x-auto">
-{`POST /api/device-interface
+{`POST http://localhost:3000/api/device-interface
+Content-Type: application/json
+
 {
   "deviceId": "lactate-analyzer-01",
   "customerId": "${selectedCustomer?.customer_id || 'CUSTOMER_ID'}",
   "measurementData": [
     {
-      "lactate": 2.5,
+      "lactate": 1.3,
+      "power": 150,
+      "heartRate": 128,
+      "vo2": 28.5
+    },
+    {
+      "lactate": 2.0,
       "power": 200,
-      "heartRate": 150,
-      "vo2": 40.5
+      "heartRate": 145,
+      "vo2": 35.5
+    },
+    {
+      "lactate": 4.1,
+      "power": 250,
+      "heartRate": 163,
+      "vo2": 43.2
     }
   ]
 }`}
             </pre>
           </details>
+          <div className="mt-3 text-xs text-green-600 dark:text-green-400">
+            <p>✅ <strong>Database:</strong> localhost PostgreSQL (laktat database)</p>
+            <p>🔗 <strong>Browser Test:</strong> Use the test page to verify device integration</p>
+            <p>📊 <strong>Auto-Processing:</strong> Measurements are automatically sent to Performance Curve tab</p>
+          </div>
         </div>
 
         {/* Customer Required Message */}

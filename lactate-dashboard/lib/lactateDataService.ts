@@ -95,19 +95,19 @@ class LactateDataService {
   // Simulate test data
   async simulateData(): Promise<void> {
     const simulatedData = [
-      { timestamp: new Date().toISOString(), power: 150, lactate: 1.5, heartRate: 140, fatOxidation: 0.8 },
-      { timestamp: new Date().toISOString(), power: 200, lactate: 2.1, heartRate: 155, fatOxidation: 1.2 },
-      { timestamp: new Date().toISOString(), power: 250, lactate: 2.8, heartRate: 170, fatOxidation: 1.0 },
-      { timestamp: new Date().toISOString(), power: 300, lactate: 4.2, heartRate: 185, fatOxidation: 0.6 },
-      { timestamp: new Date().toISOString(), power: 350, lactate: 6.8, heartRate: 195, fatOxidation: 0.3 },
-      { timestamp: new Date().toISOString(), power: 400, lactate: 9.5, heartRate: 200, fatOxidation: 0.1 }
+      { timestamp: new Date().toISOString(), power: 150, lactate: 1.5, heartRate: 140, fatOxidation: 0.8, sessionId: this.sessionId },
+      { timestamp: new Date().toISOString(), power: 200, lactate: 2.1, heartRate: 155, fatOxidation: 1.2, sessionId: this.sessionId },
+      { timestamp: new Date().toISOString(), power: 250, lactate: 2.8, heartRate: 170, fatOxidation: 1.0, sessionId: this.sessionId },
+      { timestamp: new Date().toISOString(), power: 300, lactate: 4.2, heartRate: 185, fatOxidation: 0.6, sessionId: this.sessionId },
+      { timestamp: new Date().toISOString(), power: 350, lactate: 6.8, heartRate: 195, fatOxidation: 0.3, sessionId: this.sessionId },
+      { timestamp: new Date().toISOString(), power: 400, lactate: 9.5, heartRate: 200, fatOxidation: 0.1, sessionId: this.sessionId }
     ]
 
     console.log('🎭 Simulating data for session:', this.sessionId)
 
     for (let i = 0; i < simulatedData.length; i++) {
       try {
-        await fetch(`/api/lactate-webhook?sessionId=${this.sessionId}`, {
+        await fetch(`/api/lactate-webhook`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(simulatedData[i])
