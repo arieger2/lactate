@@ -36,6 +36,7 @@ type OverlayType = 'dmax' | 'lt2ians' | 'mader' | 'stegmann' | 'fes' | 'coggan' 
 const LactatePerformanceCurve = () => {
   const [webhookData, setWebhookData] = useState<LactateWebhookData[]>([])
   const [sessionId, setSessionId] = useState<string>('')
+  const [availableSessions, setAvailableSessions] = useState<{id: string, lastUpdated: string, pointCount: number}[]>([])
   const [isReceivingData, setIsReceivingData] = useState(false)
   const [thresholds, setThresholds] = useState<ThresholdData | null>(null)
   const [activeOverlay, setActiveOverlay] = useState<OverlayType | null>('dmax')
@@ -589,6 +590,34 @@ const LactatePerformanceCurve = () => {
     }
   }
 
+  // Fetch available sessions from database
+  const fetchAvailableSessions = async () => {
+    try {
+      const response = await fetch('/api/sessions')
+      if (response.ok) {
+        const sessions = await response.json()
+        setAvailableSessions(sessions)
+      }
+    } catch (error) {
+      console.error('Failed to fetch sessions:', error)
+    }
+  }
+
+  // Switch to a different session
+  const switchToSession = async (newSessionId: string) => {
+    try {
+      const response = await fetch(`/api/lactate-webhook?sessionId=${newSessionId}`)
+      if (response.ok) {
+        const result = await response.json()
+        setSessionId(newSessionId)
+        setWebhookData(result.data || [])
+        setThresholds(null) // Reset thresholds for new session
+      }
+    } catch (error) {
+      console.error('Failed to switch session:', error)
+    }
+  }
+
   // Subscribe to global data service
   useEffect(() => {
     const state = lactateDataService.getState()
@@ -600,7 +629,16 @@ const LactatePerformanceCurve = () => {
       setWebhookData(data)
     })
     
-    return unsubscribe
+    // Fetch available sessions on mount
+    fetchAvailableSessions()
+    
+    // Poll for new sessions every 10 seconds
+    const sessionInterval = setInterval(fetchAvailableSessions, 10000)
+    
+    return () => {
+      unsubscribe()
+      clearInterval(sessionInterval)
+    }
   }, [])
 
   const startReceiving = () => {
@@ -679,6 +717,53 @@ const LactatePerformanceCurve = () => {
           {isReceivingData && <span className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>}
         </p>
       </div>
+
+      {/* Session Management */}
+      {availableSessions.length > 0 && (
+        <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
+            Verfügbare Sessions
+          </h3>
+          <div className="space-y-2">
+            {availableSessions.map((session) => (
+              <div
+                key={session.id}
+                className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                  sessionId === session.id
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                    : 'border-zinc-300 dark:border-zinc-600 hover:border-zinc-400'
+                }`}
+                onClick={() => switchToSession(session.id)}
+              >
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="font-medium text-sm">
+                      {session.id.startsWith('auto_') ? '🤖 Automatische Session' : '👤 Manuelle Session'}
+                    </div>
+                    <div className="text-xs text-zinc-500">
+                      Session ID: {session.id}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-semibold">
+                      {session.pointCount} Datenpunkte
+                    </div>
+                    <div className="text-xs text-zinc-500">
+                      {new Date(session.lastUpdated).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={fetchAvailableSessions}
+            className="mt-3 px-3 py-1 text-sm bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-md"
+          >
+            🔄 Sessions aktualisieren
+          </button>
+        </div>
+      )}
 
       {/* Scientific Method Overlay Buttons */}
       <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">

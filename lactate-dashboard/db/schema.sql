@@ -32,13 +32,15 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS lactate_data (
     id SERIAL PRIMARY KEY,
     session_id VARCHAR(255) NOT NULL,
+    customer_id VARCHAR(255),
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     power INTEGER NOT NULL,
     lactate DECIMAL(4,2) NOT NULL,
     heart_rate INTEGER,
     fat_oxidation DECIMAL(4,2),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE SET NULL
 );
 
 -- Create threshold_results table for storing calculated thresholds
@@ -75,6 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_customer_id ON customers(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
 CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON sessions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_lactate_data_session_id ON lactate_data(session_id);
+CREATE INDEX IF NOT EXISTS idx_lactate_data_customer_id ON lactate_data(customer_id);
 CREATE INDEX IF NOT EXISTS idx_lactate_data_timestamp ON lactate_data(timestamp);
 CREATE INDEX IF NOT EXISTS idx_threshold_results_session_id ON threshold_results(session_id);
 CREATE INDEX IF NOT EXISTS idx_training_zones_session_id ON training_zones(session_id);

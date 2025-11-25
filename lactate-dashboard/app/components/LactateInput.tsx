@@ -14,6 +14,15 @@ interface Customer {
   updated_at?: string
 }
 
+interface CustomerSession {
+  session_id: string
+  test_date: string
+  test_type: string
+  point_count: number
+  last_updated: string
+  notes?: string
+}
+
 interface MeasurementRow {
   id: string
   power: number
@@ -30,6 +39,12 @@ export default function LactateInput() {
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerResults, setCustomerResults] = useState<Customer[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  
+  // Session Management States
+  const [customerSessions, setCustomerSessions] = useState<CustomerSession[]>([])
+  const [selectedSession, setSelectedSession] = useState<CustomerSession | null>(null)
+  const [showSessionSelector, setShowSessionSelector] = useState(false)
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false)
   
   // New Customer Form States
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
@@ -66,6 +81,59 @@ export default function LactateInput() {
     
     return () => clearTimeout(timer)
   }, [customerSearch])
+
+  // Fetch sessions for selected customer
+  const fetchCustomerSessions = async (customerId: string) => {
+    setIsLoadingSessions(true)
+    try {
+      const response = await fetch(`/api/customer-sessions?customerId=${customerId}`)
+      if (response.ok) {
+        const sessions = await response.json()
+        setCustomerSessions(sessions)
+        setShowSessionSelector(sessions.length > 0)
+      } else {
+        setCustomerSessions([])
+        setShowSessionSelector(false)
+      }
+    } catch (error) {
+      console.error('Error fetching customer sessions:', error)
+      setCustomerSessions([])
+      setShowSessionSelector(false)
+    } finally {
+      setIsLoadingSessions(false)
+    }
+  }
+
+  // Handle customer selection and load their sessions
+  const handleCustomerSelect = async (customer: Customer) => {
+    setSelectedCustomer(customer)
+    setCustomerSearch('')
+    setCustomerResults([])
+    
+    // Fetch sessions for this customer
+    await fetchCustomerSessions(customer.customer_id)
+  }
+
+  // Handle session selection and load session data
+  const handleSessionSelect = async (session: CustomerSession) => {
+    setSelectedSession(session)
+    setShowSessionSelector(false)
+    
+    // Load the session data into the Performance Curve
+    try {
+      const response = await fetch(`/api/lactate-webhook?sessionId=${session.session_id}`)
+      if (response.ok) {
+        const result = await response.json()
+        console.log('Loaded session data:', result)
+        
+        // Show success message
+        alert(`Session vom ${new Date(session.test_date).toLocaleDateString()} geladen (${result.totalPoints} Datenpunkte). Wechseln Sie zum Performance Curve Tab um die Daten zu sehen.`)
+      }
+    } catch (error) {
+      console.error('Error loading session data:', error)
+      alert('Fehler beim Laden der Session-Daten')
+    }
+  }
 
   // Send data to global lactate service
   const sendToGlobalService = async (data: { 
@@ -284,11 +352,7 @@ export default function LactateInput() {
                   {customerResults.map(customer => (
                     <div
                       key={customer.customer_id}
-                      onClick={() => {
-                        setSelectedCustomer(customer)
-                        setCustomerSearch('')
-                        setCustomerResults([])
-                      }}
+                      onClick={() => handleCustomerSelect(customer)}
                       className="p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer border-b border-zinc-100 dark:border-zinc-800 last:border-b-0"
                     >
                       <div className="font-medium text-zinc-900 dark:text-zinc-100">{customer.name}</div>
@@ -404,16 +468,75 @@ export default function LactateInput() {
                 {selectedCustomer.email && <p className="text-sm text-blue-700 dark:text-blue-300">{selectedCustomer.email}</p>}
                 {selectedCustomer.phone && <p className="text-sm text-blue-700 dark:text-blue-300">{selectedCustomer.phone}</p>}
               </div>
-              <button
-                onClick={() => {
-                  setSelectedCustomer(null)
-                  setMeasurementRows([])
-                }}
-                className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md"
-              >
-                Change Customer
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => fetchCustomerSessions(selectedCustomer.customer_id)}
+                  disabled={isLoadingSessions}
+                  className="px-3 py-1 text-sm bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-md"
+                >
+                  {isLoadingSessions ? '⏳' : '📊'} Sessions
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedCustomer(null)
+                    setSelectedSession(null)
+                    setCustomerSessions([])
+                    setShowSessionSelector(false)
+                    setMeasurementRows([])
+                  }}
+                  className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md"
+                >
+                  Change Customer
+                </button>
+              </div>
             </div>
+
+            {/* Session Selection */}
+            {showSessionSelector && customerSessions.length > 0 && (
+              <div className="mt-3 border-t border-blue-200 dark:border-blue-700 pt-3">
+                <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
+                  Verfügbare Sessions ({customerSessions.length})
+                </h4>
+                <div className="max-h-32 overflow-y-auto space-y-1">
+                  {customerSessions.map(session => (
+                    <div
+                      key={session.session_id}
+                      onClick={() => handleSessionSelect(session)}
+                      className={`p-2 rounded-md cursor-pointer border transition-colors ${
+                        selectedSession?.session_id === session.session_id
+                          ? 'border-blue-500 bg-blue-100 dark:bg-blue-800/50'
+                          : 'border-blue-200 dark:border-blue-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-800/30'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <div className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                            {new Date(session.test_date).toLocaleDateString('de-DE')} - {session.test_type}
+                          </div>
+                          <div className="text-xs text-blue-700 dark:text-blue-300">
+                            {session.point_count} Datenpunkte
+                          </div>
+                        </div>
+                        <div className="text-xs text-blue-600 dark:text-blue-400">
+                          {new Date(session.last_updated).toLocaleTimeString('de-DE')}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedSession && (
+              <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
+                <div className="text-sm font-medium text-green-900 dark:text-green-100">
+                  ✅ Session ausgewählt: {new Date(selectedSession.test_date).toLocaleDateString('de-DE')}
+                </div>
+                <div className="text-xs text-green-700 dark:text-green-300">
+                  {selectedSession.point_count} Datenpunkte - {selectedSession.test_type}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

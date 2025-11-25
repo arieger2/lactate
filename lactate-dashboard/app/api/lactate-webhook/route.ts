@@ -67,10 +67,11 @@ export async function POST(request: NextRequest) {
 
         // Insert lactate data
         await client.query(`
-          INSERT INTO lactate_data (session_id, timestamp, power, lactate, heart_rate, fat_oxidation)
-          VALUES ($1, $2, $3, $4, $5, $6)
+          INSERT INTO lactate_data (session_id, customer_id, timestamp, power, lactate, heart_rate, fat_oxidation)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
         `, [
           sessionId,
+          body.customerId || null,
           dataEntry.timestamp,
           dataEntry.power,
           dataEntry.lactate,
