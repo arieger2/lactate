@@ -52,6 +52,7 @@ export default function LactateInput() {
   // Measurement Entry States
   const [measurementRows, setMeasurementRows] = useState<MeasurementRow[]>([])
   const [editingRowId, setEditingRowId] = useState<string | null>(null)
+  const [isEditingEnabled, setIsEditingEnabled] = useState(false)
   const [currentMeasurement, setCurrentMeasurement] = useState({
     power: '',
     lactate: '',
@@ -73,6 +74,38 @@ export default function LactateInput() {
     
     return () => clearTimeout(timer)
   }, [customerSearch])
+
+  // Load session data when selectedSession changes
+  useEffect(() => {
+    const loadSessionData = async () => {
+      if (selectedSession) {
+        try {
+          const response = await fetch(`/api/lactate-webhook?sessionId=${selectedSession.session_id}`)
+          if (response.ok) {
+            const result = await response.json()
+            console.log('Loading session data:', result)
+            
+            if (result.data && Array.isArray(result.data)) {
+              const loadedRows: MeasurementRow[] = result.data.map((item: any, index: number) => ({
+                id: `loaded_${selectedSession.session_id}_${index}`,
+                power: item.power || 0,
+                lactate: item.lactate || 0,
+                heartRate: item.heartRate || undefined,
+                vo2: item.fatOxidation ? item.fatOxidation * 100 : undefined,
+                timestamp: item.timestamp || new Date().toISOString(),
+                notes: undefined
+              }))
+              setMeasurementRows(loadedRows)
+            }
+          }
+        } catch (error) {
+          console.error('Error loading session data:', error)
+        }
+      }
+    }
+    
+    loadSessionData()
+  }, [selectedSession])
 
   // Fetch sessions for selected customer
   const fetchCustomerSessions = async (customerId: string) => {
@@ -111,15 +144,26 @@ export default function LactateInput() {
     setSelectedSession(session)
     setShowSessionSelector(false)
     
-    // Load the session data into the Performance Curve
+    // Load the session data into the Entered Measurements table
     try {
       const response = await fetch(`/api/lactate-webhook?sessionId=${session.session_id}`)
       if (response.ok) {
         const result = await response.json()
         console.log('Loaded session data:', result)
         
-        // Show success message
-        alert(`Session vom ${new Date(session.test_date).toLocaleDateString()} geladen (${result.totalPoints} Datenpunkte). Wechseln Sie zum Performance Curve Tab um die Daten zu sehen.`)
+        // Convert session data to measurement rows
+        if (result.data && Array.isArray(result.data)) {
+          const loadedRows: MeasurementRow[] = result.data.map((item: any, index: number) => ({
+            id: `loaded_${session.session_id}_${index}`,
+            power: item.power || 0,
+            lactate: item.lactate || 0,
+            heartRate: item.heartRate || item.heart_rate || undefined,
+            vo2: item.fatOxidation ? item.fatOxidation * 100 : (item.fat_oxidation ? item.fat_oxidation * 100 : undefined),
+            timestamp: item.timestamp || new Date().toISOString(),
+            notes: item.notes || undefined
+          }))
+          setMeasurementRows(loadedRows)
+        }
       }
     } catch (error) {
       console.error('Error loading session data:', error)
@@ -536,56 +580,8 @@ export default function LactateInput() {
       {/* Manual Measurement Entry */}
       <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
         <h2 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
-          Manual Measurement Entry
+          ✏️ Manual Measurement Entry
         </h2>
-        
-        {/* Device Interface Info */}
-        <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg mb-6">
-          <h3 className="font-medium text-green-800 dark:text-green-200 mb-2">🔗 Automatic Device Interface Available</h3>
-          <p className="text-sm text-green-700 dark:text-green-300 mb-2">
-            Measurement devices can automatically send data to: <code className="bg-green-100 dark:bg-green-800 px-1 rounded">http://localhost:3000/api/device-interface</code>
-          </p>
-          <div className="text-xs text-green-600 dark:text-green-400 mb-2">
-            💡 <strong>Test page available:</strong> <a href="/device-test.html" target="_blank" className="underline hover:text-green-800">http://localhost:3000/device-test.html</a>
-          </div>
-          <details className="text-sm text-green-600 dark:text-green-400">
-            <summary className="cursor-pointer hover:text-green-800 dark:hover:text-green-200">Show device integration format</summary>
-            <pre className="mt-2 bg-green-100 dark:bg-green-800 p-2 rounded text-xs overflow-x-auto">
-{`POST http://localhost:3000/api/device-interface
-Content-Type: application/json
-
-{
-  "deviceId": "lactate-analyzer-01",
-  "customerId": "${selectedCustomer?.customer_id || 'CUSTOMER_ID'}",
-  "measurementData": [
-    {
-      "lactate": 1.3,
-      "power": 150,
-      "heartRate": 128,
-      "vo2": 28.5
-    },
-    {
-      "lactate": 2.0,
-      "power": 200,
-      "heartRate": 145,
-      "vo2": 35.5
-    },
-    {
-      "lactate": 4.1,
-      "power": 250,
-      "heartRate": 163,
-      "vo2": 43.2
-    }
-  ]
-}`}
-            </pre>
-          </details>
-          <div className="mt-3 text-xs text-green-600 dark:text-green-400">
-            <p>✅ <strong>Database:</strong> localhost PostgreSQL (laktat database)</p>
-            <p>🔗 <strong>Browser Test:</strong> Use the test page to verify device integration</p>
-            <p>📊 <strong>Auto-Processing:</strong> Measurements are automatically sent to Performance Curve tab</p>
-          </div>
-        </div>
 
         {/* Customer Required Message */}
         {!selectedCustomer && (
@@ -706,15 +702,29 @@ Content-Type: application/json
               <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
                 Entered Measurements ({measurementRows.length})
               </h3>
-              {measurementRows.length > 0 && (
-                <button
-                  onClick={sendAllMeasurements}
-                  disabled={isSubmitting}
-                  className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-md font-medium text-sm"
-                >
-                  {isSubmitting ? 'Sending...' : `Send All ${measurementRows.length} to Dashboard`}
-                </button>
-              )}
+              <div className="flex gap-2">
+                {measurementRows.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => setIsEditingEnabled(!isEditingEnabled)}
+                      className={`px-3 py-2 rounded-md font-medium text-sm transition-colors ${
+                        isEditingEnabled
+                          ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                          : 'bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300'
+                      }`}
+                    >
+                      {isEditingEnabled ? '✏️ Bearbeitung An' : '🔒 Bearbeitung Aus'}
+                    </button>
+                    <button
+                      onClick={sendAllMeasurements}
+                      disabled={isSubmitting}
+                      className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-md font-medium text-sm"
+                    >
+                      {isSubmitting ? 'Sending...' : `Send All ${measurementRows.length} to Dashboard`}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
             
             {measurementRows.length > 0 ? (
@@ -727,11 +737,13 @@ Content-Type: application/json
                         <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">Lactate</th>
                         <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">HR</th>
                         <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">VO₂</th>
-                        <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
+                        {isEditingEnabled && (
+                          <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
-                      {measurementRows.map((row, index) => (
+                      {measurementRows.map((row) => (
                         <tr 
                           key={row.id} 
                           className={`border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${
@@ -742,22 +754,24 @@ Content-Type: application/json
                           <td className="p-2">{row.lactate} mmol/L</td>
                           <td className="p-2">{row.heartRate ? `${row.heartRate} bpm` : '-'}</td>
                           <td className="p-2">{row.vo2 ? `${row.vo2} mL/kg/min` : '-'}</td>
-                          <td className="p-2">
-                            <div className="flex gap-1">
-                              <button
-                                onClick={() => editMeasurementRow(row)}
-                                className="px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => deleteMeasurementRow(row.id)}
-                                className="px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
+                          {isEditingEnabled && (
+                            <td className="p-2">
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={() => editMeasurementRow(row)}
+                                  className="px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => deleteMeasurementRow(row.id)}
+                                  className="px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -775,7 +789,7 @@ Content-Type: application/json
             
             {measurementRows.length > 0 && (
               <div className="mt-4 text-xs text-zinc-600 dark:text-zinc-400">
-                <p>💡 Click "Edit" to modify existing measurements</p>
+                <p>💡 {isEditingEnabled ? 'Bearbeitung aktiviert - klicken Sie auf "Edit" oder "Delete"' : 'Klicken Sie auf "🔒 Bearbeitung Aus" um Daten zu bearbeiten'}</p>
                 <p>🚀 Use "Send All" to transfer all measurements to the Performance Curve tab for analysis</p>
               </div>
             )}

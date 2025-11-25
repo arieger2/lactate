@@ -4,8 +4,9 @@ import { useState } from 'react'
 import LactateInput from './LactateInput'
 import LactateGraph from './LactateGraph'
 import LactatePerformanceCurve from './LactatePerformanceCurve'
+import Documentation from './Documentation'
 
-type TabType = 'input' | 'graph' | 'performance'
+type TabType = 'input' | 'graph' | 'performance' | 'docs'
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('input')
@@ -50,6 +51,16 @@ export default function Dashboard() {
             >
               Performance Kurve
             </button>
+            <button
+              onClick={() => setActiveTab('docs')}
+              className={`px-6 py-3 rounded-md font-medium transition-all duration-200 whitespace-nowrap ${
+                activeTab === 'docs'
+                  ? 'bg-blue-500 text-white shadow-sm'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+              }`}
+            >
+              📚 Dokumentation
+            </button>
           </div>
         </div>
 
@@ -58,6 +69,7 @@ export default function Dashboard() {
           {activeTab === 'input' && <LactateInput />}
           {activeTab === 'graph' && <LactateGraph />}
           {activeTab === 'performance' && <LactatePerformanceCurve />}
+          {activeTab === 'docs' && <Documentation />}
         </div>
       </div>
     </div>

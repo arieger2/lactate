@@ -45,6 +45,7 @@ const LactatePerformanceCurve = () => {
   const [isSimulating, setIsSimulating] = useState(false)
   const [thresholds, setThresholds] = useState<ThresholdData | null>(null)
   const [activeOverlay, setActiveOverlay] = useState<OverlayType | null>('dmax')
+  const [chartKey, setChartKey] = useState(0)
 
   // Threshold calculation methods
   const thresholdMethods: Record<OverlayType, { name: string; color: string; description: string; calculate: (data: LactateWebhookData[]) => ThresholdData | null }> = {
@@ -311,28 +312,56 @@ const LactatePerformanceCurve = () => {
     const powerRange = maxPower - minPower
     const extendedMaxPower = maxPower + powerRange * 0.1
     
-    // Calculate seamless zone boundaries
+    // Calculate zone boundaries based on thresholds
     const lt1Power = displayThresholds.lt1.power
     const lt2Power = displayThresholds.lt2.power
-    const vt1Power = lt1Power * 0.85
-    const vt2Power = lt2Power * 1.05
     
-    // Ensure seamless boundaries (no gaps)
-    const zoneBoundaries = [
-      minPower,
-      vt1Power,
-      lt1Power,
-      lt2Power,
-      vt2Power,
-      extendedMaxPower
-    ]
+    // Zone boundaries:
+    // Z1: First data point to some point before LT1
+    // Z2: End of Z1 to LT1  
+    // Z3: LT1 to LT2
+    // Z4: LT2 to end of Z4
+    // Z5: End of Z4 to max
+    
+    // Calculate raw boundaries
+    const rawVt1Power = lt1Power * 0.85
+    const rawVt2Power = lt2Power * 1.05
+    
+    // Ensure all zones have proper boundaries
+    // Z1 starts at first data point, ends before LT1
+    // Key: ensure each zone has at least some width
+    
+    const z1Start = minPower
+    // Z1 ends at 85% of LT1 OR minPower + 30W (whichever is larger, ensuring Z1 has width)
+    const z1End = Math.max(minPower + 30, Math.min(rawVt1Power, lt1Power - 20))
+    // Z2 ends at LT1
+    const z2End = Math.max(z1End + 20, lt1Power)
+    // Z3 ends at LT2
+    const z3End = Math.max(z2End + 20, lt2Power)
+    // Z4 ends at 105% of LT2
+    const z4End = Math.max(z3End + 20, rawVt2Power)
+    // Z5 ends at extended max
+    const z5End = Math.max(z4End + 20, extendedMaxPower)
+    
+    // Build zone boundaries
+    const zoneBoundaries = [z1Start, z1End, z2End, z3End, z4End, z5End]
+    
+    // Debug log
+    console.log('Zone calculation:', {
+      minPower, lt1Power, lt2Power, rawVt1Power,
+      z1: `${Math.round(z1Start)}-${Math.round(z1End)}`,
+      z2: `${Math.round(z1End)}-${Math.round(z2End)}`,
+      z3: `${Math.round(z2End)}-${Math.round(z3End)}`,
+      z4: `${Math.round(z3End)}-${Math.round(z4End)}`,
+      z5: `${Math.round(z4End)}-${Math.round(z5End)}`
+    })
     
     const zones = [
       {
         id: 1,
         name: 'Zone 1 - Aktive Regeneration',
-        color: 'rgba(34, 197, 94, 0.2)',
-        borderColor: 'rgba(34, 197, 94, 0.6)',
+        color: 'rgba(144, 238, 144, 0.5)',      // Light green
+        borderColor: 'rgba(34, 139, 34, 0.8)',
         range: [zoneBoundaries[0], zoneBoundaries[1]],
         lactateRange: '< 2.0 mmol/l',
         description: 'Regeneration & Fettstoffwechsel',
@@ -341,8 +370,8 @@ const LactatePerformanceCurve = () => {
       {
         id: 2,
         name: 'Zone 2 - Aerobe Basis',
-        color: 'rgba(34, 197, 94, 0.15)',
-        borderColor: 'rgba(34, 197, 94, 0.5)',
+        color: 'rgba(0, 200, 83, 0.4)',          // Green
+        borderColor: 'rgba(0, 150, 60, 0.8)',
         range: [zoneBoundaries[1], zoneBoundaries[2]],
         lactateRange: '2.0-2.5 mmol/l',
         description: 'Grundlagenausdauer 1',
@@ -351,8 +380,8 @@ const LactatePerformanceCurve = () => {
       {
         id: 3,
         name: 'Zone 3 - Aerobe Schwelle',
-        color: 'rgba(59, 130, 246, 0.2)',
-        borderColor: 'rgba(59, 130, 246, 0.6)',
+        color: 'rgba(255, 235, 59, 0.4)',        // Yellow
+        borderColor: 'rgba(245, 200, 0, 0.8)',
         range: [zoneBoundaries[2], zoneBoundaries[3]],
         lactateRange: '2.5-4.0 mmol/l',
         description: 'Grundlagenausdauer 2 / Tempo',
@@ -361,8 +390,8 @@ const LactatePerformanceCurve = () => {
       {
         id: 4,
         name: 'Zone 4 - Laktatschwelle',
-        color: 'rgba(245, 158, 11, 0.2)',
-        borderColor: 'rgba(245, 158, 11, 0.6)',
+        color: 'rgba(255, 152, 0, 0.4)',         // Orange
+        borderColor: 'rgba(230, 120, 0, 0.8)',
         range: [zoneBoundaries[3], zoneBoundaries[4]],
         lactateRange: '4.0-8.0 mmol/l',
         description: 'Wettkampftempo / Schwellenbereich',
@@ -371,8 +400,8 @@ const LactatePerformanceCurve = () => {
       {
         id: 5,
         name: 'Zone 5 - Neuromuskuläre Leistung',
-        color: 'rgba(239, 68, 68, 0.2)',
-        borderColor: 'rgba(239, 68, 68, 0.6)',
+        color: 'rgba(244, 67, 54, 0.4)',         // Red
+        borderColor: 'rgba(200, 40, 30, 0.8)',
         range: [zoneBoundaries[4], zoneBoundaries[5]],
         lactateRange: '> 8.0 mmol/l',
         description: 'Anaerobe Kapazität / VO2max',
@@ -382,16 +411,15 @@ const LactatePerformanceCurve = () => {
 
     // Debug: Log seamless zone boundaries
     console.log('Seamless Zone Boundaries:', {
+      lt1Power: Math.round(lt1Power),
+      lt2Power: Math.round(lt2Power),
+      rawVt1Power: Math.round(rawVt1Power),
       boundaries: zoneBoundaries.map(b => Math.round(b)),
       zones: zones.map(z => ({
         id: z.id,
         start: Math.round(z.range[0]),
         end: Math.round(z.range[1]),
         width: Math.round(z.range[1] - z.range[0])
-      })),
-      gaps: zones.slice(1).map((zone, i) => ({
-        between: `Zone ${i+1} and ${zone.id}`,
-        gap: zones[i].range[1] - zone.range[0]
       }))
     })
 
@@ -401,6 +429,7 @@ const LactatePerformanceCurve = () => {
   // Handle overlay selection
   const handleOverlaySelect = (method: OverlayType) => {
     setActiveOverlay(activeOverlay === method ? null : method)
+    setChartKey(prev => prev + 1) // Force chart re-render
   }
 
   // Auto-calculate thresholds when data changes
@@ -432,14 +461,19 @@ const LactatePerformanceCurve = () => {
     const methodColor = activeOverlay ? thresholdMethods[activeOverlay].color : '#6b7280'
 
     const trainingZones = getFiveTrainingZones()
+    
+    // Calculate x-axis min: 50W before Z1 (which starts at first data point)
+    const minDataPower = Math.min(...powers)
+    const xAxisMin = Math.max(0, minDataPower - 50)  // 50W before Z1/first data
 
-    // Debug logging
-    console.log('Chart Debug:', {
-      dataLength: webhookData.length,
-      powers,
-      lactates,
-      zonesCount: trainingZones.length,
-      hasThresholds: !!displayThresholds
+    // Debug logging - check this in browser console when switching methods
+    console.log('🔄 Chart Update:', {
+      activeMethod: activeOverlay,
+      minDataPower: minDataPower.toFixed(0),
+      xAxisMin: xAxisMin.toFixed(0),
+      lt1Power: displayThresholds?.lt1?.power?.toFixed(0),
+      lt2Power: displayThresholds?.lt2?.power?.toFixed(0),
+      zonesCount: trainingZones.length
     })
 
     return {
@@ -468,7 +502,15 @@ const LactatePerformanceCurve = () => {
         }
       },
       legend: {
-        data: ['Laktat', 'Fettoxidation', ...trainingZones.map(z => `Zone ${z.id}`)],
+        data: [
+          { name: 'Laktat', itemStyle: { color: '#ef4444' } },
+          { name: 'Fettoxidation', itemStyle: { color: '#22c55e' } },
+          { name: 'Zone 1', itemStyle: { color: 'rgba(144, 238, 144, 0.8)' } },
+          { name: 'Zone 2', itemStyle: { color: 'rgba(0, 200, 83, 0.8)' } },
+          { name: 'Zone 3', itemStyle: { color: 'rgba(255, 235, 59, 0.8)' } },
+          { name: 'Zone 4', itemStyle: { color: 'rgba(255, 152, 0, 0.8)' } },
+          { name: 'Zone 5', itemStyle: { color: 'rgba(244, 67, 54, 0.8)' } }
+        ],
         top: 'bottom'
       },
       grid: {
@@ -480,6 +522,7 @@ const LactatePerformanceCurve = () => {
       xAxis: {
         type: 'value',
         name: 'Leistung (Watt)',
+        min: xAxisMin,
         nameTextStyle: {
           color: '#374151',
           fontSize: 14,
@@ -668,23 +711,8 @@ const LactatePerformanceCurve = () => {
     fetchAvailableSessions()
   }, [selectedCustomer])
 
-  const startReceiving = () => {
-    lactateDataService.startReceiving()
-    setIsReceivingData(true)
-  }
-
-  const stopReceiving = () => {
-    lactateDataService.stopReceiving()
-    setIsReceivingData(false)
-  }
-
   const simulateData = () => {
     lactateDataService.simulateData()
-  }
-
-  const clearData = async () => {
-    await lactateDataService.clearData()
-    setThresholds(null)
   }
 
   const clearSimulation = () => {
@@ -694,11 +722,11 @@ const LactatePerformanceCurve = () => {
 
   return (
     <div className="space-y-6">
-      {/* Webhook Controls */}
+      {/* Header */}
       <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
-            Laktat-Performance-Kurve (Live Daten)
+            Laktat-Performance-Kurve
           </h2>
           {selectedCustomer && (
             <div className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full">
@@ -707,34 +735,8 @@ const LactatePerformanceCurve = () => {
           )}
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-              Webhook URL:
-            </label>
-            <input
-              type="text"
-              value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/lactate-webhook?sessionId=${sessionId}`}
-              readOnly
-              className="w-full p-2 border border-zinc-300 dark:border-zinc-600 rounded-md bg-zinc-50 dark:bg-zinc-800 text-sm"
-            />
-          </div>
-          
-          <div className="flex items-end gap-2">
-            <button
-              onClick={startReceiving}
-              disabled={isReceivingData}
-              className="button-press px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-md"
-            >
-              {isReceivingData ? 'Empfängt...' : 'Start Empfang'}
-            </button>
-            <button
-              onClick={stopReceiving}
-              disabled={!isReceivingData}
-              className="button-press px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white rounded-md"
-            >
-              Stop
-            </button>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex gap-2">
             <button
               onClick={simulateData}
               disabled={isReceivingData}
@@ -750,17 +752,9 @@ const LactatePerformanceCurve = () => {
                 🗑️ Simulation Löschen
               </button>
             )}
-            <button
-              onClick={clearData}
-              className="button-press px-4 py-2 bg-zinc-600 hover:bg-zinc-700 text-white rounded-md"
-            >
-              🗑️ Alle Daten Löschen
-            </button>
           </div>
-        </div>
-        
-        <div className="flex flex-wrap items-center gap-4 text-sm text-zinc-600 dark:text-zinc-400">
-          <div>
+          
+          <div className="text-sm text-zinc-600 dark:text-zinc-400">
             {isSimulating ? (
               <span className="text-orange-600 dark:text-orange-400">
                 🎭 Simulierte Datenpunkte: <span className="font-semibold">{webhookData.length}</span>
@@ -768,16 +762,10 @@ const LactatePerformanceCurve = () => {
               </span>
             ) : (
               <span>
-                📊 Empfangene Datenpunkte: <span className="font-semibold">{webhookData.length}</span>
+                📊 Datenpunkte: <span className="font-semibold">{webhookData.length}</span>
               </span>
             )}
           </div>
-          {isReceivingData && (
-            <div className="flex items-center gap-1">
-              <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              <span className="text-green-600 dark:text-green-400">Live empfangen</span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -799,47 +787,33 @@ const LactatePerformanceCurve = () => {
       {/* Session Management */}
       {availableSessions.length > 0 && (
         <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
-            Verfügbare Sessions {selectedCustomer ? `für ${selectedCustomer.name}` : '(Alle Kunden)'}
-          </h3>
-          <div className="space-y-2">
-            {availableSessions.map((session) => (
-              <div
-                key={session.id}
-                className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                  sessionId === session.id
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                    : 'border-zinc-300 dark:border-zinc-600 hover:border-zinc-400'
-                }`}
-                onClick={() => switchToSession(session.id)}
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <div className="font-medium text-sm">
-                      {session.id.startsWith('auto_') ? '🤖 Automatische Session' : '👤 Manuelle Session'}
-                    </div>
-                    <div className="text-xs text-zinc-500">
-                      Session ID: {session.id}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-semibold">
-                      {session.pointCount} Datenpunkte
-                    </div>
-                    <div className="text-xs text-zinc-500">
-                      {new Date(session.lastUpdated).toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              📋 Session {selectedCustomer ? `(${selectedCustomer.name})` : '(Alle Kunden)'}:
+            </label>
+            <select
+              value={sessionId || ''}
+              onChange={(e) => switchToSession(e.target.value)}
+              title="Session auswählen"
+              className="flex-1 min-w-[300px] px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">-- Session auswählen --</option>
+              {availableSessions.map((session, index) => (
+                <option key={session.id} value={session.id}>
+                  {session.id.startsWith('auto_') ? '🤖 Automatisch' : '👤 Manuell'} | {session.pointCount} Punkte | {new Date(session.lastUpdated).toLocaleString()}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={fetchAvailableSessions}
+              className="px-3 py-2 text-sm bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-md"
+            >
+              🔄 Aktualisieren
+            </button>
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">
+              {availableSessions.length} Session{availableSessions.length !== 1 ? 's' : ''} verfügbar
+            </span>
           </div>
-          <button
-            onClick={fetchAvailableSessions}
-            className="mt-3 px-3 py-1 text-sm bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-md"
-          >
-            🔄 Sessions aktualisieren
-          </button>
         </div>
       )}
 
@@ -878,7 +852,11 @@ const LactatePerformanceCurve = () => {
       {webhookData.length > 0 && (
         <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
           <ReactEcharts
+            key={`chart-${chartKey}`}
             option={getLactateChartOption()}
+            opts={{ renderer: 'canvas' }}
+            notMerge={true}
+            lazyUpdate={false}
             style={{ height: '500px', width: '100%' }}
             theme="light"
           />
