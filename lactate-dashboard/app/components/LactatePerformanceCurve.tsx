@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import ReactEcharts from 'echarts-for-react'
 import { lactateDataService } from '@/lib/lactateDataService'
 import { useCustomer } from '@/lib/CustomerContext'
@@ -32,6 +32,14 @@ interface ThresholdData {
   }
 }
 
+// Zone boundaries type for custom adjustments
+interface ZoneBoundaries {
+  z1End: number   // End of Z1 / Start of Z2
+  z2End: number   // End of Z2 / Start of Z3 (LT1)
+  z3End: number   // End of Z3 / Start of Z4 (LT2)
+  z4End: number   // End of Z4 / Start of Z5
+}
+
 type OverlayType = 'dmax' | 'lt2ians' | 'mader' | 'stegmann' | 'fes' | 'coggan' | 'seiler' | 'inscyd'
 
 const LactatePerformanceCurve = () => {
@@ -46,6 +54,16 @@ const LactatePerformanceCurve = () => {
   const [thresholds, setThresholds] = useState<ThresholdData | null>(null)
   const [activeOverlay, setActiveOverlay] = useState<OverlayType | null>('dmax')
   const [chartKey, setChartKey] = useState(0)
+  
+  // Custom zone boundaries (user-adjustable)
+  const [customZoneBoundaries, setCustomZoneBoundaries] = useState<ZoneBoundaries | null>(null)
+  const [hasZoneChanges, setHasZoneChanges] = useState(false)
+  const [isSavingZones, setIsSavingZones] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragBoundary, setDragBoundary] = useState<string | null>(null)
+  const [hoverBoundary, setHoverBoundary] = useState<string | null>(null)
+  const chartRef = useRef<any>(null)
+  const chartContainerRef = useRef<HTMLDivElement>(null)
 
   // Threshold calculation methods
   const thresholdMethods: Record<OverlayType, { name: string; color: string; description: string; calculate: (data: LactateWebhookData[]) => ThresholdData | null }> = {
@@ -301,6 +319,30 @@ const LactatePerformanceCurve = () => {
     return thresholdMethods[activeOverlay].calculate(webhookData)
   }, [webhookData, activeOverlay, thresholds])
 
+  // Calculate default zone boundaries based on thresholds
+  const getDefaultZoneBoundaries = useCallback((): ZoneBoundaries | null => {
+    const displayThresholds = getActiveThresholds()
+    if (!displayThresholds || webhookData.length === 0) return null
+    
+    const sortedData = [...webhookData].sort((a, b) => a.power - b.power)
+    const minPower = Math.min(...sortedData.map(d => d.power))
+    const maxPower = Math.max(...sortedData.map(d => d.power))
+    const powerRange = maxPower - minPower
+    const extendedMaxPower = maxPower + powerRange * 0.1
+    
+    const lt1Power = displayThresholds.lt1.power
+    const lt2Power = displayThresholds.lt2.power
+    const rawVt1Power = lt1Power * 0.85
+    const rawVt2Power = lt2Power * 1.05
+    
+    const z1End = Math.max(minPower + 30, Math.min(rawVt1Power, lt1Power - 20))
+    const z2End = Math.max(z1End + 20, lt1Power)
+    const z3End = Math.max(z2End + 20, lt2Power)
+    const z4End = Math.max(z3End + 20, rawVt2Power)
+    
+    return { z1End, z2End, z3End, z4End }
+  }, [webhookData, getActiveThresholds])
+
   // Define 5 seamless training zones based on lactate thresholds
   const getFiveTrainingZones = useCallback(() => {
     const displayThresholds = getActiveThresholds()
@@ -312,35 +354,24 @@ const LactatePerformanceCurve = () => {
     const powerRange = maxPower - minPower
     const extendedMaxPower = maxPower + powerRange * 0.1
     
-    // Calculate zone boundaries based on thresholds
-    const lt1Power = displayThresholds.lt1.power
-    const lt2Power = displayThresholds.lt2.power
+    // Use custom boundaries if available, otherwise calculate defaults
+    let z1End: number, z2End: number, z3End: number, z4End: number
     
-    // Zone boundaries:
-    // Z1: First data point to some point before LT1
-    // Z2: End of Z1 to LT1  
-    // Z3: LT1 to LT2
-    // Z4: LT2 to end of Z4
-    // Z5: End of Z4 to max
-    
-    // Calculate raw boundaries
-    const rawVt1Power = lt1Power * 0.85
-    const rawVt2Power = lt2Power * 1.05
-    
-    // Ensure all zones have proper boundaries
-    // Z1 starts at first data point, ends before LT1
-    // Key: ensure each zone has at least some width
+    if (customZoneBoundaries) {
+      z1End = customZoneBoundaries.z1End
+      z2End = customZoneBoundaries.z2End
+      z3End = customZoneBoundaries.z3End
+      z4End = customZoneBoundaries.z4End
+    } else {
+      const defaults = getDefaultZoneBoundaries()
+      if (!defaults) return []
+      z1End = defaults.z1End
+      z2End = defaults.z2End
+      z3End = defaults.z3End
+      z4End = defaults.z4End
+    }
     
     const z1Start = minPower
-    // Z1 ends at 85% of LT1 OR minPower + 30W (whichever is larger, ensuring Z1 has width)
-    const z1End = Math.max(minPower + 30, Math.min(rawVt1Power, lt1Power - 20))
-    // Z2 ends at LT1
-    const z2End = Math.max(z1End + 20, lt1Power)
-    // Z3 ends at LT2
-    const z3End = Math.max(z2End + 20, lt2Power)
-    // Z4 ends at 105% of LT2
-    const z4End = Math.max(z3End + 20, rawVt2Power)
-    // Z5 ends at extended max
     const z5End = Math.max(z4End + 20, extendedMaxPower)
     
     // Build zone boundaries
@@ -348,7 +379,7 @@ const LactatePerformanceCurve = () => {
     
     // Debug log
     console.log('Zone calculation:', {
-      minPower, lt1Power, lt2Power, rawVt1Power,
+      customZoneBoundaries: !!customZoneBoundaries,
       z1: `${Math.round(z1Start)}-${Math.round(z1End)}`,
       z2: `${Math.round(z1End)}-${Math.round(z2End)}`,
       z3: `${Math.round(z2End)}-${Math.round(z3End)}`,
@@ -411,9 +442,6 @@ const LactatePerformanceCurve = () => {
 
     // Debug: Log seamless zone boundaries
     console.log('Seamless Zone Boundaries:', {
-      lt1Power: Math.round(lt1Power),
-      lt2Power: Math.round(lt2Power),
-      rawVt1Power: Math.round(rawVt1Power),
       boundaries: zoneBoundaries.map(b => Math.round(b)),
       zones: zones.map(z => ({
         id: z.id,
@@ -424,13 +452,232 @@ const LactatePerformanceCurve = () => {
     })
 
     return zones
-  }, [webhookData, activeOverlay, getActiveThresholds])
+  }, [webhookData, activeOverlay, getActiveThresholds, customZoneBoundaries, getDefaultZoneBoundaries])
+
+  // Handle zone boundary change from slider
+  const handleZoneBoundaryChange = (boundaryKey: keyof ZoneBoundaries, newValue: number) => {
+    const currentBoundaries = customZoneBoundaries || getDefaultZoneBoundaries()
+    if (!currentBoundaries) return
+    
+    // Ensure boundaries stay in order
+    let newBoundaries = { ...currentBoundaries, [boundaryKey]: newValue }
+    
+    // Validate and adjust to maintain order
+    const sortedData = [...webhookData].sort((a, b) => a.power - b.power)
+    const minPower = Math.min(...sortedData.map(d => d.power))
+    const maxPower = Math.max(...sortedData.map(d => d.power))
+    
+    // Ensure z1End > minPower + 10
+    newBoundaries.z1End = Math.max(minPower + 10, newBoundaries.z1End)
+    // Ensure z2End > z1End + 10
+    newBoundaries.z2End = Math.max(newBoundaries.z1End + 10, newBoundaries.z2End)
+    // Ensure z3End > z2End + 10
+    newBoundaries.z3End = Math.max(newBoundaries.z2End + 10, newBoundaries.z3End)
+    // Ensure z4End > z3End + 10 and < maxPower
+    newBoundaries.z4End = Math.max(newBoundaries.z3End + 10, Math.min(maxPower, newBoundaries.z4End))
+    
+    setCustomZoneBoundaries(newBoundaries)
+    setHasZoneChanges(true)
+    // Don't increment chartKey during drag - let the chart update naturally
+  }
+
+  // Reset to default boundaries
+  const resetZoneBoundaries = () => {
+    setCustomZoneBoundaries(null)
+    setHasZoneChanges(false)
+    setChartKey(prev => prev + 1)  // Force re-render on reset
+  }
+
+  // Save zone boundaries to database
+  const saveZoneBoundaries = async () => {
+    if (!customZoneBoundaries || !selectedCustomer || !sessionId) {
+      alert('Bitte wählen Sie einen Kunden und eine Session aus.')
+      return
+    }
+    
+    setIsSavingZones(true)
+    try {
+      const response = await fetch('/api/training-zones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: selectedCustomer.customer_id,
+          sessionId: sessionId,
+          method: activeOverlay,
+          boundaries: customZoneBoundaries,
+          zones: getFiveTrainingZones().map(z => ({
+            zoneId: z.id,
+            name: z.name,
+            powerStart: z.range[0],
+            powerEnd: z.range[1]
+          }))
+        })
+      })
+      
+      if (response.ok) {
+        setHasZoneChanges(false)
+        alert('Zonen erfolgreich gespeichert!')
+      } else {
+        const error = await response.json()
+        alert(`Fehler beim Speichern: ${error.message || 'Unbekannter Fehler'}`)
+      }
+    } catch (error) {
+      console.error('Error saving zones:', error)
+      alert('Fehler beim Speichern der Zonen')
+    } finally {
+      setIsSavingZones(false)
+    }
+  }
 
   // Handle overlay selection
   const handleOverlaySelect = (method: OverlayType) => {
     setActiveOverlay(activeOverlay === method ? null : method)
+    setCustomZoneBoundaries(null) // Reset custom boundaries when changing method
+    setHasZoneChanges(false)
     setChartKey(prev => prev + 1) // Force chart re-render
   }
+
+  // Convert pixel position to power value
+  const pixelToPower = useCallback((clientX: number): number | null => {
+    const chart = chartRef.current?.getEchartsInstance()
+    if (!chart || !chartContainerRef.current) return null
+    
+    try {
+      const chartDom = chart.getDom()
+      const chartRect = chartDom.getBoundingClientRect()
+      
+      // Convert client coordinates to chart-local coordinates
+      const localX = clientX - chartRect.left
+      
+      // Use ECharts convertFromPixel to get the data value
+      // This properly handles the grid margins and axis scaling
+      const dataPoint = chart.convertFromPixel({ seriesIndex: 0 }, [localX, 0])
+      
+      if (dataPoint && typeof dataPoint[0] === 'number') {
+        console.log(`🔄 pixelToPower: clientX=${Math.round(clientX)}, localX=${Math.round(localX)}, power=${Math.round(dataPoint[0])}`)
+        return dataPoint[0]
+      }
+      return null
+    } catch (e) {
+      console.error('pixelToPower error:', e)
+      return null
+    }
+  }, [])
+
+  // Find which boundary is near the mouse position - returns the CLOSEST boundary
+  const findNearBoundary = useCallback((power: number): string | null => {
+    const zones = getFiveTrainingZones()
+    if (zones.length < 5) return null
+    
+    // Zone boundaries from the zones array
+    // zones[0].range = [z1Start, z1End] - so zones[0].range[1] = z1End = Z1|Z2 boundary
+    // zones[1].range = [z1End, z2End] - so zones[1].range[1] = z2End = Z2|Z3 boundary
+    // etc.
+    const z1End = zones[0].range[1]
+    const z2End = zones[1].range[1]
+    const z3End = zones[2].range[1]
+    const z4End = zones[3].range[1]
+    
+    const boundaries: { key: string; value: number; label: string }[] = [
+      { key: 'z1End', value: z1End, label: 'Z1|Z2' },
+      { key: 'z2End', value: z2End, label: 'Z2|Z3' },
+      { key: 'z3End', value: z3End, label: 'Z3|Z4' },
+      { key: 'z4End', value: z4End, label: 'Z4|Z5' }
+    ]
+    
+    // Debug: log all boundary positions
+    console.log('📍 Boundary positions:', {
+      'Z1|Z2 (z1End)': Math.round(z1End),
+      'Z2|Z3 (z2End)': Math.round(z2End),
+      'Z3|Z4 (z3End)': Math.round(z3End),
+      'Z4|Z5 (z4End)': Math.round(z4End),
+      mousePower: Math.round(power)
+    })
+    
+    const threshold = 15 // Watt tolerance for detection
+    
+    // Find the closest boundary within threshold
+    let closestBoundary: string | null = null
+    let closestDistance = Infinity
+    let closestLabel = ''
+    
+    for (const boundary of boundaries) {
+      const distance = Math.abs(power - boundary.value)
+      console.log(`  → ${boundary.label}: distance = ${Math.round(distance)}W (boundary at ${Math.round(boundary.value)}W)`)
+      if (distance < threshold && distance < closestDistance) {
+        closestDistance = distance
+        closestBoundary = boundary.key
+        closestLabel = boundary.label
+      }
+    }
+    
+    if (closestBoundary) {
+      console.log(`✅ SELECTED: ${closestLabel} (${closestBoundary})`)
+    }
+    
+    return closestBoundary
+  }, [getFiveTrainingZones])
+
+  // Native mouse event handlers for smooth dragging
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    const power = pixelToPower(e.clientX)
+    if (power === null) return
+    
+    if (isDragging && dragBoundary) {
+      // Smoothly update boundary while dragging
+      handleZoneBoundaryChange(dragBoundary, Math.round(power))
+    } else {
+      // Update hover state
+      const boundary = findNearBoundary(power)
+      setHoverBoundary(boundary)
+    }
+  }, [isDragging, dragBoundary, pixelToPower, findNearBoundary, handleZoneBoundaryChange])
+
+  const handleMouseDown = useCallback((e: MouseEvent) => {
+    // Left click only (button 0)
+    if (e.button !== 0) return
+    
+    const power = pixelToPower(e.clientX)
+    if (power === null) return
+    
+    const boundary = findNearBoundary(power)
+    if (boundary) {
+      console.log(`🖱️ CLICK: Starting drag of ${boundary} at ${Math.round(power)}W`)
+      e.preventDefault()
+      e.stopPropagation()
+      setIsDragging(true)
+      setDragBoundary(boundary)
+    }
+  }, [pixelToPower, findNearBoundary])
+
+  const handleMouseUp = useCallback(() => {
+    if (isDragging) {
+      setIsDragging(false)
+      setDragBoundary(null)
+    }
+  }, [isDragging])
+
+  // Attach native event listeners to chart container
+  useEffect(() => {
+    const container = chartContainerRef.current
+    if (!container) return
+    
+    container.addEventListener('mousemove', handleMouseMove)
+    container.addEventListener('mousedown', handleMouseDown)
+    container.addEventListener('mouseup', handleMouseUp)
+    container.addEventListener('mouseleave', handleMouseUp)
+    
+    // Also listen on window for mouseup to handle drag outside container
+    window.addEventListener('mouseup', handleMouseUp)
+    
+    return () => {
+      container.removeEventListener('mousemove', handleMouseMove)
+      container.removeEventListener('mousedown', handleMouseDown)
+      container.removeEventListener('mouseup', handleMouseUp)
+      container.removeEventListener('mouseleave', handleMouseUp)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [handleMouseMove, handleMouseDown, handleMouseUp])
 
   // Auto-calculate thresholds when data changes
   useEffect(() => {
@@ -462,9 +709,9 @@ const LactatePerformanceCurve = () => {
 
     const trainingZones = getFiveTrainingZones()
     
-    // Calculate x-axis min: 50W before Z1 (which starts at first data point)
+    // Calculate x-axis min: 15W before Z1 (which starts at first data point)
     const minDataPower = Math.min(...powers)
-    const xAxisMin = Math.max(0, minDataPower - 50)  // 50W before Z1/first data
+    const xAxisMin = Math.max(0, minDataPower - 15)  // 15W before Z1/first data
 
     // Debug logging - check this in browser console when switching methods
     console.log('🔄 Chart Update:', {
@@ -477,6 +724,7 @@ const LactatePerformanceCurve = () => {
     })
 
     return {
+      animation: false,  // Disable animation for smoother zone dragging
       title: {
         text: `5-Zonen Laktat-Leistungskurve${activeOverlay ? ` (${methodName})` : ''}${isSimulating ? ' 🎭 SIMULATION' : ''}`,
         textStyle: {
@@ -599,6 +847,48 @@ const LactatePerformanceCurve = () => {
           },
           z: -10
         })),
+        // Draggable Zone Boundary Lines
+        {
+          name: 'Zonengrenzen',
+          type: 'line',
+          data: [],
+          markLine: {
+            silent: true,  // Don't trigger chart events, we handle them ourselves
+            animation: false,  // No animation for smoother updates
+            symbol: ['none', 'none'],
+            lineStyle: {
+              color: '#1e40af',
+              width: 4,
+              type: 'solid'
+            },
+            label: {
+              show: true,
+              position: 'end',
+              formatter: (params: any) => {
+                const boundaryNames: Record<number, string> = {
+                  0: 'Z1|Z2',
+                  1: 'Z2|Z3',
+                  2: 'Z3|Z4',
+                  3: 'Z4|Z5'
+                }
+                return boundaryNames[params.dataIndex] || ''
+              },
+              fontSize: 10,
+              fontWeight: 'bold',
+              backgroundColor: '#1e40af',
+              color: '#fff',
+              padding: [2, 4],
+              borderRadius: 2
+            },
+            data: [
+              { xAxis: trainingZones[0]?.range[1], name: 'z1End' },
+              { xAxis: trainingZones[1]?.range[1], name: 'z2End' },
+              { xAxis: trainingZones[2]?.range[1], name: 'z3End' },
+              { xAxis: trainingZones[3]?.range[1], name: 'z4End' }
+            ].filter(d => d.xAxis !== undefined)
+          },
+          z: 20
+        },
         {
           name: 'Laktat',
           type: 'line',
@@ -664,6 +954,38 @@ const LactatePerformanceCurve = () => {
     }
   }
 
+  // Load saved zones from database for a session
+  const loadSavedZones = async (customerId: string, sessionIdToLoad: string) => {
+    try {
+      const response = await fetch(`/api/training-zones?customerId=${customerId}&sessionId=${sessionIdToLoad}`)
+      if (response.ok) {
+        const savedZones = await response.json()
+        if (savedZones && savedZones.zone_boundaries) {
+          // Parse the saved zone boundaries
+          const zoneData = typeof savedZones.zone_boundaries === 'string' 
+            ? JSON.parse(savedZones.zone_boundaries) 
+            : savedZones.zone_boundaries
+          
+          if (zoneData.boundaries) {
+            console.log('📂 Loaded saved zones for session:', sessionIdToLoad, zoneData.boundaries)
+            setCustomZoneBoundaries(zoneData.boundaries)
+            setHasZoneChanges(false)
+            
+            // Restore the saved method if available
+            if (savedZones.method && savedZones.method !== 'custom') {
+              setActiveOverlay(savedZones.method as OverlayType)
+            }
+            return true
+          }
+        }
+      }
+      return false
+    } catch (error) {
+      console.error('Failed to load saved zones:', error)
+      return false
+    }
+  }
+
   // Switch to a different session
   const switchToSession = async (newSessionId: string) => {
     try {
@@ -673,6 +995,16 @@ const LactatePerformanceCurve = () => {
         setSessionId(newSessionId)
         setWebhookData(result.data || [])
         setThresholds(null) // Reset thresholds for new session
+        
+        // Reset zone boundaries - will be recalculated or loaded from DB
+        setCustomZoneBoundaries(null)
+        setHasZoneChanges(false)
+        setChartKey(prev => prev + 1) // Force chart refresh
+        
+        // Try to load saved zones for this session
+        if (selectedCustomer) {
+          await loadSavedZones(selectedCustomer.customer_id, newSessionId)
+        }
       }
     } catch (error) {
       console.error('Failed to switch session:', error)
@@ -709,7 +1041,17 @@ const LactatePerformanceCurve = () => {
   // Refetch sessions when selected customer changes
   useEffect(() => {
     fetchAvailableSessions()
+    // Reset zones when customer changes
+    setCustomZoneBoundaries(null)
+    setHasZoneChanges(false)
   }, [selectedCustomer])
+
+  // Load saved zones when session and customer are available
+  useEffect(() => {
+    if (selectedCustomer && sessionId && webhookData.length > 0) {
+      loadSavedZones(selectedCustomer.customer_id, sessionId)
+    }
+  }, [selectedCustomer, sessionId, webhookData.length])
 
   const simulateData = () => {
     lactateDataService.simulateData()
@@ -850,18 +1192,141 @@ const LactatePerformanceCurve = () => {
 
       {/* Chart */}
       {webhookData.length > 0 && (
-        <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
+        <div 
+          ref={chartContainerRef}
+          className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6"
+          style={{ cursor: hoverBoundary ? 'ew-resize' : 'default' }}
+        >
+          <div className="mb-2 text-sm text-zinc-500 dark:text-zinc-400 flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs">
+              💡 Klicken + Ziehen auf den blauen Linien verschiebt die Zonengrenzen
+            </span>
+            {hoverBoundary && !isDragging && (
+              <span className="text-blue-600 dark:text-blue-400 font-medium text-xs">
+                ← {hoverBoundary === 'z1End' ? 'Z1|Z2' : hoverBoundary === 'z2End' ? 'Z2|Z3' : hoverBoundary === 'z3End' ? 'Z3|Z4' : 'Z4|Z5'} Grenze verschieben
+              </span>
+            )}
+            {isDragging && dragBoundary && (
+              <span className="text-green-600 dark:text-green-400 font-bold text-xs">
+                ✓ {dragBoundary === 'z1End' ? 'Z1|Z2' : dragBoundary === 'z2End' ? 'Z2|Z3' : dragBoundary === 'z3End' ? 'Z3|Z4' : 'Z4|Z5'} wird verschoben
+              </span>
+            )}
+          </div>
           <ReactEcharts
             key={`chart-${chartKey}`}
+            ref={chartRef}
             option={getLactateChartOption()}
             opts={{ renderer: 'canvas' }}
             notMerge={true}
             lazyUpdate={false}
-            style={{ height: '500px', width: '100%' }}
+            style={{ 
+              height: '500px', 
+              width: '100%'
+            }}
             theme="light"
           />
         </div>
       )}
+
+      {/* Zone Boundary Status */}
+      {webhookData.length > 0 && (() => {
+        const zones = getFiveTrainingZones()
+        const defaults = getDefaultZoneBoundaries()
+        const current = customZoneBoundaries || defaults
+        if (!current || zones.length === 0) return null
+        
+        const sortedData = [...webhookData].sort((a, b) => a.power - b.power)
+        const minPower = Math.min(...sortedData.map(d => d.power))
+        const maxPower = Math.max(...sortedData.map(d => d.power))
+        
+        return (
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                🎯 Trainingszonen Übersicht
+              </h3>
+              <div className="flex gap-2">
+                {hasZoneChanges && (
+                  <>
+                    <button
+                      onClick={resetZoneBoundaries}
+                      className="px-3 py-1.5 text-sm bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-md transition-colors"
+                    >
+                      ↩️ Zurücksetzen
+                    </button>
+                    <button
+                      onClick={saveZoneBoundaries}
+                      disabled={isSavingZones || !selectedCustomer}
+                      className="px-4 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-md transition-colors flex items-center gap-2"
+                    >
+                      {isSavingZones ? (
+                        <>⏳ Speichern...</>
+                      ) : (
+                        <>💾 Zonen speichern</>
+                      )}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+            
+            {hasZoneChanges && !selectedCustomer && (
+              <div className="mb-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 rounded-md text-sm text-yellow-800 dark:text-yellow-200">
+                ⚠️ Bitte wählen Sie einen Kunden aus, um die Zonen zu speichern.
+              </div>
+            )}
+            
+            {/* Visual zone bar */}
+            <div className="mb-4">
+              <div className="flex h-12 rounded-lg overflow-hidden border-2 border-zinc-300 dark:border-zinc-600 shadow-inner">
+                {zones.map((zone, index) => {
+                  const totalRange = maxPower - minPower + 50
+                  const zoneWidth = ((zone.range[1] - zone.range[0]) / totalRange) * 100
+                  return (
+                    <div
+                      key={zone.id}
+                      className="flex flex-col items-center justify-center text-xs font-bold text-zinc-800 transition-all duration-200 border-r-2 border-white/50 last:border-r-0"
+                      style={{ 
+                        width: `${zoneWidth}%`, 
+                        backgroundColor: zone.color,
+                        minWidth: '50px'
+                      }}
+                    >
+                      <span className="text-sm">Z{zone.id}</span>
+                      <span className="text-[10px] opacity-75">{Math.round(zone.range[0])}-{Math.round(zone.range[1])}W</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            
+            {/* Zone boundary details in a grid */}
+            <div className="grid grid-cols-4 gap-3">
+              <div className="text-center p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="text-xs text-blue-600 dark:text-blue-400 font-medium">Z1 | Z2</div>
+                <div className="text-lg font-bold text-blue-800 dark:text-blue-200">{Math.round(current.z1End)} W</div>
+              </div>
+              <div className="text-center p-2 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-200 dark:border-green-800">
+                <div className="text-xs text-green-600 dark:text-green-400 font-medium">Z2 | Z3 (LT1)</div>
+                <div className="text-lg font-bold text-green-800 dark:text-green-200">{Math.round(current.z2End)} W</div>
+              </div>
+              <div className="text-center p-2 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                <div className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">Z3 | Z4 (LT2)</div>
+                <div className="text-lg font-bold text-yellow-800 dark:text-yellow-200">{Math.round(current.z3End)} W</div>
+              </div>
+              <div className="text-center p-2 bg-orange-50 dark:bg-orange-900/30 rounded-lg border border-orange-200 dark:border-orange-800">
+                <div className="text-xs text-orange-600 dark:text-orange-400 font-medium">Z4 | Z5</div>
+                <div className="text-lg font-bold text-orange-800 dark:text-orange-200">{Math.round(current.z4End)} W</div>
+              </div>
+            </div>
+            
+            <div className="mt-4 flex justify-between text-xs text-zinc-500">
+              <span>{Math.round(minPower)} W</span>
+              <span>{Math.round(maxPower)} W</span>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 5-Zone Training Legend */}
       {webhookData.length > 0 && (() => {
