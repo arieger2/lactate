@@ -1,9 +1,11 @@
 // PostgreSQL Database Configuration
 const dbConfig = {
-  host: '192.168.5.220',
+  //host: '192.168.5.220',
+  host: 'localhost',
   port: 5432,
   database: 'laktat',
-  user: 'arieger',
+  //user: 'arieger',
+  user: 'postgres',
   password: 'LisgumuM20251!',
   
   // Connection pool settings
