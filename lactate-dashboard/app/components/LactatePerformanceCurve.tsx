@@ -60,7 +60,7 @@ const LactatePerformanceCurve = () => {
   const [customZoneBoundaries, setCustomZoneBoundaries] = useState<ZoneBoundaries | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const [dragBoundary, setDragBoundary] = useState<string | null>(null)
+  const [dragBoundary, setDragBoundary] = useState<keyof ZoneBoundaries | null>(null)
   const [hoverBoundary, setHoverBoundary] = useState<string | null>(null)
   const [hasSavedAdjustedZones, setHasSavedAdjustedZones] = useState(false)
   const [savedAdjustedBoundaries, setSavedAdjustedBoundaries] = useState<ZoneBoundaries | null>(null)
