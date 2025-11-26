@@ -40,6 +40,7 @@ export default function LactateInput() {
   
   // New Customer Form States
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
+  const [newCustomerError, setNewCustomerError] = useState<string | null>(null)
   const [newCustomer, setNewCustomer] = useState({
     name: '',
     customerId: '',
@@ -232,8 +233,10 @@ export default function LactateInput() {
 
   // Create new customer
   const createCustomer = async () => {
+    setNewCustomerError(null)
+    
     if (!newCustomer.name || !newCustomer.customerId) {
-      alert('Name and Customer ID are required')
+      setNewCustomerError('Name and Customer ID are required')
       return
     }
 
@@ -245,17 +248,17 @@ export default function LactateInput() {
       })
       
       const data = await response.json()
-      if (data.success) {
+      if (response.ok && data.success) {
         setSelectedCustomer(data.customer)
         setShowNewCustomerForm(false)
         setNewCustomer({ name: '', customerId: '', email: '', phone: '', dateOfBirth: '', notes: '' })
-        alert('✅ Customer created successfully!')
+        setNewCustomerError(null)
       } else {
-        alert(`❌ Error: ${data.error}`)
+        setNewCustomerError(data.error || `Failed to create customer (HTTP ${response.status})`)
       }
     } catch (error) {
       console.error('Error creating customer:', error)
-      alert('❌ Error creating customer')
+      setNewCustomerError(error instanceof Error ? error.message : 'Failed to create customer')
     }
   }
 
@@ -473,7 +476,7 @@ export default function LactateInput() {
                     />
                   </div>
                 </div>
-                <div className="flex gap-2 mt-4">
+                <div className="flex gap-2 mt-4 items-center">
                   <button
                     onClick={createCustomer}
                     className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-md font-medium"
@@ -481,11 +484,19 @@ export default function LactateInput() {
                     Create Customer
                   </button>
                   <button
-                    onClick={() => setShowNewCustomerForm(false)}
+                    onClick={() => {
+                      setShowNewCustomerForm(false)
+                      setNewCustomerError(null)
+                    }}
                     className="px-4 py-2 bg-zinc-500 hover:bg-zinc-600 text-white rounded-md font-medium"
                   >
                     Cancel
                   </button>
+                  {newCustomerError && (
+                    <span className="text-red-600 dark:text-red-400 text-sm font-medium ml-2 flex items-center gap-1">
+                      ⚠️ {newCustomerError}
+                    </span>
+                  )}
                 </div>
               </div>
             )}

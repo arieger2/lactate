@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import ReactDOM from 'react-dom'
 import { lactateDataService } from '@/lib/lactateDataService'
 
 interface Customer {
@@ -146,17 +145,18 @@ export default function LactateInput() {
       })
       
       const data = await response.json()
-      console.log('Customer creation response:', { success: data.success, error: data.error, status: response.status })
+      console.log('🔍 RESPONSE:', response.status, data)
       
-      if (data.success) {
+      if (response.ok && data.success) {
         setSelectedCustomer(data.customer)
         setShowNewCustomerForm(false)
         setNewCustomer({ name: '', customerId: '', email: '', phone: '', dateOfBirth: '', notes: '' })
         setNewCustomerError(null)
       } else {
         const errorMsg = data.error || `Failed to create customer (HTTP ${response.status})`
-        console.error('Customer creation error:', errorMsg)
+        console.log('🚨 SETTING ERROR:', errorMsg)
         setNewCustomerError(errorMsg)
+        alert('ERROR SET: ' + errorMsg) // Temporary to verify
       }
     } catch (error) {
       console.error('Error creating customer:', error)
@@ -430,56 +430,11 @@ export default function LactateInput() {
     setStructuredTests(prev => prev.filter(test => test.id !== id))
   }
 
-  // Error Modal Component with Portal
-  const ErrorModal = ({ error, onClose }: { error: string | null; onClose: () => void }) => {
-    const [mounted, setMounted] = useState(false)
 
-    useEffect(() => {
-      setMounted(true)
-    }, [])
-
-    if (!error || !mounted) return null
-    
-    const modalContent = (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
-        <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-2xl max-w-md w-full border border-red-200 dark:border-red-800 animate-in fade-in scale-95">
-          <div className="p-6">
-            <div className="flex items-start gap-4">
-              <span className="text-3xl flex-shrink-0">⚠️</span>
-              <div className="flex-1">
-                <h3 className="font-bold text-lg text-red-700 dark:text-red-400 mb-2">
-                  Error Creating Customer
-                </h3>
-                <p className="text-zinc-700 dark:text-zinc-300 mb-4 text-sm">
-                  {error}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-red-50 dark:bg-red-900/20 px-6 py-3 rounded-b-lg flex justify-end gap-2 border-t border-red-200 dark:border-red-800">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white rounded-md font-medium transition-colors"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-
-    // Try to use createPortal, fall back to rendering inline
-    try {
-      return ReactDOM.createPortal(modalContent, document.body)
-    } catch {
-      return modalContent
-    }
-  }
 
   return (
+    <>
     <div className="space-y-8">
-      {/* Error Modal */}
-      <ErrorModal error={newCustomerError} onClose={() => setNewCustomerError(null)} />
 
       {/* Customer Management Section */}
       <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
@@ -607,9 +562,12 @@ export default function LactateInput() {
                     />
                   </div>
                 </div>
-                <div className="flex gap-2 mt-4">
+                <div className="flex gap-2 mt-4 items-center">
                   <button
-                    onClick={createCustomer}
+                    onClick={() => {
+                      alert('Button clicked!')
+                      createCustomer()
+                    }}
                     disabled={isCreatingCustomer}
                     className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-green-400 disabled:cursor-not-allowed text-white rounded-md font-medium flex items-center gap-2"
                   >
@@ -632,6 +590,9 @@ export default function LactateInput() {
                   >
                     Cancel
                   </button>
+                  <span className="text-red-600 dark:text-red-400 text-sm font-medium ml-2 flex items-center gap-1">
+                    ⚠️ ERROR: "{newCustomerError || 'NO ERROR SET'}"
+                  </span>
                 </div>
               </div>
             )}
