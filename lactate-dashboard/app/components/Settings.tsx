@@ -31,11 +31,13 @@ export default function Settings() {
     ssl: false
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true)
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
   const [migrations, setMigrations] = useState<MigrationScript[]>([])
   const [isRunningMigration, setIsRunningMigration] = useState<string | null>(null)
   const [migrationResults, setMigrationResults] = useState<Record<string, { success: boolean; message: string }>>({})
+  const [passwordPlaceholder, setPasswordPlaceholder] = useState('')
 
   // Load current database config
   useEffect(() => {
@@ -44,14 +46,26 @@ export default function Settings() {
   }, [])
 
   const loadDatabaseConfig = async () => {
+    setIsLoadingConfig(true)
     try {
       const response = await fetch('/api/settings/database')
       if (response.ok) {
         const data = await response.json()
-        setDbConfig(data)
+        setDbConfig({
+          host: data.host || '',
+          port: data.port || '5432',
+          database: data.database || '',
+          user: data.user || '',
+          password: '', // Keep empty, user must re-enter to change
+          ssl: data.ssl || false
+        })
+        // Show placeholder if password exists in env
+        setPasswordPlaceholder('••••••••••••')
       }
     } catch (error) {
       console.error('Failed to load database config:', error)
+    } finally {
+      setIsLoadingConfig(false)
     }
   }
 
@@ -217,6 +231,12 @@ export default function Settings() {
                   Database Connection
                 </h3>
                 
+                {isLoadingConfig ? (
+                  <div className="flex items-center justify-center py-8">
+                    <span className="animate-spin text-2xl mr-2">⏳</span>
+                    <span className="text-zinc-600 dark:text-zinc-400">Loading configuration...</span>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
@@ -273,12 +293,15 @@ export default function Settings() {
                   <div>
                     <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
                       Password
+                      {passwordPlaceholder && (
+                        <span className="text-xs text-zinc-500 ml-2">(leave empty to keep current)</span>
+                      )}
                     </label>
                     <input
                       type="password"
                       value={dbConfig.password}
                       onChange={(e) => setDbConfig(prev => ({ ...prev, password: e.target.value }))}
-                      placeholder="••••••••"
+                      placeholder={passwordPlaceholder || "Enter password"}
                       className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
                     />
                   </div>
@@ -297,6 +320,7 @@ export default function Settings() {
                     </label>
                   </div>
                 </div>
+                )}
 
                 {/* Test Result */}
                 {testResult && (

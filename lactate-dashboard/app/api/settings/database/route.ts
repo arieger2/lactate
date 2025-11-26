@@ -28,6 +28,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { host, port, database, user, password, ssl } = body
     
+    // Use provided values or fallback to current env values
+    const finalHost = host || process.env.DB_HOST || 'localhost'
+    const finalPort = port || process.env.DB_PORT || '5432'
+    const finalDatabase = database || process.env.DB_NAME || 'laktat'
+    const finalUser = user || process.env.DB_USER || 'postgres'
+    const finalSsl = ssl !== undefined ? ssl : (process.env.DB_SSL === 'true')
+    
     const envPath = path.join(process.cwd(), '.env.local')
     
     // Read existing .env.local
@@ -49,14 +56,14 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    envContent = updateEnvVar(envContent, 'DB_HOST', host)
-    envContent = updateEnvVar(envContent, 'DB_PORT', port)
-    envContent = updateEnvVar(envContent, 'DB_NAME', database)
-    envContent = updateEnvVar(envContent, 'DB_USER', user)
+    envContent = updateEnvVar(envContent, 'DB_HOST', finalHost)
+    envContent = updateEnvVar(envContent, 'DB_PORT', finalPort)
+    envContent = updateEnvVar(envContent, 'DB_NAME', finalDatabase)
+    envContent = updateEnvVar(envContent, 'DB_USER', finalUser)
     if (password) {
       envContent = updateEnvVar(envContent, 'DB_PASSWORD', password)
     }
-    envContent = updateEnvVar(envContent, 'DB_SSL', ssl ? 'true' : 'false')
+    envContent = updateEnvVar(envContent, 'DB_SSL', finalSsl ? 'true' : 'false')
     
     fs.writeFileSync(envPath, envContent)
     
