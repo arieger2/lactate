@@ -10,48 +10,72 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { host, port, database, user, password, ssl } = body
     
-    const dbPassword = password || process.env.DB_PASSWORD
+    // Use provided values or fallback to env
+    const finalHost = host || process.env.DB_HOST || 'localhost'
+    const finalPort = parseInt(port || process.env.DB_PORT || '5432')
+    const finalUser = user || process.env.DB_USER || 'postgres'
+    const finalPassword = password || process.env.DB_PASSWORD
+    const finalSsl = ssl !== undefined ? ssl : (process.env.DB_SSL === 'true')
+    const dbName = database || process.env.DB_NAME || 'laktat'
+    
+    console.log('🗄️ Create Database Request:', {
+      host: finalHost,
+      port: finalPort,
+      user: finalUser,
+      database: dbName,
+      ssl: finalSsl,
+      hasPassword: !!finalPassword
+    })
     
     // Connect to postgres database first (default db)
     adminPool = new Pool({
-      host: host || 'localhost',
-      port: parseInt(port) || 5432,
+      host: finalHost,
+      port: finalPort,
       database: 'postgres', // Connect to default postgres db
-      user: user || 'postgres',
-      password: dbPassword,
-      ssl: ssl ? { rejectUnauthorized: false } : false,
-      connectionTimeoutMillis: 5000
+      user: finalUser,
+      password: finalPassword,
+      ssl: finalSsl ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 10000
     })
     
+    console.log('📡 Connecting to postgres database...')
     const adminClient = await adminPool.connect()
+    console.log('✅ Connected to postgres database')
     
     // Check if database exists
-    const dbName = database || 'laktat'
     const checkResult = await adminClient.query(
       `SELECT 1 FROM pg_database WHERE datname = $1`,
       [dbName]
     )
     
+    console.log(`🔍 Database "${dbName}" exists:`, checkResult.rows.length > 0)
+    
     if (checkResult.rows.length === 0) {
       // Create database
+      console.log(`📦 Creating database "${dbName}"...`)
       await adminClient.query(`CREATE DATABASE "${dbName}"`)
+      console.log(`✅ Database "${dbName}" created`)
       adminClient.release()
       await adminPool.end()
+      adminPool = null
       
       // Connect to new database to create tables
       dbPool = new Pool({
-        host: host || 'localhost',
-        port: parseInt(port) || 5432,
+        host: finalHost,
+        port: finalPort,
         database: dbName,
-        user: user || 'postgres',
-        password: dbPassword,
-        ssl: ssl ? { rejectUnauthorized: false } : false,
-        connectionTimeoutMillis: 5000
+        user: finalUser,
+        password: finalPassword,
+        ssl: finalSsl ? { rejectUnauthorized: false } : false,
+        connectionTimeoutMillis: 10000
       })
       
+      console.log(`📡 Connecting to new database "${dbName}"...`)
       const dbClient = await dbPool.connect()
+      console.log(`✅ Connected to "${dbName}"`)
       
       // Create base tables
+      console.log('📋 Creating tables...')
       await dbClient.query(`
         -- Customers table
         CREATE TABLE IF NOT EXISTS customers (
@@ -113,6 +137,7 @@ export async function POST(request: NextRequest) {
         CREATE INDEX IF NOT EXISTS idx_training_zones_customer_session ON training_zones(customer_id, session_id);
       `)
       
+      console.log('✅ Tables created successfully')
       dbClient.release()
       
       return NextResponse.json({
@@ -121,13 +146,14 @@ export async function POST(request: NextRequest) {
       })
     } else {
       adminClient.release()
+      console.log(`ℹ️ Database "${dbName}" already exists, skipping creation`)
       return NextResponse.json({
         success: true,
         message: `Database "${dbName}" already exists.`
       })
     }
   } catch (error) {
-    console.error('Failed to create database:', error)
+    console.error('❌ Failed to create database:', error)
     return NextResponse.json({
       success: false,
       message: error instanceof Error ? error.message : 'Failed to create database'

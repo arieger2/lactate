@@ -61,6 +61,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { migration } = body
     
+    console.log('🔄 Running migration:', migration)
+    
     if (!migration || !migrations[migration]) {
       return NextResponse.json({
         success: false,
@@ -68,16 +70,28 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    pool = new Pool({
+    const dbConfig = {
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT || '5432'),
       database: process.env.DB_NAME || 'laktat',
       user: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD,
-      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 10000
+    }
+    
+    console.log('📡 Connecting to database:', {
+      host: dbConfig.host,
+      port: dbConfig.port,
+      database: dbConfig.database,
+      user: dbConfig.user,
+      hasPassword: !!dbConfig.password
     })
     
+    pool = new Pool(dbConfig)
+    
     const client = await pool.connect()
+    console.log('✅ Connected to database')
     
     try {
       // Ensure migrations table exists
@@ -96,6 +110,7 @@ export async function POST(request: NextRequest) {
       )
       
       if (checkResult.rows.length > 0) {
+        console.log(`ℹ️ Migration "${migration}" already executed`)
         return NextResponse.json({
           success: false,
           message: `Migration "${migration}" has already been executed`
@@ -103,13 +118,16 @@ export async function POST(request: NextRequest) {
       }
       
       // Run the migration
+      console.log(`📋 Executing migration SQL...`)
       await client.query(migrations[migration])
+      console.log(`✅ Migration SQL executed`)
       
       // Record the migration
       await client.query(
         'INSERT INTO migrations (name) VALUES ($1)',
         [migration]
       )
+      console.log(`✅ Migration "${migration}" recorded`)
       
       return NextResponse.json({
         success: true,
@@ -119,7 +137,7 @@ export async function POST(request: NextRequest) {
       client.release()
     }
   } catch (error) {
-    console.error('Failed to run migration:', error)
+    console.error('❌ Failed to run migration:', error)
     return NextResponse.json({
       success: false,
       message: error instanceof Error ? error.message : 'Failed to run migration'
