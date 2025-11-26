@@ -135,9 +135,13 @@ export default function Settings() {
         message: result.success ? 'Database created successfully!' : result.message || 'Failed to create database'
       })
       
-      // Reload database list
+      // Reload database list and config
       if (result.success) {
         loadDatabases()
+        // Reload the config to reflect the newly created database in .env.local
+        setTimeout(() => {
+          loadDatabaseConfig()
+        }, 500)
       }
     } catch (error) {
       setTestResult({ success: false, message: 'Failed to create database' })

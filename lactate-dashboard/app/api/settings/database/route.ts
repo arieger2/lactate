@@ -2,16 +2,65 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 
+interface AppConfig {
+  database: {
+    host: string
+    port: number
+    database: string
+    user: string
+    password: string
+    ssl: boolean
+    pool?: {
+      min: number
+      max: number
+      acquire: number
+      idle: number
+    }
+  }
+  application?: Record<string, unknown>
+  features?: Record<string, unknown>
+}
+
+// Helper to read app.config.json
+const readConfigFile = (): AppConfig => {
+  try {
+    const configPath = path.join(process.cwd(), 'config', 'app.config.json')
+    const content = fs.readFileSync(configPath, 'utf-8')
+    return JSON.parse(content)
+  } catch (error) {
+    console.error('Error reading config file:', error)
+    // Return default config
+    return {
+      database: {
+        host: 'localhost',
+        port: 5432,
+        database: 'laktat',
+        user: 'postgres',
+        password: '',
+        ssl: false
+      }
+    }
+  }
+}
+
+// Helper to write app.config.json
+const writeConfigFile = (config: AppConfig): void => {
+  const configPath = path.join(process.cwd(), 'config', 'app.config.json')
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
+}
+
 // GET - Get current database configuration (without exposing password)
 export async function GET() {
   try {
+    const config = readConfigFile()
+    
     return NextResponse.json({
-      host: process.env.DB_HOST || 'localhost',
-      port: process.env.DB_PORT || '5432',
-      database: process.env.DB_NAME || 'laktat',
-      user: process.env.DB_USER || 'postgres',
+      host: config.database.host,
+      port: config.database.port,
+      database: config.database.database,
+      user: config.database.user,
       password: '', // Don't expose password
-      ssl: process.env.DB_SSL === 'true'
+      ssl: config.database.ssl
     })
   } catch (error) {
     console.error('Failed to get database config:', error)
@@ -22,7 +71,7 @@ export async function GET() {
   }
 }
 
-// POST - Save database configuration to .env.local
+// POST - Save database configuration to config/app.config.json
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -30,54 +79,27 @@ export async function POST(request: NextRequest) {
     
     console.log('Received config to save:', { host, port, database, user, ssl })
     
-    // Use provided values or fallback to current env values
-    const finalHost = host || process.env.DB_HOST || 'localhost'
-    const finalPort = port || process.env.DB_PORT || '5432'
-    const finalDatabase = database || process.env.DB_NAME || 'laktat'
-    const finalUser = user || process.env.DB_USER || 'postgres'
-    const finalSsl = ssl !== undefined ? ssl : (process.env.DB_SSL === 'true')
+    // Read existing config
+    const config = readConfigFile()
     
-    console.log('Final values to save:', { finalHost, finalPort, finalDatabase, finalUser, finalSsl })
-    
-    const envPath = path.join(process.cwd(), '.env.local')
-    
-    // Read existing .env.local
-    let envContent = ''
-    try {
-      envContent = fs.readFileSync(envPath, 'utf-8')
-    } catch {
-      // File doesn't exist, create new content
-      envContent = '# Environment Configuration for Lactate Dashboard\n\n'
-    }
-    
-    // Update or add each variable - use global flag to replace all occurrences
-    const updateEnvVar = (content: string, key: string, value: string): string => {
-      const regex = new RegExp(`^${key}=.*$`, 'gm')
-      if (regex.test(content)) {
-        // Reset regex lastIndex after test
-        regex.lastIndex = 0
-        return content.replace(regex, `${key}=${value}`)
-      } else {
-        // Add to end of file
-        return content.trimEnd() + `\n${key}=${value}\n`
-      }
-    }
-    
-    envContent = updateEnvVar(envContent, 'DB_HOST', finalHost)
-    envContent = updateEnvVar(envContent, 'DB_PORT', finalPort)
-    envContent = updateEnvVar(envContent, 'DB_NAME', finalDatabase)
-    envContent = updateEnvVar(envContent, 'DB_USER', finalUser)
+    // Update database config
+    config.database.host = host || config.database.host
+    config.database.port = port || config.database.port
+    config.database.database = database || config.database.database
+    config.database.user = user || config.database.user
     if (password) {
-      envContent = updateEnvVar(envContent, 'DB_PASSWORD', password)
+      config.database.password = password
     }
-    envContent = updateEnvVar(envContent, 'DB_SSL', finalSsl ? 'true' : 'false')
+    config.database.ssl = ssl !== undefined ? ssl : config.database.ssl
     
-    console.log('Saving to:', envPath)
-    fs.writeFileSync(envPath, envContent)
+    console.log('Final values to save:', config.database)
+    
+    // Write back to config file
+    writeConfigFile(config)
     
     return NextResponse.json({
       success: true,
-      message: 'Database configuration saved. Restart the application for changes to take effect.'
+      message: 'Database configuration saved to config/app.config.json'
     })
   } catch (error) {
     console.error('Failed to save database config:', error)

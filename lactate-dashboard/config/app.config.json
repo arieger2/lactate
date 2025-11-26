@@ -1,9 +1,9 @@
 {
   "database": {
-    "host": "192.168.5.220",
+    "host": "localhost",
     "port": 5432,
     "database": "laktat",
-    "user": "arieger",
+    "user": "postgres",
     "password": "LisgumuM20251!",
     "ssl": false,
     "pool": {
