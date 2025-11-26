@@ -1,66 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Pool } from 'pg'
-import fs from 'fs'
-import path from 'path'
-
-interface AppConfig {
-  database: {
-    host: string
-    port: number
-    database: string
-    user: string
-    password: string
-    ssl: boolean
-    pool?: {
-      min: number
-      max: number
-      acquire: number
-      idle: number
-    }
-  }
-  application?: Record<string, unknown>
-  features?: Record<string, unknown>
-}
-
-// Helper to read config file
-const readConfigFile = (): AppConfig => {
-  try {
-    const configPath = path.join(process.cwd(), 'config', 'app.config.json')
-    const content = fs.readFileSync(configPath, 'utf-8')
-    return JSON.parse(content)
-  } catch (error) {
-    console.error('Error reading config file:', error)
-    return {
-      database: {
-        host: 'localhost',
-        port: 5432,
-        database: 'laktat',
-        user: 'postgres',
-        password: '',
-        ssl: false
-      }
-    }
-  }
-}
-
-// Helper to save database config to app.config.json
-const saveDatabaseToConfig = (dbName: string, host: string, port: number, user: string, password: string, ssl: boolean) => {
-  try {
-    const config = readConfigFile()
-    config.database.database = dbName
-    config.database.host = host
-    config.database.port = port
-    config.database.user = user
-    config.database.password = password
-    config.database.ssl = ssl
-    
-    const configPath = path.join(process.cwd(), 'config', 'app.config.json')
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-    console.log(`✅ Saved database config to app.config.json - DB: ${dbName}`)
-  } catch (error) {
-    console.error('Failed to save database to app.config.json:', error)
-  }
-}
+import configManager from '@/lib/configManager'
 
 // POST - Create database if it doesn't exist
 export async function POST(request: NextRequest) {
@@ -230,9 +170,16 @@ export async function POST(request: NextRequest) {
       
       console.log('✅ Tables created successfully')
       dbClient.release()
-      
-      // Save the newly created database to config file
-      saveDatabaseToConfig(dbName, finalHost, finalPort, finalUser, finalPassword || '', finalSsl)
+
+      // Save the newly created database config to the single source of truth
+      configManager.updateDatabaseConfig({
+        host: finalHost,
+        port: finalPort,
+        database: dbName,
+        user: finalUser,
+        password: finalPassword || '',
+        ssl: finalSsl
+      })
       
       return NextResponse.json({
         success: true,

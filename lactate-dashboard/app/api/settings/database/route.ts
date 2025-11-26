@@ -1,66 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import fs from 'fs'
-import path from 'path'
+import configManager from '@/lib/configManager'
 
-interface AppConfig {
-  database: {
-    host: string
-    port: number
-    database: string
-    user: string
-    password: string
-    ssl: boolean
-    pool?: {
-      min: number
-      max: number
-      acquire: number
-      idle: number
-    }
-  }
-  application?: Record<string, unknown>
-  features?: Record<string, unknown>
-}
-
-// Helper to read app.config.json
-const readConfigFile = (): AppConfig => {
-  try {
-    const configPath = path.join(process.cwd(), 'config', 'app.config.json')
-    const content = fs.readFileSync(configPath, 'utf-8')
-    return JSON.parse(content)
-  } catch (error) {
-    console.error('Error reading config file:', error)
-    // Return default config
-    return {
-      database: {
-        host: 'localhost',
-        port: 5432,
-        database: 'laktat',
-        user: 'postgres',
-        password: '',
-        ssl: false
-      }
-    }
-  }
-}
-
-// Helper to write app.config.json
-const writeConfigFile = (config: AppConfig): void => {
-  const configPath = path.join(process.cwd(), 'config', 'app.config.json')
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
-}
-
-// GET - Get current database configuration (without exposing password)
+/**
+ * GET /api/settings/database
+ * Retrieves current database configuration from the single source of truth
+ */
 export async function GET() {
   try {
-    const config = readConfigFile()
-    
+    const dbConfig = configManager.getDatabase()
+
     return NextResponse.json({
-      host: config.database.host,
-      port: config.database.port,
-      database: config.database.database,
-      user: config.database.user,
-      password: '', // Don't expose password
-      ssl: config.database.ssl
+      host: dbConfig.host,
+      port: dbConfig.port,
+      database: dbConfig.database,
+      user: dbConfig.user,
+      password: '', // Never expose password in API responses
+      ssl: dbConfig.ssl
     })
   } catch (error) {
     console.error('Failed to get database config:', error)
@@ -71,35 +26,38 @@ export async function GET() {
   }
 }
 
-// POST - Save database configuration to config/app.config.json
+/**
+ * POST /api/settings/database
+ * Updates database configuration in the single source of truth (config/app.config.json)
+ * 
+ * The ConfigManager automatically:
+ * - Triggers file watching listeners
+ * - Notifies database pool manager to recreate the connection pool
+ * - NO server restart needed!
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { host, port, database, user, password, ssl } = body
-    
-    console.log('Received config to save:', { host, port, database, user, ssl })
-    
-    // Read existing config
-    const config = readConfigFile()
-    
-    // Update database config
-    config.database.host = host || config.database.host
-    config.database.port = port || config.database.port
-    config.database.database = database || config.database.database
-    config.database.user = user || config.database.user
-    if (password) {
-      config.database.password = password
-    }
-    config.database.ssl = ssl !== undefined ? ssl : config.database.ssl
-    
-    console.log('Final values to save:', config.database)
-    
-    // Write back to config file
-    writeConfigFile(config)
-    
+
+    console.log('📝 Updating database config:', { host, port, database, user, ssl })
+
+    // Update configuration through ConfigManager (single source of truth)
+    configManager.updateDatabaseConfig({
+      host: host || 'localhost',
+      port: parseInt(port) || 5432,
+      database: database || 'laktat',
+      user: user || 'postgres',
+      password: password || '',
+      ssl: ssl !== undefined ? Boolean(ssl) : false
+    })
+
+    console.log('✅ Database configuration updated (pool recreation triggered automatically)')
+
     return NextResponse.json({
       success: true,
-      message: 'Database configuration saved to config/app.config.json'
+      message:
+        'Database configuration updated. The connection pool is being recreated automatically - no restart needed!'
     })
   } catch (error) {
     console.error('Failed to save database config:', error)

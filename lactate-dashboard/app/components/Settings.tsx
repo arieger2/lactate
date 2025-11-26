@@ -85,7 +85,8 @@ export default function Settings() {
       })
       
       if (response.ok) {
-        setTestResult({ success: true, message: 'Database configuration saved successfully!' })
+        const data = await response.json()
+        setTestResult({ success: true, message: data.message || 'Database configuration saved successfully! Pool recreation triggered automatically.' })
       } else {
         const error = await response.json()
         setTestResult({ success: false, message: error.message || 'Failed to save configuration' })
