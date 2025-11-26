@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 100">
+  <defs>
+    <style>
+      .runner { fill: #d32f2f; }
+      .heartline { fill: none; stroke: #6b7280; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+      .sport-text { fill: #d32f2f; font-family: 'Arial Black', Arial, sans-serif; font-size: 36px; font-weight: 900; }
+      .kardio-text { fill: #6b7280; font-family: Arial, sans-serif; font-size: 24px; font-weight: 400; letter-spacing: 3px; }
+    </style>
+  </defs>
+  
+  <!-- Running figure silhouette -->
+  <g transform="translate(5, 5) scale(0.9)">
+    <!-- Head -->
+    <ellipse class="runner" cx="52" cy="12" rx="9" ry="10"/>
+    <!-- Torso and body -->
+    <path class="runner" d="
+      M48 22 
+      C46 24 44 28 45 32
+      L42 48
+      C41 52 38 56 35 60
+      L22 80
+      C20 84 22 88 26 88
+      L32 85
+      L42 100
+      C44 103 48 103 50 100
+      L48 90
+      L56 78
+      L52 95
+      C51 100 55 103 58 100
+      L68 78
+      C70 74 72 68 70 64
+      L66 50
+      L80 42
+      C84 40 86 36 84 32
+      L70 38
+      L58 44
+      L62 28
+      C64 24 60 20 56 22
+      Z
+    "/>
+    <!-- Back arm -->
+    <path class="runner" d="
+      M44 30
+      L24 42
+      C20 44 18 48 20 52
+      L28 50
+      L44 40
+    "/>
+  </g>
+  
+  <!-- Heartbeat line (EKG) -->
+  <path class="heartline" d="M55 50 L85 50 L92 50 L100 30 L110 70 L120 40 L128 50 L145 50"/>
+  
+  <!-- Text: SPORT -->
+  <text class="sport-text" x="155" y="48">SPORT</text>
+  
+  <!-- Text: KARDIOLOGIE -->
+  <text class="kardio-text" x="155" y="78">KARDIOLOGIE</text>
+</svg>

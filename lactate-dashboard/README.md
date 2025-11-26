@@ -1,3 +1,31 @@
+# Lactate Dashboard
+
+Ein wissenschaftliches Dashboard zur Laktatdiagnostik und Trainingszonenberechnung für Ausdauersportler.
+
+## Features
+
+- **Echtzeit-Laktatdatenvisualisierung** mit interaktiven Charts
+- **8 wissenschaftliche Schwellenmethoden** (DMAX, Dickhuth, Mader, Log-Log, etc.)
+- **Automatische Trainingszonenberechnung** (5-Zonen-Modell)
+- **Manuell anpassbare Zonengrenzen** mit Drag & Drop
+- **Fettoxidationsanalyse** (FatMax)
+- **Kundenverwaltung** und Session-Tracking
+- **PostgreSQL-Datenbank** für persistente Datenspeicherung
+
+## Dokumentation
+
+- **[Wissenschaftliche Schwellenmethoden](./docs/THRESHOLD_METHODS.md)** - Detaillierte Beschreibung aller implementierten Methoden mit physiologischen und mathematischen Erklärungen
+
+## Tech Stack
+
+- Next.js 16 (Turbopack)
+- React 19
+- ECharts (Apache)
+- PostgreSQL
+- TailwindCSS
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

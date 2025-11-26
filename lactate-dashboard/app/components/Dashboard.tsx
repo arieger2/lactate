@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import LactateInput from './LactateInput'
 import LactateGraph from './LactateGraph'
 import LactatePerformanceCurve from './LactatePerformanceCurve'
@@ -13,13 +14,32 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold text-center mb-8 text-zinc-900 dark:text-zinc-100">
-          Lactate Dashboard
-        </h1>
+      {/* Header with Logo */}
+      <header className="bg-white dark:bg-zinc-900 shadow-sm border-b border-zinc-200 dark:border-zinc-800">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Image
+              src="/sport-kardiologie-logo.svg"
+              alt="Sport Kardiologie Logo"
+              width={180}
+              height={54}
+              className="h-12 w-auto"
+              priority
+            />
+          </div>
+          <h1 className="text-xl font-semibold text-zinc-700 dark:text-zinc-300">
+            Lactate Dashboard
+          </h1>
+          <div className="w-[180px]">
+            {/* Spacer for centering */}
+          </div>
+        </div>
+      </header>
+
+      <div className="container mx-auto px-4 py-6">
         
         {/* Tab Navigation */}
-        <div className="flex justify-center mb-8">
+        <div className="flex justify-center mb-6">
           <div className="flex bg-white dark:bg-zinc-900 rounded-lg p-1 shadow-md overflow-x-auto">
             <button
               onClick={() => setActiveTab('input')}

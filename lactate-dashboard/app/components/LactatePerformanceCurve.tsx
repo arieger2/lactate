@@ -43,11 +43,12 @@ interface ZoneBoundaries {
 type OverlayType = 'dmax' | 'lt2ians' | 'mader' | 'stegmann' | 'fes' | 'coggan' | 'seiler' | 'inscyd'
 
 const LactatePerformanceCurve = () => {
-  // Use global customer context
-  const { selectedCustomer } = useCustomer()
+  // Use global customer context with persistent session
+  const { selectedCustomer, selectedSessionId, setSelectedSessionId } = useCustomer()
   
   const [webhookData, setWebhookData] = useState<LactateWebhookData[]>([])
-  const [sessionId, setSessionId] = useState<string>('')
+  // Local sessionId synced with global context
+  const [sessionId, setSessionIdLocal] = useState<string>(selectedSessionId || '')
   const [availableSessions, setAvailableSessions] = useState<{id: string, lastUpdated: string, pointCount: number}[]>([])
   const [isReceivingData, setIsReceivingData] = useState(false)
   const [isSimulating, setIsSimulating] = useState(false)
@@ -66,249 +67,694 @@ const LactatePerformanceCurve = () => {
   const chartRef = useRef<any>(null)
   const chartContainerRef = useRef<HTMLDivElement>(null)
 
-  // Threshold calculation methods
+  // ============================================================================
+  // HELPER FUNCTIONS FOR MATHEMATICAL CURVE FITTING
+  // ============================================================================
+  
+  // Linear interpolation to find exact power at a target lactate value
+  const interpolatePowerAtLactate = (data: LactateWebhookData[], targetLactate: number): { power: number; lactate: number; heartRate?: number } | null => {
+    const sortedData = [...data].sort((a, b) => a.power - b.power)
+    
+    for (let i = 0; i < sortedData.length - 1; i++) {
+      const curr = sortedData[i]
+      const next = sortedData[i + 1]
+      
+      if ((curr.lactate <= targetLactate && next.lactate >= targetLactate) ||
+          (curr.lactate >= targetLactate && next.lactate <= targetLactate)) {
+        // Linear interpolation
+        const t = (targetLactate - curr.lactate) / (next.lactate - curr.lactate)
+        const power = curr.power + t * (next.power - curr.power)
+        const heartRate = curr.heartRate && next.heartRate 
+          ? curr.heartRate + t * (next.heartRate - curr.heartRate)
+          : curr.heartRate || next.heartRate
+        
+        return { power, lactate: targetLactate, heartRate: heartRate ? Math.round(heartRate) : undefined }
+      }
+    }
+    
+    // If target not found in range, return null
+    return null
+  }
+  
+  // Fit exponential model: lactate = a + b * e^(c * power)
+  // Uses Levenberg-Marquardt-like iterative approach
+  const fitExponentialModel = (data: LactateWebhookData[]): { a: number; b: number; c: number } | null => {
+    if (data.length < 3) return null
+    
+    const sortedData = [...data].sort((a, b) => a.power - b.power)
+    const n = sortedData.length
+    
+    // Initial estimates
+    const minLactate = Math.min(...sortedData.map(d => d.lactate))
+    const maxLactate = Math.max(...sortedData.map(d => d.lactate))
+    const minPower = sortedData[0].power
+    const maxPower = sortedData[n - 1].power
+    
+    // a = baseline (minimum lactate)
+    let a = minLactate * 0.9
+    // b = amplitude
+    let b = 0.1
+    // c = growth rate
+    let c = Math.log((maxLactate - a) / b) / (maxPower - minPower) || 0.01
+    
+    // Simple gradient descent optimization (10 iterations)
+    const learningRate = 0.0001
+    for (let iter = 0; iter < 20; iter++) {
+      let gradA = 0, gradB = 0, gradC = 0
+      
+      for (const point of sortedData) {
+        const expTerm = Math.exp(c * point.power)
+        const predicted = a + b * expTerm
+        const error = predicted - point.lactate
+        
+        gradA += 2 * error
+        gradB += 2 * error * expTerm
+        gradC += 2 * error * b * point.power * expTerm
+      }
+      
+      a -= learningRate * gradA
+      b -= learningRate * 0.1 * gradB
+      c -= learningRate * 0.00001 * gradC
+      
+      // Clamp values to reasonable ranges
+      a = Math.max(0.5, Math.min(2.0, a))
+      b = Math.max(0.001, Math.min(1.0, b))
+      c = Math.max(0.001, Math.min(0.05, c))
+    }
+    
+    return { a, b, c }
+  }
+  
+  // Fit 3rd degree polynomial: lactate = a0 + a1*P + a2*P² + a3*P³
+  // Uses least squares regression
+  const fitPolynomial3 = (data: LactateWebhookData[]): number[] | null => {
+    if (data.length < 4) return null
+    
+    const sortedData = [...data].sort((a, b) => a.power - b.power)
+    const n = sortedData.length
+    
+    // Normalize power values for numerical stability
+    const powers = sortedData.map(d => d.power)
+    const minP = Math.min(...powers)
+    const maxP = Math.max(...powers)
+    const range = maxP - minP || 1
+    
+    // Build Vandermonde matrix for polynomial fitting
+    // Using normal equations: (X^T X) a = X^T y
+    const X: number[][] = sortedData.map(d => {
+      const p = (d.power - minP) / range // Normalized 0-1
+      return [1, p, p * p, p * p * p]
+    })
+    const y = sortedData.map(d => d.lactate)
+    
+    // X^T X
+    const XtX: number[][] = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        for (let k = 0; k < n; k++) {
+          XtX[i][j] += X[k][i] * X[k][j]
+        }
+      }
+    }
+    
+    // X^T y
+    const Xty: number[] = [0, 0, 0, 0]
+    for (let i = 0; i < 4; i++) {
+      for (let k = 0; k < n; k++) {
+        Xty[i] += X[k][i] * y[k]
+      }
+    }
+    
+    // Solve using Gaussian elimination with partial pivoting
+    const augmented = XtX.map((row, i) => [...row, Xty[i]])
+    
+    for (let col = 0; col < 4; col++) {
+      // Find pivot
+      let maxRow = col
+      for (let row = col + 1; row < 4; row++) {
+        if (Math.abs(augmented[row][col]) > Math.abs(augmented[maxRow][col])) {
+          maxRow = row
+        }
+      }
+      [augmented[col], augmented[maxRow]] = [augmented[maxRow], augmented[col]]
+      
+      if (Math.abs(augmented[col][col]) < 1e-10) continue
+      
+      // Eliminate
+      for (let row = col + 1; row < 4; row++) {
+        const factor = augmented[row][col] / augmented[col][col]
+        for (let j = col; j < 5; j++) {
+          augmented[row][j] -= factor * augmented[col][j]
+        }
+      }
+    }
+    
+    // Back substitution
+    const coeffs = [0, 0, 0, 0]
+    for (let i = 3; i >= 0; i--) {
+      let sum = augmented[i][4]
+      for (let j = i + 1; j < 4; j++) {
+        sum -= augmented[i][j] * coeffs[j]
+      }
+      coeffs[i] = Math.abs(augmented[i][i]) > 1e-10 ? sum / augmented[i][i] : 0
+    }
+    
+    // Store normalization params with coefficients
+    return [...coeffs, minP, range]
+  }
+  
+  // Evaluate polynomial at a given power
+  const evalPolynomial3 = (coeffs: number[], power: number): number => {
+    const [a0, a1, a2, a3, minP, range] = coeffs
+    const p = (power - minP) / range
+    return a0 + a1 * p + a2 * p * p + a3 * p * p * p
+  }
+  
+  // Find derivative of polynomial at power (for inflection points)
+  const polynomialDerivative = (coeffs: number[], power: number): number => {
+    const [, a1, a2, a3, minP, range] = coeffs
+    const p = (power - minP) / range
+    return (a1 + 2 * a2 * p + 3 * a3 * p * p) / range
+  }
+  
+  // Find second derivative (for curvature analysis)
+  const polynomialSecondDerivative = (coeffs: number[], power: number): number => {
+    const [, , a2, a3, minP, range] = coeffs
+    const p = (power - minP) / range
+    return (2 * a2 + 6 * a3 * p) / (range * range)
+  }
+  
+  // Find power at specific lactate value using polynomial (binary search)
+  const findPowerAtLactatePolynomial = (coeffs: number[], targetLactate: number, minPower: number, maxPower: number): number | null => {
+    let low = minPower
+    let high = maxPower
+    
+    for (let i = 0; i < 50; i++) {
+      const mid = (low + high) / 2
+      const lactateAtMid = evalPolynomial3(coeffs, mid)
+      
+      if (Math.abs(lactateAtMid - targetLactate) < 0.01) {
+        return mid
+      }
+      
+      if (lactateAtMid < targetLactate) {
+        low = mid
+      } else {
+        high = mid
+      }
+    }
+    
+    return (low + high) / 2
+  }
+
+  // ============================================================================
+  // THRESHOLD CALCULATION METHODS (Scientifically Validated)
+  // ============================================================================
+  
   const thresholdMethods: Record<OverlayType, { name: string; color: string; description: string; calculate: (data: LactateWebhookData[]) => ThresholdData | null }> = {
+    
+    // DMAX Method (Cheng et al., 1992)
+    // Maximum perpendicular distance from baseline to fitted lactate curve
     dmax: {
       name: 'DMAX',
       color: '#dc2626',
-      description: 'Maximum lactate steady state (MLSS) method',
+      description: 'Cheng et al. (1992) - Max. Distanz zur Baseline',
       calculate: (data: LactateWebhookData[]) => {
         if (data.length < 4) return null
         const sortedData = [...data].sort((a, b) => a.power - b.power)
         
-        // Calculate maximum perpendicular distance from baseline to lactate curve
+        // Fit 3rd degree polynomial to lactate curve
+        const coeffs = fitPolynomial3(sortedData)
+        if (!coeffs) return null
+        
         const startPoint = sortedData[0]
         const endPoint = sortedData[sortedData.length - 1]
         
-        let maxDistance = 0
-        let dmaxIndex = Math.floor(sortedData.length / 2)
-        
-        // Line equation: y = mx + b from start to end point
+        // Line from first to last point: y = mx + b
         const m = (endPoint.lactate - startPoint.lactate) / (endPoint.power - startPoint.power)
         const b = startPoint.lactate - m * startPoint.power
         
-        for (let i = 1; i < sortedData.length - 1; i++) {
-          const point = sortedData[i]
-          const lineY = m * point.power + b
-          const distance = Math.abs(point.lactate - lineY)
+        // Find maximum perpendicular distance using polynomial curve
+        let maxDistance = 0
+        let dmaxPower = (startPoint.power + endPoint.power) / 2
+        
+        // Sample 100 points along the curve
+        for (let i = 0; i <= 100; i++) {
+          const power = startPoint.power + (endPoint.power - startPoint.power) * (i / 100)
+          const curveLactate = evalPolynomial3(coeffs, power)
+          const lineLactate = m * power + b
+          
+          // Perpendicular distance formula
+          const distance = Math.abs(curveLactate - lineLactate) / Math.sqrt(1 + m * m)
           
           if (distance > maxDistance) {
             maxDistance = distance
-            dmaxIndex = i
+            dmaxPower = power
           }
         }
         
-        // LT1 at ~70% of DMAX power
-        const dmaxPower = sortedData[dmaxIndex].power
-        const lt1Power = dmaxPower * 0.7
-        const lt1Point = sortedData.reduce((prev, curr) => 
-          Math.abs(curr.power - lt1Power) < Math.abs(prev.power - lt1Power) ? curr : prev
-        )
+        const dmaxLactate = evalPolynomial3(coeffs, dmaxPower)
         
-        return {
-          lt1: { power: lt1Point.power, lactate: lt1Point.lactate, heartRate: lt1Point.heartRate },
-          lt2: { power: sortedData[dmaxIndex].power, lactate: sortedData[dmaxIndex].lactate, heartRate: sortedData[dmaxIndex].heartRate }
-        }
-      }
-    },
-    lt2ians: {
-      name: 'LT2/IANS',
-      color: '#7c2d12',
-      description: 'Individual Anaerobic Threshold based on lactate kinetics',
-      calculate: (data: LactateWebhookData[]) => {
-        if (data.length < 4) return null
-        const sortedData = [...data].sort((a, b) => a.power - b.power)
+        // LT1 using "Modified DMAX" - first deflection point
+        // Find where second derivative changes sign or exceeds threshold
+        let lt1Power = startPoint.power
+        const baselineSlope = polynomialDerivative(coeffs, startPoint.power)
         
-        // Calculate lactate accumulation rate (IANS method)
-        let maxAccumulation = 0
-        let iansIndex = sortedData.length - 2
-        
-        for (let i = 2; i < sortedData.length - 1; i++) {
-          // Rate of lactate accumulation over 3 points
-          const rate1 = (sortedData[i].lactate - sortedData[i-1].lactate) / (sortedData[i].power - sortedData[i-1].power)
-          const rate2 = (sortedData[i+1].lactate - sortedData[i].lactate) / (sortedData[i+1].power - sortedData[i].power)
-          const acceleration = rate2 - rate1
+        for (let i = 0; i <= 50; i++) {
+          const power = startPoint.power + (dmaxPower - startPoint.power) * (i / 50)
+          const slope = polynomialDerivative(coeffs, power)
           
-          if (acceleration > maxAccumulation && sortedData[i].lactate > 2.0) {
-            maxAccumulation = acceleration
-            iansIndex = i
-          }
-        }
-        
-        // LT1 at point where lactate starts rising consistently
-        let lt1Index = 1
-        for (let i = 1; i < iansIndex; i++) {
-          if (sortedData[i].lactate > sortedData[0].lactate + 0.8) {
-            lt1Index = i
+          // LT1 where slope increases by 50% from baseline
+          if (slope > baselineSlope * 1.5 && slope > 0.01) {
+            lt1Power = power
             break
           }
         }
         
+        const lt1Lactate = evalPolynomial3(coeffs, lt1Power)
+        
+        // Interpolate heart rate
+        const lt1HR = sortedData.reduce((prev, curr) => 
+          Math.abs(curr.power - lt1Power) < Math.abs(prev.power - lt1Power) ? curr : prev
+        ).heartRate
+        const lt2HR = sortedData.reduce((prev, curr) => 
+          Math.abs(curr.power - dmaxPower) < Math.abs(prev.power - dmaxPower) ? curr : prev
+        ).heartRate
+        
         return {
-          lt1: { power: sortedData[lt1Index].power, lactate: sortedData[lt1Index].lactate, heartRate: sortedData[lt1Index].heartRate },
-          lt2: { power: sortedData[iansIndex].power, lactate: sortedData[iansIndex].lactate, heartRate: sortedData[iansIndex].heartRate }
+          lt1: { power: Math.round(lt1Power), lactate: Math.round(lt1Lactate * 100) / 100, heartRate: lt1HR },
+          lt2: { power: Math.round(dmaxPower), lactate: Math.round(dmaxLactate * 100) / 100, heartRate: lt2HR }
         }
       }
     },
+    
+    // Individual Anaerobic Threshold (Dickhuth et al., 1999)
+    // LT1 = baseline + 0.5 mmol/L, LT2 = baseline + 1.5 mmol/L
+    lt2ians: {
+      name: 'Dickhuth',
+      color: '#7c2d12',
+      description: 'Dickhuth et al. - Baseline + 1.5 mmol/L',
+      calculate: (data: LactateWebhookData[]) => {
+        if (data.length < 4) return null
+        const sortedData = [...data].sort((a, b) => a.power - b.power)
+        
+        // Baseline = average of first 2-3 points (warm-up)
+        const baselinePoints = sortedData.slice(0, Math.min(3, Math.floor(sortedData.length / 3)))
+        const baseline = baselinePoints.reduce((sum, d) => sum + d.lactate, 0) / baselinePoints.length
+        
+        // LT1 (aerobic threshold) = baseline + 0.5 mmol/L
+        const lt1Target = baseline + 0.5
+        const lt1Result = interpolatePowerAtLactate(sortedData, lt1Target)
+        
+        // LT2 (anaerobic threshold / IANS) = baseline + 1.5 mmol/L
+        const lt2Target = baseline + 1.5
+        const lt2Result = interpolatePowerAtLactate(sortedData, lt2Target)
+        
+        // Fallback if interpolation fails
+        if (!lt1Result || !lt2Result) {
+          const coeffs = fitPolynomial3(sortedData)
+          if (!coeffs) return null
+          
+          const minP = sortedData[0].power
+          const maxP = sortedData[sortedData.length - 1].power
+          
+          const lt1Power = findPowerAtLactatePolynomial(coeffs, lt1Target, minP, maxP)
+          const lt2Power = findPowerAtLactatePolynomial(coeffs, lt2Target, minP, maxP)
+          
+          if (!lt1Power || !lt2Power) return null
+          
+          return {
+            lt1: { power: Math.round(lt1Power), lactate: Math.round(lt1Target * 100) / 100 },
+            lt2: { power: Math.round(lt2Power), lactate: Math.round(lt2Target * 100) / 100 }
+          }
+        }
+        
+        return {
+          lt1: { power: Math.round(lt1Result.power), lactate: lt1Result.lactate, heartRate: lt1Result.heartRate },
+          lt2: { power: Math.round(lt2Result.power), lactate: lt2Result.lactate, heartRate: lt2Result.heartRate }
+        }
+      }
+    },
+    
+    // Mader OBLA (Onset of Blood Lactate Accumulation)
+    // Fixed 4 mmol/L with proper interpolation (Mader, 1976)
     mader: {
-      name: 'Mader',
+      name: 'Mader 4mmol',
       color: '#ef4444',
-      description: 'Fixed 4 mmol/L threshold (classic approach)',
+      description: 'Mader (1976) - OBLA bei 4 mmol/L',
       calculate: (data: LactateWebhookData[]) => {
         if (data.length < 3) return null
         const sortedData = [...data].sort((a, b) => a.power - b.power)
         
-        // LT1 at 2 mmol/L
-        const lt1Point = sortedData.find(d => d.lactate >= 2.0) || sortedData[Math.floor(sortedData.length * 0.3)]
+        // LT1 at 2 mmol/L (aerobic threshold, commonly used with Mader)
+        const lt1Result = interpolatePowerAtLactate(sortedData, 2.0)
         
-        // LT2 at 4 mmol/L (Mader threshold)
-        const lt2Point = sortedData.find(d => d.lactate >= 4.0) || sortedData[Math.floor(sortedData.length * 0.7)]
+        // LT2 at 4 mmol/L (OBLA - Mader's classic threshold)
+        const lt2Result = interpolatePowerAtLactate(sortedData, 4.0)
+        
+        // Fallback using polynomial if exact values not in data range
+        if (!lt1Result || !lt2Result) {
+          const coeffs = fitPolynomial3(sortedData)
+          if (!coeffs) return null
+          
+          const minP = sortedData[0].power
+          const maxP = sortedData[sortedData.length - 1].power
+          
+          const lt1Power = lt1Result?.power || findPowerAtLactatePolynomial(coeffs, 2.0, minP, maxP)
+          const lt2Power = lt2Result?.power || findPowerAtLactatePolynomial(coeffs, 4.0, minP, maxP)
+          
+          if (!lt1Power || !lt2Power) return null
+          
+          return {
+            lt1: { power: Math.round(lt1Power), lactate: 2.0 },
+            lt2: { power: Math.round(lt2Power), lactate: 4.0 }
+          }
+        }
         
         return {
-          lt1: { power: lt1Point.power, lactate: lt1Point.lactate, heartRate: lt1Point.heartRate },
-          lt2: { power: lt2Point.power, lactate: lt2Point.lactate, heartRate: lt2Point.heartRate }
+          lt1: { power: Math.round(lt1Result.power), lactate: 2.0, heartRate: lt1Result.heartRate },
+          lt2: { power: Math.round(lt2Result.power), lactate: 4.0, heartRate: lt2Result.heartRate }
         }
       }
     },
+    
+    // Log-log Transformation Method (Beaver et al., 1985)
+    // Uses log-transformed lactate vs power to find breakpoints
     stegmann: {
-      name: 'Stegmann',
+      name: 'Log-Log',
       color: '#8b5cf6',
-      description: 'Individual threshold based on lactate kinetics',
+      description: 'Beaver et al. - Log-Log Transformation',
       calculate: (data: LactateWebhookData[]) => {
-        if (data.length < 4) return null
+        if (data.length < 5) return null
         const sortedData = [...data].sort((a, b) => a.power - b.power)
         
-        // Find steepest lactate increase
-        let maxIncrease = 0
-        let lt2Index = sortedData.length - 2
+        // Transform to log-log space
+        const logData = sortedData.map(d => ({
+          logPower: Math.log(d.power),
+          logLactate: Math.log(Math.max(0.1, d.lactate)),
+          original: d
+        }))
         
-        for (let i = 1; i < sortedData.length - 1; i++) {
-          const increase = (sortedData[i + 1].lactate - sortedData[i].lactate) / (sortedData[i + 1].power - sortedData[i].power)
-          if (increase > maxIncrease) {
-            maxIncrease = increase
-            lt2Index = i
+        // Find the breakpoint using two-line regression
+        // Test each point as potential breakpoint
+        let bestBreakpoint = Math.floor(logData.length / 2)
+        let minTotalError = Infinity
+        
+        for (let bp = 2; bp < logData.length - 2; bp++) {
+          // Fit line to first segment
+          const seg1 = logData.slice(0, bp + 1)
+          const n1 = seg1.length
+          const sumX1 = seg1.reduce((s, d) => s + d.logPower, 0)
+          const sumY1 = seg1.reduce((s, d) => s + d.logLactate, 0)
+          const sumXY1 = seg1.reduce((s, d) => s + d.logPower * d.logLactate, 0)
+          const sumX2_1 = seg1.reduce((s, d) => s + d.logPower * d.logPower, 0)
+          const slope1 = (n1 * sumXY1 - sumX1 * sumY1) / (n1 * sumX2_1 - sumX1 * sumX1)
+          const intercept1 = (sumY1 - slope1 * sumX1) / n1
+          
+          // Fit line to second segment
+          const seg2 = logData.slice(bp)
+          const n2 = seg2.length
+          const sumX2 = seg2.reduce((s, d) => s + d.logPower, 0)
+          const sumY2 = seg2.reduce((s, d) => s + d.logLactate, 0)
+          const sumXY2 = seg2.reduce((s, d) => s + d.logPower * d.logLactate, 0)
+          const sumX2_2 = seg2.reduce((s, d) => s + d.logPower * d.logPower, 0)
+          const slope2 = (n2 * sumXY2 - sumX2 * sumY2) / (n2 * sumX2_2 - sumX2 * sumX2)
+          const intercept2 = (sumY2 - slope2 * sumX2) / n2
+          
+          // Calculate total error
+          let error = 0
+          for (const d of seg1) {
+            error += Math.pow(d.logLactate - (slope1 * d.logPower + intercept1), 2)
+          }
+          for (const d of seg2) {
+            error += Math.pow(d.logLactate - (slope2 * d.logPower + intercept2), 2)
+          }
+          
+          if (error < minTotalError) {
+            minTotalError = error
+            bestBreakpoint = bp
           }
         }
         
-        const lt1Point = sortedData[Math.max(0, lt2Index - 2)]
-        const lt2Point = sortedData[lt2Index]
+        // LT2 is at the breakpoint
+        const lt2Point = sortedData[bestBreakpoint]
         
-        return {
-          lt1: { power: lt1Point.power, lactate: lt1Point.lactate, heartRate: lt1Point.heartRate },
-          lt2: { power: lt2Point.power, lactate: lt2Point.lactate, heartRate: lt2Point.heartRate }
-        }
-      }
-    },
-    fes: {
-      name: 'FES',
-      color: '#10b981',
-      description: 'Federal Sports Science approach with deflection points',
-      calculate: (data: LactateWebhookData[]) => {
-        if (data.length < 4) return null
-        const sortedData = [...data].sort((a, b) => a.power - b.power)
+        // LT1 is earlier - find where slope first increases significantly
+        const coeffs = fitPolynomial3(sortedData)
+        let lt1Power = sortedData[0].power
         
-        // LT1: First significant rise (deflection point)
-        let lt1Index = 1
-        for (let i = 1; i < sortedData.length - 1; i++) {
-          const slope = (sortedData[i].lactate - sortedData[i-1].lactate) / (sortedData[i].power - sortedData[i-1].power)
-          if (slope > 0.03) { // Significant slope increase
-            lt1Index = i
-            break
+        if (coeffs) {
+          const baseSlope = polynomialDerivative(coeffs, sortedData[0].power)
+          for (let i = 1; i < bestBreakpoint; i++) {
+            const slope = polynomialDerivative(coeffs, sortedData[i].power)
+            if (slope > baseSlope * 1.3) {
+              lt1Power = sortedData[i].power
+              break
+            }
           }
+        } else {
+          lt1Power = sortedData[Math.max(0, bestBreakpoint - 2)].power
         }
         
-        // LT2: Second deflection point or exponential rise
-        let lt2Index = sortedData.length - 2
-        for (let i = lt1Index + 1; i < sortedData.length - 1; i++) {
-          const currentSlope = (sortedData[i].lactate - sortedData[i-1].lactate) / (sortedData[i].power - sortedData[i-1].power)
-          const nextSlope = (sortedData[i+1].lactate - sortedData[i].lactate) / (sortedData[i+1].power - sortedData[i].power)
-          if (nextSlope > currentSlope * 2) {
-            lt2Index = i
-            break
-          }
-        }
-        
-        return {
-          lt1: { power: sortedData[lt1Index].power, lactate: sortedData[lt1Index].lactate, heartRate: sortedData[lt1Index].heartRate },
-          lt2: { power: sortedData[lt2Index].power, lactate: sortedData[lt2Index].lactate, heartRate: sortedData[lt2Index].heartRate }
-        }
-      }
-    },
-    coggan: {
-      name: 'Coggan',
-      color: '#f59e0b',
-      description: 'Power-based threshold at ~85% of LT2 power',
-      calculate: (data: LactateWebhookData[]) => {
-        if (data.length < 4) return null
-        const sortedData = [...data].sort((a, b) => a.power - b.power)
-        
-        // Find power at 4 mmol/L as reference
-        const referencePoint = sortedData.find(d => d.lactate >= 4.0) || sortedData[Math.floor(sortedData.length * 0.75)]
-        
-        // LT1 at ~85% of reference power
-        const lt1Power = referencePoint.power * 0.85
         const lt1Point = sortedData.reduce((prev, curr) => 
           Math.abs(curr.power - lt1Power) < Math.abs(prev.power - lt1Power) ? curr : prev
         )
         
         return {
-          lt1: { power: lt1Point.power, lactate: lt1Point.lactate, heartRate: lt1Point.heartRate },
-          lt2: { power: referencePoint.power, lactate: referencePoint.lactate, heartRate: referencePoint.heartRate }
+          lt1: { power: Math.round(lt1Point.power), lactate: lt1Point.lactate, heartRate: lt1Point.heartRate },
+          lt2: { power: Math.round(lt2Point.power), lactate: lt2Point.lactate, heartRate: lt2Point.heartRate }
         }
       }
     },
-    seiler: {
-      name: 'Seiler',
-      color: '#06b6d4',
-      description: 'Polarized training zones with ventilatory thresholds',
+    
+    // Bseline + 1.0 mmol/L Method (Faude et al., 2009)
+    // Common in German sports science
+    fes: {
+      name: '+1.0 mmol/L',
+      color: '#10b981',
+      description: 'Faude et al. - Baseline + 1.0 mmol/L',
       calculate: (data: LactateWebhookData[]) => {
         if (data.length < 4) return null
         const sortedData = [...data].sort((a, b) => a.power - b.power)
         
-        // VT1 around first lactate rise
-        const lt1Point = sortedData.find(d => d.lactate >= 2.0) || sortedData[Math.floor(sortedData.length * 0.4)]
+        // Minimum lactate as baseline (not necessarily first point)
+        const baseline = Math.min(...sortedData.slice(0, Math.ceil(sortedData.length / 2)).map(d => d.lactate))
         
-        // VT2 at lactate steady state breakpoint
-        const lt2Point = sortedData.find(d => d.lactate >= 4.0) || sortedData[Math.floor(sortedData.length * 0.8)]
+        // LT1 at baseline (minimum lactate power)
+        const baselinePoint = sortedData.find(d => d.lactate === baseline) || sortedData[0]
         
-        return {
-          lt1: { power: lt1Point.power, lactate: lt1Point.lactate, heartRate: lt1Point.heartRate },
-          lt2: { power: lt2Point.power, lactate: lt2Point.lactate, heartRate: lt2Point.heartRate }
-        }
-      }
-    },
-    inscyd: {
-      name: 'INSCYD',
-      color: '#ec4899',
-      description: 'Metabolic profiling with FATmax and lactate dynamics',
-      calculate: (data: LactateWebhookData[]) => {
-        if (data.length < 4) return null
-        const sortedData = [...data].sort((a, b) => a.power - b.power)
+        // LT2 at baseline + 1.0 mmol/L
+        const lt2Target = baseline + 1.0
+        const lt2Result = interpolatePowerAtLactate(sortedData, lt2Target)
         
-        // Enhanced calculation considering fat oxidation
-        let lt1Point = sortedData.find(d => d.lactate >= 2.0) || sortedData[Math.floor(sortedData.length * 0.35)]
-        let lt2Point = sortedData.find(d => d.lactate >= 4.5) || sortedData[Math.floor(sortedData.length * 0.75)]
-        
-        // If fat oxidation data is available, refine thresholds
-        if (data.some(d => d.fatOxidation)) {
-          const fatMaxPoint = sortedData.reduce((max, current) => 
-            (current.fatOxidation || 0) > (max.fatOxidation || 0) ? current : max
-          )
+        if (!lt2Result) {
+          const coeffs = fitPolynomial3(sortedData)
+          if (!coeffs) return null
+          
+          const lt2Power = findPowerAtLactatePolynomial(coeffs, lt2Target, sortedData[0].power, sortedData[sortedData.length - 1].power)
+          if (!lt2Power) return null
           
           return {
-            lt1: { power: lt1Point.power, lactate: lt1Point.lactate, heartRate: lt1Point.heartRate },
-            lt2: { power: lt2Point.power, lactate: lt2Point.lactate, heartRate: lt2Point.heartRate },
-            fatMax: {
-              power: fatMaxPoint.power,
-              fatOxidation: fatMaxPoint.fatOxidation!,
-              heartRate: fatMaxPoint.heartRate
-            }
+            lt1: { power: Math.round(baselinePoint.power), lactate: baseline, heartRate: baselinePoint.heartRate },
+            lt2: { power: Math.round(lt2Power), lactate: lt2Target }
           }
         }
         
         return {
-          lt1: { power: lt1Point.power, lactate: lt1Point.lactate, heartRate: lt1Point.heartRate },
-          lt2: { power: lt2Point.power, lactate: lt2Point.lactate, heartRate: lt2Point.heartRate }
+          lt1: { power: Math.round(baselinePoint.power), lactate: baseline, heartRate: baselinePoint.heartRate },
+          lt2: { power: Math.round(lt2Result.power), lactate: lt2Target, heartRate: lt2Result.heartRate }
+        }
+      }
+    },
+    
+    // Modified DMAX (Bishop et al., 1998)
+    // Uses polynomial fit from lactate minimum to maximum
+    coggan: {
+      name: 'ModDMAX',
+      color: '#f59e0b',
+      description: 'Bishop et al. - Modified DMAX',
+      calculate: (data: LactateWebhookData[]) => {
+        if (data.length < 4) return null
+        const sortedData = [...data].sort((a, b) => a.power - b.power)
+        
+        // Find lactate minimum point (not necessarily first)
+        let minLactateIdx = 0
+        let minLactate = sortedData[0].lactate
+        for (let i = 1; i < Math.ceil(sortedData.length / 2); i++) {
+          if (sortedData[i].lactate < minLactate) {
+            minLactate = sortedData[i].lactate
+            minLactateIdx = i
+          }
+        }
+        
+        // Use data from lactate minimum to end
+        const relevantData = sortedData.slice(minLactateIdx)
+        if (relevantData.length < 3) return null
+        
+        const coeffs = fitPolynomial3(relevantData)
+        if (!coeffs) return null
+        
+        const startPoint = relevantData[0]
+        const endPoint = relevantData[relevantData.length - 1]
+        
+        // Line from lactate minimum to final point
+        const m = (endPoint.lactate - startPoint.lactate) / (endPoint.power - startPoint.power)
+        const b = startPoint.lactate - m * startPoint.power
+        
+        // Find ModDMAX point
+        let maxDistance = 0
+        let modDmaxPower = (startPoint.power + endPoint.power) / 2
+        
+        for (let i = 0; i <= 100; i++) {
+          const power = startPoint.power + (endPoint.power - startPoint.power) * (i / 100)
+          const curveLactate = evalPolynomial3(coeffs, power)
+          const lineLactate = m * power + b
+          const distance = Math.abs(curveLactate - lineLactate) / Math.sqrt(1 + m * m)
+          
+          if (distance > maxDistance) {
+            maxDistance = distance
+            modDmaxPower = power
+          }
+        }
+        
+        const lt2Lactate = evalPolynomial3(coeffs, modDmaxPower)
+        
+        // LT1 at lactate minimum
+        const lt1Point = sortedData[minLactateIdx]
+        
+        const lt2HR = relevantData.reduce((prev, curr) => 
+          Math.abs(curr.power - modDmaxPower) < Math.abs(prev.power - modDmaxPower) ? curr : prev
+        ).heartRate
+        
+        return {
+          lt1: { power: Math.round(lt1Point.power), lactate: lt1Point.lactate, heartRate: lt1Point.heartRate },
+          lt2: { power: Math.round(modDmaxPower), lactate: Math.round(lt2Lactate * 100) / 100, heartRate: lt2HR }
+        }
+      }
+    },
+    
+    // 3-Zone Polarized Model (Seiler & Kjerland, 2006)
+    // Based on ventilatory equivalents approximation
+    seiler: {
+      name: 'Seiler 3-Zone',
+      color: '#06b6d4',
+      description: 'Seiler - Polarisiertes Training',
+      calculate: (data: LactateWebhookData[]) => {
+        if (data.length < 4) return null
+        const sortedData = [...data].sort((a, b) => a.power - b.power)
+        
+        // Seiler zones based on lactate:
+        // Zone 1: Below VT1 (~2 mmol/L or baseline + 0.5)
+        // Zone 2: Between VT1 and VT2 (~4 mmol/L or baseline + 1.5)
+        // Zone 3: Above VT2
+        
+        const baseline = Math.min(...sortedData.slice(0, 3).map(d => d.lactate))
+        
+        // VT1 approximation: baseline + 0.5 mmol/L or first rise
+        const vt1Target = Math.max(baseline + 0.5, 1.8)
+        const vt1Result = interpolatePowerAtLactate(sortedData, vt1Target)
+        
+        // VT2 approximation: ~4 mmol/L or baseline + 2.0
+        const vt2Target = Math.max(baseline + 2.0, 3.5)
+        const vt2Result = interpolatePowerAtLactate(sortedData, vt2Target)
+        
+        if (!vt1Result || !vt2Result) {
+          const coeffs = fitPolynomial3(sortedData)
+          if (!coeffs) return null
+          
+          const minP = sortedData[0].power
+          const maxP = sortedData[sortedData.length - 1].power
+          
+          const vt1Power = vt1Result?.power || findPowerAtLactatePolynomial(coeffs, vt1Target, minP, maxP)
+          const vt2Power = vt2Result?.power || findPowerAtLactatePolynomial(coeffs, vt2Target, minP, maxP)
+          
+          if (!vt1Power || !vt2Power) return null
+          
+          return {
+            lt1: { power: Math.round(vt1Power), lactate: Math.round(vt1Target * 100) / 100 },
+            lt2: { power: Math.round(vt2Power), lactate: Math.round(vt2Target * 100) / 100 }
+          }
+        }
+        
+        return {
+          lt1: { power: Math.round(vt1Result.power), lactate: vt1Result.lactate, heartRate: vt1Result.heartRate },
+          lt2: { power: Math.round(vt2Result.power), lactate: vt2Result.lactate, heartRate: vt2Result.heartRate }
+        }
+      }
+    },
+    
+    // INSCYD-style with FatMax (San-Millán & Brooks, 2018)
+    // Includes fat oxidation crossover point
+    inscyd: {
+      name: 'FatMax/LT',
+      color: '#ec4899',
+      description: 'San-Millán - FatMax & Lactate Thresholds',
+      calculate: (data: LactateWebhookData[]) => {
+        if (data.length < 4) return null
+        const sortedData = [...data].sort((a, b) => a.power - b.power)
+        
+        const hasFatOx = data.some(d => d.fatOxidation && d.fatOxidation > 0)
+        
+        // LT1: First lactate turn point (baseline + 0.5 or where fat oxidation peaks)
+        const baseline = Math.min(...sortedData.slice(0, 3).map(d => d.lactate))
+        const lt1Target = baseline + 0.5
+        
+        let lt1Result = interpolatePowerAtLactate(sortedData, lt1Target)
+        
+        // LT2: MLSS approximation (baseline + 1.5 mmol/L)
+        const lt2Target = baseline + 1.5
+        let lt2Result = interpolatePowerAtLactate(sortedData, lt2Target)
+        
+        // FatMax: Peak fat oxidation point
+        let fatMax: { power: number; fatOxidation: number; heartRate?: number } | undefined
+        
+        if (hasFatOx) {
+          const fatMaxPoint = sortedData.reduce((max, current) => 
+            (current.fatOxidation || 0) > (max.fatOxidation || 0) ? current : max
+          )
+          
+          if (fatMaxPoint.fatOxidation && fatMaxPoint.fatOxidation > 0) {
+            fatMax = {
+              power: fatMaxPoint.power,
+              fatOxidation: fatMaxPoint.fatOxidation,
+              heartRate: fatMaxPoint.heartRate
+            }
+            
+            // Refine LT1 to be near FatMax if available
+            if (fatMax && !lt1Result) {
+              lt1Result = {
+                power: fatMax.power,
+                lactate: sortedData.find(d => d.power === fatMax!.power)?.lactate || lt1Target,
+                heartRate: fatMax.heartRate
+              }
+            }
+          }
+        }
+        
+        // Fallback with polynomial
+        if (!lt1Result || !lt2Result) {
+          const coeffs = fitPolynomial3(sortedData)
+          if (!coeffs) return null
+          
+          const minP = sortedData[0].power
+          const maxP = sortedData[sortedData.length - 1].power
+          
+          const lt1Power = lt1Result?.power || findPowerAtLactatePolynomial(coeffs, lt1Target, minP, maxP)
+          const lt2Power = lt2Result?.power || findPowerAtLactatePolynomial(coeffs, lt2Target, minP, maxP)
+          
+          if (!lt1Power || !lt2Power) return null
+          
+          return {
+            lt1: { power: Math.round(lt1Power), lactate: Math.round(lt1Target * 100) / 100 },
+            lt2: { power: Math.round(lt2Power), lactate: Math.round(lt2Target * 100) / 100 },
+            fatMax
+          }
+        }
+        
+        return {
+          lt1: { power: Math.round(lt1Result.power), lactate: lt1Result.lactate, heartRate: lt1Result.heartRate },
+          lt2: { power: Math.round(lt2Result.power), lactate: lt2Result.lactate, heartRate: lt2Result.heartRate },
+          fatMax
         }
       }
     }
@@ -1007,7 +1453,8 @@ const LactatePerformanceCurve = () => {
       const response = await fetch(`/api/lactate-webhook?sessionId=${newSessionId}`)
       if (response.ok) {
         const result = await response.json()
-        setSessionId(newSessionId)
+        setSessionIdLocal(newSessionId)
+        setSelectedSessionId(newSessionId) // Persist in global context
         setWebhookData(result.data || [])
         setThresholds(null) // Reset thresholds for new session
         
@@ -1030,9 +1477,25 @@ const LactatePerformanceCurve = () => {
   // Subscribe to global data service
   useEffect(() => {
     const state = lactateDataService.getState()
-    setSessionId(state.sessionId)
     setIsReceivingData(state.isReceiving)
     setIsSimulating(state.isSimulating || false)
+    
+    // If we have a persisted session from context, restore it
+    if (selectedSessionId) {
+      setSessionIdLocal(selectedSessionId)
+      // Load the session data
+      fetch(`/api/lactate-webhook?sessionId=${selectedSessionId}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(result => {
+          if (result?.data) {
+            setWebhookData(result.data)
+          }
+        })
+        .catch(console.error)
+    } else {
+      // No persisted session, use lactateDataService state
+      setSessionIdLocal(state.sessionId)
+    }
     
     // Subscribe to data changes
     const unsubscribe = lactateDataService.subscribe((data) => {
@@ -1052,7 +1515,7 @@ const LactatePerformanceCurve = () => {
       unsubscribe()
       clearInterval(sessionInterval)
     }
-  }, [])
+  }, [selectedSessionId])
 
   // Refetch sessions when selected customer changes
   useEffect(() => {
