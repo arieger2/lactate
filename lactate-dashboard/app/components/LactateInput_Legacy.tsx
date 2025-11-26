@@ -423,8 +423,44 @@ export default function LactateInput() {
     setStructuredTests(prev => prev.filter(test => test.id !== id))
   }
 
+  // Error Modal Component
+  const ErrorModal = ({ error, onClose }: { error: string | null; onClose: () => void }) => {
+    if (!error) return null
+    
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-lg max-w-md w-full">
+          <div className="p-6">
+            <div className="flex items-start gap-4">
+              <span className="text-3xl">⚠️</span>
+              <div className="flex-1">
+                <h3 className="font-bold text-lg text-red-700 dark:text-red-400 mb-2">
+                  Error Creating Customer
+                </h3>
+                <p className="text-zinc-700 dark:text-zinc-300 mb-4">
+                  {error}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-zinc-100 dark:bg-zinc-800 px-6 py-3 rounded-b-lg flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md font-medium"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-8">
+      {/* Error Modal */}
+      <ErrorModal error={newCustomerError} onClose={() => setNewCustomerError(null)} />
+
       {/* Customer Management Section */}
       <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
         <h2 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
@@ -485,16 +521,6 @@ export default function LactateInput() {
             {showNewCustomerForm && (
               <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-zinc-50 dark:bg-zinc-800">
                 <h3 className="text-lg font-medium mb-3 text-zinc-900 dark:text-zinc-100">New Customer</h3>
-                
-                {/* Error Box */}
-                {newCustomerError && (
-                  <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-800 rounded-md">
-                    <p className="text-red-700 dark:text-red-400 font-medium flex items-center gap-2">
-                      <span>⚠️</span>
-                      {newCustomerError}
-                    </p>
-                  </div>
-                )}
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>

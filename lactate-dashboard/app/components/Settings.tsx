@@ -59,7 +59,7 @@ export default function Settings() {
         const data = await response.json()
         setDbConfig({
           host: data.host || '',
-          port: data.port || '5432',
+          port: String(data.port || '5432'),
           database: data.database || '',
           user: data.user || '',
           password: '', // Keep empty, user must re-enter to change
