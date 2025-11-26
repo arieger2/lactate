@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { lactateDataService } from '@/lib/lactateDataService'
 
 // POST - Receive automatic measurement data from external devices
 export async function POST(request: NextRequest) {
@@ -15,12 +14,18 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    // Validate measurement format
+    // Validate measurement format - each measurement must have key values
     for (const measurement of measurementData) {
       if (typeof measurement.lactate !== 'number' || measurement.lactate < 0) {
         return NextResponse.json({
           success: false,
           error: 'Invalid lactate value in measurement data'
+        }, { status: 400 })
+      }
+      if (typeof measurement.power !== 'number' || measurement.power < 0) {
+        return NextResponse.json({
+          success: false,
+          error: 'Invalid power value in measurement data'
         }, { status: 400 })
       }
     }
@@ -32,16 +37,36 @@ export async function POST(request: NextRequest) {
     const processedData = []
     
     for (const measurement of measurementData) {
+      // Extract key values (required)
+      const keyValues = {
+        lactate: measurement.lactate,
+        power: measurement.power,
+        sampleId: measurement.sampleId || measurement.SampleID || measurement.sample_id,
+        heartRate: measurement.heartRate || measurement.hr
+      }
+      
+      // Extract metadata (optional device data)
+      const metadata = measurement.metadata || {}
+      
       const processedMeasurement = {
         timestamp: measurement.timestamp || new Date().toISOString(),
-        power: measurement.power || measurement.workload || 0,
-        lactate: measurement.lactate,
-        heartRate: measurement.heartRate || measurement.hr,
-        fatOxidation: measurement.fatOxidation || (measurement.vo2 ? measurement.vo2 / 100 : undefined),
+        // Key values
+        ...keyValues,
+        // Metadata from nested object or flat structure
+        glucose: metadata.glucose || metadata.Glucose || measurement.glucose,
+        ph: metadata.ph || metadata.pH || measurement.ph,
+        temperature: metadata.temperature || metadata.Temperature || measurement.temperature,
+        measurementDate: metadata.measurementDate || metadata.Date || metadata.date || measurement.measurementDate,
+        measurementTime: metadata.measurementTime || metadata.Time || metadata.time || measurement.measurementTime,
+        errorCode: metadata.errorCode || metadata.error_code || measurement.errorCode,
+        vo2: metadata.vo2 || measurement.vo2,
+        rawData: metadata.rawData || measurement.rawData,
+        // Session info
         sessionId,
         testType: measurement.testType || 'automatic',
         customerId,
-        deviceId
+        deviceId,
+        fatOxidation: measurement.vo2 ? measurement.vo2 / 100 : (metadata.vo2 ? metadata.vo2 / 100 : undefined)
       }
       
       // Send to lactate webhook endpoint for storage
@@ -89,31 +114,68 @@ export async function GET(request: NextRequest) {
     success: true,
     status: 'Interface ready for automatic data reception',
     deviceId: deviceId || 'not-provided',
-    supportedFormats: {
-      minimumRequired: {
-        measurementData: [
-          {
-            lactate: 2.5, // Required: mmol/L
-          }
-        ]
+    dataStructure: {
+      description: 'Each measurement has KEY VALUES (required) and optional METADATA',
+      keyValues: {
+        lactate: 'number (mmol/L) - REQUIRED',
+        power: 'number (watts) - REQUIRED', 
+        sampleId: 'string - sample/measurement ID from device',
+        heartRate: 'number (bpm) - heart rate'
       },
-      fullFormat: {
-        deviceId: 'device-123',
-        customerId: 'customer-456', 
-        sessionId: 'optional-session-id', // If not provided, will be auto-generated
-        measurementData: [
-          {
-            timestamp: '2024-11-25T10:30:00.000Z', // Optional: ISO string
-            lactate: 2.5, // Required: mmol/L  
-            power: 200, // Optional: watts
-            workload: 200, // Alternative to power
-            heartRate: 150, // Optional: bpm
-            hr: 150, // Alternative to heartRate
-            vo2: 40.5, // Optional: mL/kg/min
-            fatOxidation: 0.405, // Optional: direct value
-            testType: 'incremental' // Optional: test type
+      metadata: {
+        glucose: 'number (mmol/L) - blood glucose if available',
+        ph: 'number - pH value if available',
+        temperature: 'number (°C) - measurement temperature',
+        measurementDate: 'string (YYYY-MM-DD) - date of measurement',
+        measurementTime: 'string (HH:MM:SS) - time of measurement',
+        errorCode: 'string|null - error code if measurement failed',
+        vo2: 'number (mL/kg/min) - VO2 if available',
+        rawData: 'object - any additional device-specific data'
+      }
+    },
+    exampleRequest: {
+      deviceId: 'lactate-pro-2',
+      customerId: '100',
+      sessionId: 'optional-session-id',
+      measurementData: [
+        {
+          // Key values (lactate, power, sampleId, heartRate)
+          lactate: 1.3,
+          power: 150,
+          sampleId: '001',
+          heartRate: 128,
+          // Metadata (optional)
+          metadata: {
+            glucose: 5.2,
+            ph: 7.38,
+            temperature: 37.2,
+            measurementDate: '2024-11-25',
+            measurementTime: '10:30:15',
+            errorCode: null,
+            vo2: 42.5
           }
-        ]
+        },
+        {
+          lactate: 2.0,
+          power: 200,
+          sampleId: '002',
+          heartRate: 145,
+          metadata: {
+            glucose: 5.5
+          }
+        }
+      ]
+    },
+    flatFormatAlsoSupported: {
+      description: 'Metadata can also be provided at measurement level (flat structure)',
+      example: {
+        lactate: 1.3,
+        power: 150,
+        sampleId: '001',
+        heartRate: 128,
+        glucose: 5.2,
+        ph: 7.38,
+        temperature: 37.2
       }
     },
     endpoints: {

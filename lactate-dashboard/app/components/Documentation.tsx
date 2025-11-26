@@ -517,84 +517,123 @@ function DeviceApiSection({ selectedCustomer }: { selectedCustomer: { customer_i
           </div>
         </div>
 
-        <h3 className="text-lg font-semibold mb-3 text-zinc-900 dark:text-zinc-100">Request Format</h3>
+        <h3 className="text-lg font-semibold mb-3 text-zinc-900 dark:text-zinc-100">Request Format (mit Device Metadaten)</h3>
         <pre className="bg-zinc-900 dark:bg-zinc-950 text-green-400 p-4 rounded-lg text-xs overflow-x-auto mb-6">
 {`POST /api/device-interface
 Content-Type: application/json
 
 {
-  "deviceId": "lactate-analyzer-01",
+  "deviceId": "lactate-pro-2",
   "customerId": "${selectedCustomer?.customer_id || 'CUSTOMER_ID'}",
   "measurementData": [
     {
       "lactate": 1.3,
       "power": 150,
       "heartRate": 128,
-      "vo2": 28.5
+      
+      // Device Metadaten (optional)
+      "sampleId": "001",        // oder SampleID
+      "glucose": 5.2,           // mmol/L
+      "ph": 7.38,               // oder pH
+      "temperature": 37.2,
+      "measurementDate": "2024-11-25",  // oder Date
+      "measurementTime": "10:30:15",    // oder Time
+      "errorCode": null         // null wenn erfolgreich
     },
     {
       "lactate": 2.0,
       "power": 200,
-      "heartRate": 145,
-      "vo2": 35.5
-    },
-    {
-      "lactate": 4.1,
-      "power": 250,
-      "heartRate": 163,
-      "vo2": 43.2
+      "sampleId": "002",
+      "glucose": 5.5
     }
   ]
 }`}
         </pre>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <div>
             <h4 className="font-medium text-zinc-900 dark:text-zinc-100 mb-3">Pflichtfelder</h4>
             <ul className="text-sm text-zinc-600 dark:text-zinc-400 space-y-2">
               <li className="flex items-start gap-2">
-                <code className="bg-zinc-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-xs">deviceId</code>
-                <span>Geräte-Identifikator (String)</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <code className="bg-zinc-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-xs">customerId</code>
-                <span>Kunden-ID (String)</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <code className="bg-zinc-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-xs">measurementData</code>
-                <span>Array von Messobjekten</span>
-              </li>
-              <li className="flex items-start gap-2">
                 <code className="bg-zinc-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-xs">lactate</code>
-                <span>Laktatwert in mmol/L (Number)</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <code className="bg-zinc-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-xs">power</code>
-                <span>Leistung in Watt (Number)</span>
+                <span>Laktatwert in mmol/L</span>
               </li>
             </ul>
           </div>
           <div>
-            <h4 className="font-medium text-zinc-900 dark:text-zinc-100 mb-3">Optionale Felder</h4>
+            <h4 className="font-medium text-zinc-900 dark:text-zinc-100 mb-3">Messdaten (optional)</h4>
             <ul className="text-sm text-zinc-600 dark:text-zinc-400 space-y-2">
               <li className="flex items-start gap-2">
+                <code className="bg-zinc-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-xs">power</code>
+                <span>Leistung in Watt</span>
+              </li>
+              <li className="flex items-start gap-2">
                 <code className="bg-zinc-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-xs">heartRate</code>
-                <span>Herzfrequenz in bpm (Number)</span>
+                <span>Herzfrequenz in bpm</span>
               </li>
               <li className="flex items-start gap-2">
                 <code className="bg-zinc-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-xs">vo2</code>
-                <span>VO₂ in mL/kg/min (Number)</span>
+                <span>VO₂ in mL/kg/min</span>
               </li>
               <li className="flex items-start gap-2">
                 <code className="bg-zinc-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-xs">fatOxidation</code>
-                <span>Fettoxidation in g/min (Number)</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <code className="bg-zinc-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-xs">timestamp</code>
-                <span>ISO 8601 Zeitstempel (String)</span>
+                <span>Fettoxidation in g/min</span>
               </li>
             </ul>
           </div>
+          <div>
+            <h4 className="font-medium text-zinc-900 dark:text-zinc-100 mb-3">Device Metadaten (optional)</h4>
+            <ul className="text-sm text-zinc-600 dark:text-zinc-400 space-y-2">
+              <li className="flex items-start gap-2">
+                <code className="bg-purple-200 dark:bg-purple-700 px-2 py-0.5 rounded text-xs">sampleId</code>
+                <span>Proben-Position/Nummer</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <code className="bg-purple-200 dark:bg-purple-700 px-2 py-0.5 rounded text-xs">glucose</code>
+                <span>Glukose in mmol/L</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <code className="bg-purple-200 dark:bg-purple-700 px-2 py-0.5 rounded text-xs">ph</code>
+                <span>pH-Wert</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <code className="bg-purple-200 dark:bg-purple-700 px-2 py-0.5 rounded text-xs">temperature</code>
+                <span>Temperatur Messeinheit</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <code className="bg-purple-200 dark:bg-purple-700 px-2 py-0.5 rounded text-xs">measurementDate</code>
+                <span>Datum (YYYY-MM-DD)</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <code className="bg-purple-200 dark:bg-purple-700 px-2 py-0.5 rounded text-xs">measurementTime</code>
+                <span>Uhrzeit (HH:MM:SS)</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <code className="bg-purple-200 dark:bg-purple-700 px-2 py-0.5 rounded text-xs">errorCode</code>
+                <span>Fehlercode (wenn fehlgeschlagen)</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        {/* Device Native Format */}
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+          <h4 className="font-medium text-amber-800 dark:text-amber-200 mb-2">📟 Geräte-natives Format</h4>
+          <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+            Die API akzeptiert auch das native Format von Laktatmessgeräten:
+          </p>
+          <pre className="bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-100 p-3 rounded-lg text-xs overflow-x-auto">
+{`{
+  "SampleID": "001",
+  "Lactate": 1.8,
+  "Glucose": 5.1,
+  "pH": 7.38,
+  "Temperature": 37.2,
+  "Date": "2024-11-25",
+  "Time": "10:30:15",
+  "Error_code": null
+}`}
+          </pre>
         </div>
 
         <h3 className="text-lg font-semibold mb-3 text-zinc-900 dark:text-zinc-100">Response Format</h3>
@@ -606,6 +645,22 @@ Content-Type: application/json
   "processedCount": 3,
   "customerId": "${selectedCustomer?.customer_id || 'CUSTOMER_ID'}"
 }`}
+        </pre>
+      </div>
+
+      {/* Database Migration Note */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">💾 Datenbank-Migration</h4>
+        <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
+          Um die Device Metadaten zu speichern, muss die Datenbank-Migration ausgeführt werden:
+        </p>
+        <pre className="bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 p-3 rounded-lg text-xs overflow-x-auto">
+{`# Migration ausführen:
+chmod +x scripts/run-migration.sh
+./scripts/run-migration.sh
+
+# Oder manuell:
+psql -d laktat -f scripts/add-device-metadata.sql`}
         </pre>
       </div>
     </div>

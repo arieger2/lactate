@@ -57,7 +57,6 @@ export default function LactateInput() {
     power: '',
     lactate: '',
     heartRate: '',
-    vo2: '',
     notes: ''
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -272,13 +271,12 @@ export default function LactateInput() {
       power: Number(currentMeasurement.power),
       lactate: Number(currentMeasurement.lactate),
       heartRate: currentMeasurement.heartRate ? Number(currentMeasurement.heartRate) : undefined,
-      vo2: currentMeasurement.vo2 ? Number(currentMeasurement.vo2) : undefined,
       timestamp: new Date().toISOString(),
       notes: currentMeasurement.notes || undefined
     }
 
     setMeasurementRows(prev => [...prev, newRow])
-    setCurrentMeasurement({ power: '', lactate: '', heartRate: '', vo2: '', notes: '' })
+    setCurrentMeasurement({ power: '', lactate: '', heartRate: '', notes: '' })
   }
 
   // Edit measurement row
@@ -288,7 +286,6 @@ export default function LactateInput() {
       power: row.power.toString(),
       lactate: row.lactate.toString(),
       heartRate: row.heartRate?.toString() || '',
-      vo2: row.vo2?.toString() || '',
       notes: row.notes || ''
     })
   }
@@ -303,13 +300,12 @@ export default function LactateInput() {
         power: Number(currentMeasurement.power),
         lactate: Number(currentMeasurement.lactate),
         heartRate: currentMeasurement.heartRate ? Number(currentMeasurement.heartRate) : undefined,
-        vo2: currentMeasurement.vo2 ? Number(currentMeasurement.vo2) : undefined,
         notes: currentMeasurement.notes || undefined
       } : row
     ))
     
     setEditingRowId(null)
-    setCurrentMeasurement({ power: '', lactate: '', heartRate: '', vo2: '', notes: '' })
+    setCurrentMeasurement({ power: '', lactate: '', heartRate: '', notes: '' })
   }
 
   // Delete measurement row
@@ -640,18 +636,6 @@ export default function LactateInput() {
                     placeholder="e.g., 150"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">VO₂ (mL/kg/min)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={currentMeasurement.vo2}
-                    onChange={(e) => setCurrentMeasurement(prev => ({ ...prev, vo2: e.target.value }))}
-                    className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
-                    placeholder="e.g., 40.5"
-                  />
-                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Notes</label>
@@ -676,7 +660,7 @@ export default function LactateInput() {
                     <button
                       onClick={() => {
                         setEditingRowId(null)
-                        setCurrentMeasurement({ power: '', lactate: '', heartRate: '', vo2: '', notes: '' })
+                        setCurrentMeasurement({ power: '', lactate: '', heartRate: '', notes: '' })
                       }}
                       className="px-4 py-2 bg-zinc-500 hover:bg-zinc-600 text-white rounded-md font-medium"
                     >
@@ -736,7 +720,6 @@ export default function LactateInput() {
                         <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">Power (W)</th>
                         <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">Lactate</th>
                         <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">HR</th>
-                        <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">VO₂</th>
                         {isEditingEnabled && (
                           <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
                         )}
@@ -753,7 +736,6 @@ export default function LactateInput() {
                           <td className="p-2 font-medium">{row.power} W</td>
                           <td className="p-2">{row.lactate} mmol/L</td>
                           <td className="p-2">{row.heartRate ? `${row.heartRate} bpm` : '-'}</td>
-                          <td className="p-2">{row.vo2 ? `${row.vo2} mL/kg/min` : '-'}</td>
                           {isEditingEnabled && (
                             <td className="p-2">
                               <div className="flex gap-1">

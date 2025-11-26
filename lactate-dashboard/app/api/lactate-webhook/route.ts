@@ -7,8 +7,19 @@ interface LactateWebhookPayload {
   lactate: number // mmol/L
   heartRate?: number // bpm
   fatOxidation?: number // g/min
+  vo2?: number // mL/kg/min
   sessionId?: string
   testType?: 'incremental' | 'steady-state'
+  // Device metadata (optional)
+  sampleId?: string // Position/number
+  glucose?: number // mmol/L
+  ph?: number // pH value
+  temperature?: number // Temperature of measurement unit
+  measurementDate?: string // YYYY-MM-DD
+  measurementTime?: string // HH:MM:SS
+  errorCode?: string // Error code if measurement failed
+  deviceId?: string // Device identifier
+  rawData?: Record<string, unknown> // Any additional raw data
 }
 
 // PostgreSQL store with memory fallback
@@ -41,15 +52,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create the data entry
+    // Create the data entry with all optional metadata
     const dataEntry: LactateWebhookPayload = {
       timestamp: body.timestamp || new Date().toISOString(),
       power: body.power,
       lactate: body.lactate,
       heartRate: body.heartRate,
       fatOxidation: body.fatOxidation,
+      vo2: body.vo2 || body.VO2,
       sessionId: body.sessionId || 'default',
-      testType: body.testType || 'incremental'
+      testType: body.testType || 'incremental',
+      // Device metadata (optional)
+      sampleId: body.sampleId || body.SampleID,
+      glucose: body.glucose || body.Glucose,
+      ph: body.ph || body.pH,
+      temperature: body.temperature || body.Temperature,
+      measurementDate: body.measurementDate || body.Date,
+      measurementTime: body.measurementTime || body.Time,
+      errorCode: body.errorCode || body.error_code,
+      deviceId: body.deviceId,
+      rawData: body.rawData
     }
 
     // Store the data in PostgreSQL
@@ -65,10 +87,14 @@ export async function POST(request: NextRequest) {
           ON CONFLICT (session_id) DO UPDATE SET updated_at = NOW()
         `, [sessionId, dataEntry.testType])
 
-        // Insert lactate data
+        // Insert lactate data with extended metadata
         await client.query(`
-          INSERT INTO lactate_data (session_id, customer_id, timestamp, power, lactate, heart_rate, fat_oxidation)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          INSERT INTO lactate_data (
+            session_id, customer_id, timestamp, power, lactate, heart_rate, fat_oxidation, vo2,
+            sample_id, glucose, ph, temperature, measurement_date, measurement_time, 
+            error_code, device_id, raw_data
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         `, [
           sessionId,
           body.customerId || null,
@@ -76,7 +102,17 @@ export async function POST(request: NextRequest) {
           dataEntry.power,
           dataEntry.lactate,
           dataEntry.heartRate || null,
-          dataEntry.fatOxidation || null
+          dataEntry.fatOxidation || null,
+          dataEntry.vo2 || null,
+          dataEntry.sampleId || null,
+          dataEntry.glucose || null,
+          dataEntry.ph || null,
+          dataEntry.temperature || null,
+          dataEntry.measurementDate || null,
+          dataEntry.measurementTime || null,
+          dataEntry.errorCode || null,
+          dataEntry.deviceId || null,
+          dataEntry.rawData ? JSON.stringify(dataEntry.rawData) : null
         ])
 
         console.log('Data stored in PostgreSQL:', dataEntry)
@@ -113,28 +149,54 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const sessionId = searchParams.get('sessionId') || 'default'
+  const includeMetadata = searchParams.get('includeMetadata') === 'true'
 
   try {
     // Get data from PostgreSQL
     const client = await pool.connect()
     try {
+      // Extended query with optional metadata fields
       const result = await client.query(`
         SELECT timestamp, power, lactate, heart_rate as "heartRate", 
-               fat_oxidation as "fatOxidation", 'incremental' as "testType"
+               fat_oxidation as "fatOxidation", vo2, 'incremental' as "testType",
+               sample_id as "sampleId", glucose, ph, temperature,
+               measurement_date as "measurementDate", measurement_time as "measurementTime",
+               error_code as "errorCode", device_id as "deviceId", raw_data as "rawData"
         FROM lactate_data 
         WHERE session_id = $1 
         ORDER BY timestamp ASC
       `, [sessionId])
 
-      const dbData: LactateWebhookPayload[] = result.rows.map(row => ({
-        timestamp: row.timestamp,
-        power: row.power,
-        lactate: parseFloat(row.lactate),
-        heartRate: row.heartRate,
-        fatOxidation: row.fatOxidation ? parseFloat(row.fatOxidation) : undefined,
-        sessionId: sessionId,
-        testType: row.testType
-      }))
+      const dbData: LactateWebhookPayload[] = result.rows.map(row => {
+        const baseData: LactateWebhookPayload = {
+          timestamp: row.timestamp,
+          power: row.power,
+          lactate: parseFloat(row.lactate),
+          heartRate: row.heartRate,
+          fatOxidation: row.fatOxidation ? parseFloat(row.fatOxidation) : undefined,
+          vo2: row.vo2 ? parseFloat(row.vo2) : undefined,
+          sessionId: sessionId,
+          testType: row.testType
+        }
+        
+        // Include metadata if requested or if any metadata exists
+        if (includeMetadata || row.sampleId || row.glucose || row.ph || row.errorCode) {
+          return {
+            ...baseData,
+            sampleId: row.sampleId || undefined,
+            glucose: row.glucose ? parseFloat(row.glucose) : undefined,
+            ph: row.ph ? parseFloat(row.ph) : undefined,
+            temperature: row.temperature ? parseFloat(row.temperature) : undefined,
+            measurementDate: row.measurementDate || undefined,
+            measurementTime: row.measurementTime || undefined,
+            errorCode: row.errorCode || undefined,
+            deviceId: row.deviceId || undefined,
+            rawData: row.rawData || undefined
+          }
+        }
+        
+        return baseData
+      })
 
       // Sync memory cache with database
       dataStore.set(sessionId, dbData)
