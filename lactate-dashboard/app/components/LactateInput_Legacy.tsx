@@ -59,6 +59,8 @@ export default function LactateInput() {
   
   // New Customer Form States
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
+  const [newCustomerError, setNewCustomerError] = useState<string | null>(null)
+  const [isCreatingCustomer, setIsCreatingCustomer] = useState(false)
   const [newCustomer, setNewCustomer] = useState({
     name: '',
     customerId: '',
@@ -127,11 +129,14 @@ export default function LactateInput() {
 
   // Create new customer
   const createCustomer = async () => {
+    setNewCustomerError(null)
+    
     if (!newCustomer.name || !newCustomer.customerId) {
-      alert('Name and Customer ID are required')
+      setNewCustomerError('Name and Customer ID are required')
       return
     }
 
+    setIsCreatingCustomer(true)
     try {
       const response = await fetch('/api/customers', {
         method: 'POST',
@@ -144,13 +149,15 @@ export default function LactateInput() {
         setSelectedCustomer(data.customer)
         setShowNewCustomerForm(false)
         setNewCustomer({ name: '', customerId: '', email: '', phone: '', dateOfBirth: '', notes: '' })
-        alert('✅ Customer created successfully!')
+        setNewCustomerError(null)
       } else {
-        alert(`❌ Error: ${data.error}`)
+        setNewCustomerError(data.error || 'Failed to create customer')
       }
     } catch (error) {
       console.error('Error creating customer:', error)
-      alert('❌ Error creating customer')
+      setNewCustomerError(error instanceof Error ? error.message : 'Failed to create customer')
+    } finally {
+      setIsCreatingCustomer(false)
     }
   }
 
@@ -478,6 +485,17 @@ export default function LactateInput() {
             {showNewCustomerForm && (
               <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-zinc-50 dark:bg-zinc-800">
                 <h3 className="text-lg font-medium mb-3 text-zinc-900 dark:text-zinc-100">New Customer</h3>
+                
+                {/* Error Box */}
+                {newCustomerError && (
+                  <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-800 rounded-md">
+                    <p className="text-red-700 dark:text-red-400 font-medium flex items-center gap-2">
+                      <span>⚠️</span>
+                      {newCustomerError}
+                    </p>
+                  </div>
+                )}
+                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
@@ -546,13 +564,25 @@ export default function LactateInput() {
                 <div className="flex gap-2 mt-4">
                   <button
                     onClick={createCustomer}
-                    className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-md font-medium"
+                    disabled={isCreatingCustomer}
+                    className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-green-400 disabled:cursor-not-allowed text-white rounded-md font-medium flex items-center gap-2"
                   >
-                    Create Customer
+                    {isCreatingCustomer ? (
+                      <>
+                        <span className="animate-spin">⏳</span>
+                        Creating...
+                      </>
+                    ) : (
+                      'Create Customer'
+                    )}
                   </button>
                   <button
-                    onClick={() => setShowNewCustomerForm(false)}
-                    className="px-4 py-2 bg-zinc-500 hover:bg-zinc-600 text-white rounded-md font-medium"
+                    onClick={() => {
+                      setShowNewCustomerForm(false)
+                      setNewCustomerError(null)
+                    }}
+                    disabled={isCreatingCustomer}
+                    className="px-4 py-2 bg-zinc-500 hover:bg-zinc-600 disabled:bg-zinc-400 disabled:cursor-not-allowed text-white rounded-md font-medium"
                   >
                     Cancel
                   </button>
