@@ -8,17 +8,22 @@ import configManager from '@/lib/configManager'
 export async function GET() {
   try {
     const dbConfig = configManager.getDatabase()
+    console.log('🔍 API: ConfigManager returned:', dbConfig)
 
-    return NextResponse.json({
+    const response = {
       host: dbConfig.host,
       port: dbConfig.port,
       database: dbConfig.database,
       user: dbConfig.user,
       password: '', // Never expose password in API responses
+      hasPassword: Boolean(dbConfig.password), // Indicate if password exists
       ssl: dbConfig.ssl
-    })
+    }
+    console.log('🔍 API: Sending response:', response)
+
+    return NextResponse.json(response)
   } catch (error) {
-    console.error('Failed to get database config:', error)
+    console.error('❌ Failed to get database config:', error)
     return NextResponse.json({
       success: false,
       message: 'Failed to get database configuration'
@@ -41,14 +46,18 @@ export async function POST(request: NextRequest) {
     const { host, port, database, user, password, ssl } = body
 
     console.log('📝 Updating database config:', { host, port, database, user, ssl })
+    console.log('🔑 Password received:', password ? '***' : '(empty - will preserve existing)')
 
+    // Get current config to preserve password if empty is sent
+    const currentConfig = configManager.getDatabase()
+    
     // Update configuration through ConfigManager (single source of truth)
     configManager.updateDatabaseConfig({
       host: host || 'localhost',
       port: parseInt(port) || 5432,
       database: database || 'laktat',
       user: user || 'postgres',
-      password: password || '',
+      password: password || currentConfig.password, // Preserve existing password if empty
       ssl: ssl !== undefined ? Boolean(ssl) : false
     })
 

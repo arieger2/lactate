@@ -23,10 +23,10 @@ interface DatabaseInfo {
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('database')
   const [dbConfig, setDbConfig] = useState<DatabaseConfig>({
-    host: '',
+    host: 'localhost',
     port: '5432',
-    database: '',
-    user: '',
+    database: 'laktat',
+    user: 'postgres',
     password: '',
     ssl: false
   })
@@ -55,21 +55,35 @@ export default function Settings() {
     setIsLoadingConfig(true)
     try {
       const response = await fetch('/api/settings/database')
+      console.log('🔍 Settings API response:', response.status)
       if (response.ok) {
         const data = await response.json()
+        console.log('🔍 Settings data received:', data)
         setDbConfig({
-          host: data.host || '',
-          port: String(data.port || '5432'),
-          database: data.database || '',
-          user: data.user || '',
+          host: data.host || 'localhost',
+          port: String(data.port || 5432),
+          database: data.database || 'laktat',
+          user: data.user || 'postgres',
           password: '', // Keep empty, user must re-enter to change
           ssl: data.ssl || false
         })
-        // Show placeholder if password exists in env
-        setPasswordPlaceholder('••••••••••••')
+        console.log('🔍 DbConfig set to:', {
+          host: data.host || 'localhost',
+          port: String(data.port || 5432),
+          database: data.database || 'laktat',
+          user: data.user || 'postgres'
+        })
+        // Show placeholder if password exists
+        if (data.hasPassword) {
+          setPasswordPlaceholder('••••••••••••')
+        } else {
+          setPasswordPlaceholder('')
+        }
+      } else {
+        console.error('❌ Settings API failed:', response.status, response.statusText)
       }
     } catch (error) {
-      console.error('Failed to load database config:', error)
+      console.error('❌ Failed to load database config:', error)
     } finally {
       setIsLoadingConfig(false)
     }

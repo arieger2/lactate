@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Pool } from 'pg'
 
+// Import config manager for fallback
+function getConfigPassword() {
+  try {
+    const fs = require('fs')
+    const path = require('path')
+    const configPath = path.join(process.cwd(), 'config', 'app.config.json')
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+      return config.database?.password || ''
+    }
+  } catch (error) {
+    console.warn('Could not read config file for test endpoint')
+  }
+  return ''
+}
+
 // POST - Test database connection with provided credentials
 export async function POST(request: NextRequest) {
   let pool: Pool | null = null
@@ -9,15 +25,25 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { host, port, database, user, password, ssl } = body
     
-    // Use provided password or fallback to env
-    const dbPassword = password || process.env.DB_PASSWORD
+    // Use provided password or fallback to config - CRITICAL: Must be string
+    const dbPassword = String(password || getConfigPassword())
     
-    pool = new Pool({
+    console.log('🧪 Test connection with:', {
       host: host || 'localhost',
       port: parseInt(port) || 5432,
       database: database || 'laktat',
       user: user || 'postgres',
-      password: dbPassword,
+      passwordType: typeof dbPassword,
+      passwordLength: dbPassword.length,
+      ssl: !!ssl
+    })
+    
+    pool = new Pool({
+      host: String(host || 'localhost'),
+      port: parseInt(port) || 5432,
+      database: String(database || 'laktat'),
+      user: String(user || 'postgres'),
+      password: dbPassword, // Already converted to string above
       ssl: ssl ? { rejectUnauthorized: false } : false,
       connectionTimeoutMillis: 5000
     })

@@ -1,5 +1,54 @@
 import { Pool } from 'pg'
-import configManager from './configManager'
+import * as fs from 'fs'
+import * as path from 'path'
+
+/**
+ * Get database configuration safely without causing import issues
+ */
+function getDatabaseConfig() {
+  try {
+    const configPath = path.join(process.cwd(), 'config', 'app.config.json')
+    
+    if (!fs.existsSync(configPath)) {
+      console.warn('⚠️ Config file not found, using defaults')
+      return getDefaultConfig()
+    }
+    
+    const configContent = fs.readFileSync(configPath, 'utf8')
+    const config = JSON.parse(configContent)
+    
+    const dbConfig = config.database || {}
+    console.log('📖 Loaded database config from file')
+    
+    return {
+      host: String(dbConfig.host || 'localhost'),
+      port: Number(dbConfig.port || 5432),
+      database: String(dbConfig.database || 'laktat'),
+      user: String(dbConfig.user || 'postgres'),
+      password: String(dbConfig.password || ''), // CRITICAL: Always string
+      ssl: Boolean(dbConfig.ssl || false),
+      pool: {
+        max: Number(dbConfig.pool?.max || 10),
+        min: Number(dbConfig.pool?.min || 2)
+      }
+    }
+  } catch (error) {
+    console.error('❌ Failed to read database config:', error)
+    return getDefaultConfig()
+  }
+}
+
+function getDefaultConfig() {
+  return {
+    host: 'localhost',
+    port: 5432,
+    database: 'laktat',
+    user: 'postgres',
+    password: '',
+    ssl: false,
+    pool: { max: 10, min: 2 }
+  }
+}
 
 /**
  * Create a database pool with dynamic configuration
@@ -7,72 +56,120 @@ import configManager from './configManager'
  */
 class DatabasePoolManager {
   private pool: Pool | null = null
-  private unsubscribeConfigListener: (() => void) | null = null
+  private isInitialized = false
 
   constructor() {
-    this.initializePool()
-    this.subscribeToConfigChanges()
+    // Don't initialize pool immediately to prevent startup crashes
+    console.log('🔧 DatabasePoolManager created (lazy initialization)')
   }
 
   /**
    * Initialize the database pool with current configuration
    */
   private initializePool() {
-    // Close existing pool if any
-    if (this.pool) {
-      this.pool.end().catch(err => console.error('Error closing pool:', err))
+    try {
+      // Close existing pool if any
+      if (this.pool) {
+        this.pool.end().catch(err => console.error('Error closing pool:', err))
+      }
+
+      const dbConfig = getDatabaseConfig()
+
+      console.log(`📦 Creating database pool: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`)
+      
+      // CRITICAL FIX: Ensure password is always a string for PostgreSQL driver
+      const password = String(dbConfig.password || '')
+
+      console.log('🔧 Pool config before creation:', {
+        host: typeof dbConfig.host,
+        port: typeof dbConfig.port,
+        database: typeof dbConfig.database,
+        user: typeof dbConfig.user,
+        password: typeof dbConfig.password,
+        passwordValue: password ? '***HIDDEN***' : 'EMPTY',
+        passwordLength: password.length,
+        passwordIsString: typeof password === 'string'
+      })
+
+      // CRITICAL: All Pool config values must be the correct type for PostgreSQL
+      const poolConfig = {
+        host: String(dbConfig.host || 'localhost'),
+        port: Number(dbConfig.port || 5432),
+        database: String(dbConfig.database || 'laktat'),
+        user: String(dbConfig.user || 'postgres'),
+        password: password, // Already converted to string above
+        ssl: dbConfig.ssl === true
+          ? {
+              rejectUnauthorized: false,
+              requestCert: false
+            }
+          : false,
+        max: Number(dbConfig.pool?.max ?? 10),
+        min: Number(dbConfig.pool?.min ?? 2),
+        idleTimeoutMillis: 10000,
+        connectionTimeoutMillis: 30000
+      }
+
+      console.log('✅ Pool config validated - creating Pool...')
+      this.pool = new Pool(poolConfig)
+      this.isInitialized = true
+
+      // Setup event listeners
+      this.pool.on('connect', () => {
+        console.log('✅ Connected to PostgreSQL database')
+      })
+
+      this.pool.on('error', (err) => {
+        console.error('❌ Database connection error:', err)
+      })
+
+      console.log('✅ Database pool created successfully')
+    } catch (error) {
+      console.error('❌ Failed to initialize database pool:', error)
+      console.error('❌ Error details:', error)
+      this.pool = null
+      this.isInitialized = false
+      // Don't throw - just log and continue
     }
-
-    const dbConfig = configManager.getDatabase()
-
-    console.log(`📦 Creating database pool: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`)
-
-    this.pool = new Pool({
-      host: dbConfig.host,
-      port: dbConfig.port,
-      database: dbConfig.database,
-      user: dbConfig.user,
-      password: dbConfig.password,
-      ssl: dbConfig.ssl
-        ? {
-            rejectUnauthorized: false,
-            requestCert: false
-          }
-        : false,
-      max: dbConfig.pool?.max ?? 10,
-      min: dbConfig.pool?.min ?? 2,
-      idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 30000
-    })
-
-    // Setup event listeners
-    this.pool.on('connect', () => {
-      console.log('✅ Connected to PostgreSQL database')
-    })
-
-    this.pool.on('error', (err) => {
-      console.error('❌ Database connection error:', err)
-    })
   }
 
   /**
    * Listen for configuration changes and reinitialize pool
    */
   private subscribeToConfigChanges() {
-    this.unsubscribeConfigListener = configManager.onChange(() => {
-      console.log('🔄 Database configuration changed, reinitializing pool...')
-      this.initializePool()
-    })
+    // Simplified - no auto-reload for now, just manual reinit
+    console.log('📝 Config auto-reload disabled - use forceReinitialize() for updates')
   }
 
   /**
    * Get the current database pool
+   * @returns Pool instance or null if initialization failed
    */
-  public getPool(): Pool {
-    if (!this.pool) {
-      throw new Error('Database pool is not initialized')
+  public getPool(): Pool | null {
+    try {
+      // Force reinitialization to apply fixes
+      if (!this.isInitialized || !this.pool) {
+        console.log('🔄 Pool not initialized, creating new one...')
+        this.initializePool()
+      }
+      
+      if (!this.pool) {
+        console.warn('⚠️ Database pool could not be initialized. Check database configuration and connection.')
+        return null
+      }
+      
+      return this.pool
+    } catch (error) {
+      console.error('❌ Error in getPool():', error)
+      return null
     }
-    return this.pool
+  }
+
+  /**
+   * Check if pool is ready for use
+   */
+  public isPoolReady(): boolean {
+    return this.isInitialized && this.pool !== null
   }
 
   /**
@@ -82,7 +179,13 @@ class DatabasePoolManager {
     text: string,
     values?: Array<any>
   ): Promise<{ rows: T[]; rowCount: number }> {
-    const client = await this.getPool().connect()
+    const pool = this.getPool()
+    
+    if (!pool) {
+      throw new Error('Database pool is not available. Check database configuration.')
+    }
+
+    const client = await pool.connect()
     try {
       const result = await client.query(text, values)
       return {
@@ -95,13 +198,18 @@ class DatabasePoolManager {
   }
 
   /**
+   * Force reinitialize the pool (for debugging)
+   */
+  public forceReinitialize() {
+    console.log('🔄 Force reinitializing pool...')
+    this.isInitialized = false
+    this.initializePool()
+  }
+
+  /**
    * Cleanup resources
    */
   public async destroy() {
-    if (this.unsubscribeConfigListener) {
-      this.unsubscribeConfigListener()
-    }
-
     if (this.pool) {
       try {
         await this.pool.end()
@@ -113,11 +221,24 @@ class DatabasePoolManager {
   }
 }
 
-// Create singleton instance
-const dbPoolManager = new DatabasePoolManager()
+// Lazy singleton to prevent startup crashes
+let dbPoolManager: DatabasePoolManager | null = null
 
-// Export the pool directly for backward compatibility
-export const pool = dbPoolManager.getPool()
+const getManager = () => {
+  if (!dbPoolManager) {
+    console.log('🚀 Initializing DatabasePoolManager')
+    dbPoolManager = new DatabasePoolManager()
+  }
+  return dbPoolManager
+}
+
+// Export lazy-loaded pool
+export const pool = {
+  connect: async () => getManager().getPool().connect(),
+  query: async (text: string, values?: any[]) => getManager().query(text, values),
+  end: async () => getManager().getPool().end(),
+  on: (event: string, listener: (...args: any[]) => void) => getManager().getPool().on(event, listener)
+}
 
 // Export the manager for advanced usage
-export default dbPoolManager
+export default getManager

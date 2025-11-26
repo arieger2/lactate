@@ -71,7 +71,16 @@ class ConfigManager {
    */
   public getDatabase(): DatabaseConfig {
     this.load() // Always check for fresh data
-    return { ...this.config.database }
+    const config = { ...this.config.database }
+    
+    // Ensure password is always a string (fix for PostgreSQL driver)
+    if (config.password === null || config.password === undefined) {
+      config.password = ''
+    } else {
+      config.password = String(config.password)
+    }
+    
+    return config
   }
 
   /**

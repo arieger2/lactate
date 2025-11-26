@@ -1,29 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Pool } from 'pg'
+import dbPoolManager from '@/lib/dbPoolManager'
 
 // GET - List all user databases (excluding system databases)
 export async function GET(request: NextRequest) {
-  let pool: Pool | null = null
-  
   try {
-    const { searchParams } = new URL(request.url)
-    const host = searchParams.get('host') || process.env.DB_HOST || 'localhost'
-    const port = parseInt(searchParams.get('port') || process.env.DB_PORT || '5432')
-    const user = searchParams.get('user') || process.env.DB_USER || 'postgres'
-    const password = searchParams.get('password') || process.env.DB_PASSWORD
-    const ssl = searchParams.get('ssl') === 'true' || process.env.DB_SSL === 'true'
+    console.log('🔍 API: Getting database list via shared pool')
     
-    pool = new Pool({
-      host,
-      port,
-      database: 'postgres', // Connect to default postgres db to list all databases
-      user,
-      password,
-      ssl: ssl ? { rejectUnauthorized: false } : false,
-      connectionTimeoutMillis: 10000
-    })
+    const pool = dbPoolManager().getPool()
+    if (!pool) {
+      console.warn('⚠️ Database pool not available')
+      return NextResponse.json({
+        success: false,
+        message: 'Database pool not available - check configuration',
+        databases: []
+      }, { status: 500 })
+    }
     
+    console.log('🔄 Pool obtained successfully')
     const client = await pool.connect()
+    console.log('🔗 Client connected')
     
     try {
       // Get all databases excluding system databases
@@ -39,6 +34,8 @@ export async function GET(request: NextRequest) {
         ORDER BY d.datname
       `)
       
+      console.log('✅ Query executed:', result.rows.length, 'databases found')
+      
       const databases = result.rows.map(row => ({
         name: row.name,
         owner: row.owner,
@@ -52,6 +49,7 @@ export async function GET(request: NextRequest) {
       })
     } finally {
       client.release()
+      console.log('🔓 Client released')
     }
   } catch (error) {
     console.error('❌ Failed to list databases:', error)
@@ -60,8 +58,6 @@ export async function GET(request: NextRequest) {
       message: error instanceof Error ? error.message : 'Failed to list databases',
       databases: []
     }, { status: 500 })
-  } finally {
-    if (pool) await pool.end()
   }
 }
 
