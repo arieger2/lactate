@@ -28,12 +28,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { host, port, database, user, password, ssl } = body
     
+    console.log('Received config to save:', { host, port, database, user, ssl })
+    
     // Use provided values or fallback to current env values
     const finalHost = host || process.env.DB_HOST || 'localhost'
     const finalPort = port || process.env.DB_PORT || '5432'
     const finalDatabase = database || process.env.DB_NAME || 'laktat'
     const finalUser = user || process.env.DB_USER || 'postgres'
     const finalSsl = ssl !== undefined ? ssl : (process.env.DB_SSL === 'true')
+    
+    console.log('Final values to save:', { finalHost, finalPort, finalDatabase, finalUser, finalSsl })
     
     const envPath = path.join(process.cwd(), '.env.local')
     
@@ -46,13 +50,16 @@ export async function POST(request: NextRequest) {
       envContent = '# Environment Configuration for Lactate Dashboard\n\n'
     }
     
-    // Update or add each variable
+    // Update or add each variable - use global flag to replace all occurrences
     const updateEnvVar = (content: string, key: string, value: string): string => {
-      const regex = new RegExp(`^${key}=.*$`, 'm')
+      const regex = new RegExp(`^${key}=.*$`, 'gm')
       if (regex.test(content)) {
+        // Reset regex lastIndex after test
+        regex.lastIndex = 0
         return content.replace(regex, `${key}=${value}`)
       } else {
-        return content + `\n${key}=${value}`
+        // Add to end of file
+        return content.trimEnd() + `\n${key}=${value}\n`
       }
     }
     
@@ -65,6 +72,7 @@ export async function POST(request: NextRequest) {
     }
     envContent = updateEnvVar(envContent, 'DB_SSL', finalSsl ? 'true' : 'false')
     
+    console.log('Saving to:', envPath)
     fs.writeFileSync(envPath, envContent)
     
     return NextResponse.json({
