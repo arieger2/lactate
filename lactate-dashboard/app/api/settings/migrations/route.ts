@@ -10,15 +10,20 @@ interface Migration {
   executedAt?: string
 }
 
-// Define available migrations
+// Define available migrations (these are now included in the base schema when creating a new database)
+// They remain here for legacy databases that need to be upgraded
 const availableMigrations: { name: string; description: string }[] = [
   { 
     name: 'add-device-metadata', 
-    description: 'Add device metadata columns (sample_id, glucose, ph, temperature, vo2, etc.)' 
+    description: 'Add device metadata columns (sample_id, glucose, ph, temperature, vo2, etc.) - included in new databases' 
   },
   { 
-    name: 'create-training-zones-table', 
-    description: 'Create training zones table for storing custom zone adjustments' 
+    name: 'update-training-zones-schema', 
+    description: 'Update training zones table to use JSONB for zone_boundaries - included in new databases' 
+  },
+  {
+    name: 'add-threshold-results-table',
+    description: 'Create threshold_results table for storing analysis results - included in new databases'
   }
 ]
 

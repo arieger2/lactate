@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Pool } from 'pg'
 
 // Migration SQL scripts
+// Note: These migrations are for upgrading legacy databases. 
+// New databases created via Settings already include all these changes.
 const migrations: Record<string, string> = {
   'add-device-metadata': `
     -- Migration: Add device metadata fields to lactate_data table
@@ -19,37 +21,39 @@ const migrations: Record<string, string> = {
 
     CREATE INDEX IF NOT EXISTS idx_lactate_data_device_id ON lactate_data(device_id);
     CREATE INDEX IF NOT EXISTS idx_lactate_data_sample_id ON lactate_data(sample_id);
-
-    COMMENT ON COLUMN lactate_data.sample_id IS 'Sample position/number from lactate device';
-    COMMENT ON COLUMN lactate_data.glucose IS 'Blood glucose in mmol/L (if device is configured to measure)';
-    COMMENT ON COLUMN lactate_data.ph IS 'Blood pH value (if device is configured to measure)';
-    COMMENT ON COLUMN lactate_data.temperature IS 'Temperature of measurement unit in degrees';
-    COMMENT ON COLUMN lactate_data.measurement_date IS 'Date of measurement as reported by device (YYYY-MM-DD)';
-    COMMENT ON COLUMN lactate_data.measurement_time IS 'Time of measurement as reported by device (HH:MM:SS)';
-    COMMENT ON COLUMN lactate_data.error_code IS 'Error code if measurement failed (null if successful)';
-    COMMENT ON COLUMN lactate_data.device_id IS 'Identifier of the lactate measurement device';
-    COMMENT ON COLUMN lactate_data.raw_data IS 'JSON blob containing any additional raw data from device';
-    COMMENT ON COLUMN lactate_data.vo2 IS 'VO2 oxygen consumption in mL/kg/min';
   `,
   
-  'create-training-zones-table': `
-    -- Migration: Create training zones table
+  'update-training-zones-schema': `
+    -- Migration: Update training zones table to new JSONB schema
+    -- First, drop the old table if it has the old schema
+    DROP TABLE IF EXISTS training_zones CASCADE;
+    
+    -- Create the new training zones table
     CREATE TABLE IF NOT EXISTS training_zones (
       id SERIAL PRIMARY KEY,
       customer_id VARCHAR(255) NOT NULL,
       session_id VARCHAR(255) NOT NULL,
-      zone_type VARCHAR(50) NOT NULL DEFAULT 'custom',
-      z1_end INTEGER NOT NULL,
-      z2_end INTEGER NOT NULL,
-      z3_end INTEGER NOT NULL,
-      z4_end INTEGER NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(customer_id, session_id, zone_type)
+      zone_boundaries JSONB NOT NULL,
+      method VARCHAR(50) NOT NULL,
+      modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(customer_id, session_id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_training_zones_customer_session 
       ON training_zones(customer_id, session_id);
+  `,
+  
+  'add-threshold-results-table': `
+    -- Migration: Create threshold results table
+    CREATE TABLE IF NOT EXISTS threshold_results (
+      id SERIAL PRIMARY KEY,
+      session_id VARCHAR(255) NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+      method VARCHAR(50) NOT NULL,
+      threshold_power INTEGER,
+      threshold_lactate NUMERIC(4,2),
+      threshold_heart_rate INTEGER,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `
 }
 

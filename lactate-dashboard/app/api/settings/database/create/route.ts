@@ -83,9 +83,8 @@ export async function POST(request: NextRequest) {
           customer_id VARCHAR(255) UNIQUE NOT NULL,
           name VARCHAR(255) NOT NULL,
           email VARCHAR(255),
-          birth_date DATE,
-          gender VARCHAR(10),
-          sport VARCHAR(100),
+          phone VARCHAR(50),
+          date_of_birth DATE,
           notes TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -95,10 +94,13 @@ export async function POST(request: NextRequest) {
         CREATE TABLE IF NOT EXISTS sessions (
           id SERIAL PRIMARY KEY,
           session_id VARCHAR(255) UNIQUE NOT NULL,
-          customer_id VARCHAR(255) REFERENCES customers(customer_id) ON DELETE CASCADE,
+          customer_id VARCHAR(255) REFERENCES customers(customer_id) ON DELETE SET NULL,
+          athlete_name VARCHAR(255),
+          test_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           test_type VARCHAR(100),
           notes TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         
         -- Lactate data table
@@ -111,7 +113,17 @@ export async function POST(request: NextRequest) {
           heart_rate INTEGER,
           fat_oxidation NUMERIC(4,2),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          customer_id VARCHAR(255) REFERENCES customers(customer_id) ON DELETE SET NULL
+          customer_id VARCHAR(255) REFERENCES customers(customer_id) ON DELETE SET NULL,
+          sample_id VARCHAR(50),
+          glucose NUMERIC(5,2),
+          ph NUMERIC(4,3),
+          temperature NUMERIC(4,1),
+          measurement_date DATE,
+          measurement_time TIME,
+          error_code VARCHAR(20),
+          device_id VARCHAR(100),
+          raw_data JSONB,
+          vo2 NUMERIC(5,2)
         );
         
         -- Training zones table
@@ -119,20 +131,38 @@ export async function POST(request: NextRequest) {
           id SERIAL PRIMARY KEY,
           customer_id VARCHAR(255) NOT NULL,
           session_id VARCHAR(255) NOT NULL,
-          zone_type VARCHAR(50) NOT NULL DEFAULT 'custom',
-          z1_end INTEGER NOT NULL,
-          z2_end INTEGER NOT NULL,
-          z3_end INTEGER NOT NULL,
-          z4_end INTEGER NOT NULL,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(customer_id, session_id, zone_type)
+          zone_boundaries JSONB NOT NULL,
+          method VARCHAR(50) NOT NULL,
+          modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(customer_id, session_id)
+        );
+        
+        -- Threshold results table
+        CREATE TABLE IF NOT EXISTS threshold_results (
+          id SERIAL PRIMARY KEY,
+          session_id VARCHAR(255) NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+          method VARCHAR(50) NOT NULL,
+          threshold_power INTEGER,
+          threshold_lactate NUMERIC(4,2),
+          threshold_heart_rate INTEGER,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        
+        -- Migrations tracking table
+        CREATE TABLE IF NOT EXISTS migrations (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) UNIQUE NOT NULL,
+          executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         
         -- Create indexes
+        CREATE INDEX IF NOT EXISTS idx_customers_customer_id ON customers(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
         CREATE INDEX IF NOT EXISTS idx_lactate_data_session_id ON lactate_data(session_id);
         CREATE INDEX IF NOT EXISTS idx_lactate_data_timestamp ON lactate_data(timestamp);
         CREATE INDEX IF NOT EXISTS idx_lactate_data_customer_id ON lactate_data(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_lactate_data_sample_id ON lactate_data(sample_id);
+        CREATE INDEX IF NOT EXISTS idx_lactate_data_device_id ON lactate_data(device_id);
         CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON sessions(customer_id);
         CREATE INDEX IF NOT EXISTS idx_training_zones_customer_session ON training_zones(customer_id, session_id);
       `)

@@ -13,11 +13,11 @@ interface DatabaseConfig {
   ssl: boolean
 }
 
-interface MigrationScript {
+interface DatabaseInfo {
   name: string
-  description: string
-  executed: boolean
-  executedAt?: string
+  owner: string
+  size: string
+  sizeBytes: number
 }
 
 export default function Settings() {
@@ -34,15 +34,21 @@ export default function Settings() {
   const [isLoadingConfig, setIsLoadingConfig] = useState(true)
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
-  const [migrations, setMigrations] = useState<MigrationScript[]>([])
-  const [isRunningMigration, setIsRunningMigration] = useState<string | null>(null)
-  const [migrationResults, setMigrationResults] = useState<Record<string, { success: boolean; message: string }>>({})
   const [passwordPlaceholder, setPasswordPlaceholder] = useState('')
+  
+  // Delete database state
+  const [databases, setDatabases] = useState<DatabaseInfo[]>([])
+  const [isLoadingDatabases, setIsLoadingDatabases] = useState(false)
+  const [selectedDatabase, setSelectedDatabase] = useState<string>('')
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteResult, setDeleteResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
   // Load current database config
   useEffect(() => {
     loadDatabaseConfig()
-    loadMigrations()
+    loadDatabases()
   }, [])
 
   const loadDatabaseConfig = async () => {
@@ -66,23 +72,6 @@ export default function Settings() {
       console.error('Failed to load database config:', error)
     } finally {
       setIsLoadingConfig(false)
-    }
-  }
-
-  const loadMigrations = async () => {
-    try {
-      const response = await fetch('/api/settings/migrations')
-      if (response.ok) {
-        const data = await response.json()
-        setMigrations(data.migrations || [])
-      }
-    } catch (error) {
-      console.error('Failed to load migrations:', error)
-      // Set default available migrations
-      setMigrations([
-        { name: 'add-device-metadata', description: 'Add device metadata columns (sample_id, glucose, ph, temperature, etc.)', executed: false },
-        { name: 'create-training-zones-table', description: 'Create training zones table for storing custom zone adjustments', executed: false }
-      ])
     }
   }
 
@@ -130,38 +119,6 @@ export default function Settings() {
     }
   }
 
-  const handleRunMigration = async (migrationName: string) => {
-    setIsRunningMigration(migrationName)
-    try {
-      const response = await fetch('/api/settings/migrations/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ migration: migrationName })
-      })
-      
-      const result = await response.json()
-      setMigrationResults(prev => ({
-        ...prev,
-        [migrationName]: {
-          success: result.success,
-          message: result.success ? 'Migration executed successfully!' : result.message || 'Migration failed'
-        }
-      }))
-      
-      if (result.success) {
-        // Reload migrations to update status
-        loadMigrations()
-      }
-    } catch (error) {
-      setMigrationResults(prev => ({
-        ...prev,
-        [migrationName]: { success: false, message: 'Failed to run migration' }
-      }))
-    } finally {
-      setIsRunningMigration(null)
-    }
-  }
-
   const handleCreateDatabase = async () => {
     setIsLoading(true)
     setTestResult(null)
@@ -177,10 +134,75 @@ export default function Settings() {
         success: result.success,
         message: result.success ? 'Database created successfully!' : result.message || 'Failed to create database'
       })
+      
+      // Reload database list
+      if (result.success) {
+        loadDatabases()
+      }
     } catch (error) {
       setTestResult({ success: false, message: 'Failed to create database' })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const loadDatabases = async () => {
+    setIsLoadingDatabases(true)
+    try {
+      const params = new URLSearchParams()
+      if (dbConfig.host) params.append('host', dbConfig.host)
+      if (dbConfig.port) params.append('port', dbConfig.port)
+      if (dbConfig.user) params.append('user', dbConfig.user)
+      if (dbConfig.password) params.append('password', dbConfig.password)
+      if (dbConfig.ssl) params.append('ssl', 'true')
+      
+      const response = await fetch(`/api/settings/database/list?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setDatabases(data.databases || [])
+      }
+    } catch (error) {
+      console.error('Failed to load databases:', error)
+    } finally {
+      setIsLoadingDatabases(false)
+    }
+  }
+
+  const handleDeleteDatabase = async () => {
+    if (!selectedDatabase || deleteConfirmText !== selectedDatabase) {
+      return
+    }
+    
+    setIsDeleting(true)
+    setDeleteResult(null)
+    
+    try {
+      const response = await fetch('/api/settings/database/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...dbConfig,
+          databaseToDelete: selectedDatabase
+        })
+      })
+      
+      const result = await response.json()
+      setDeleteResult({
+        success: result.success,
+        message: result.message
+      })
+      
+      if (result.success) {
+        // Reset state and reload database list
+        setSelectedDatabase('')
+        setDeleteConfirmText('')
+        setShowDeleteConfirm(false)
+        loadDatabases()
+      }
+    } catch (error) {
+      setDeleteResult({ success: false, message: 'Failed to delete database' })
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -376,75 +398,145 @@ export default function Settings() {
               {/* Divider */}
               <hr className="border-zinc-200 dark:border-zinc-700" />
 
-              {/* Database Migrations */}
+              {/* Delete Database Section */}
               <div>
-                <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">
-                  Database Migrations
+                <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4 flex items-center gap-2">
+                  🗑️ Delete Database
                 </h3>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
-                  Run database update scripts to add new features or modify the schema.
+                  Select a database to permanently delete. This action cannot be undone!
                 </p>
 
-                <div className="space-y-3">
-                  {migrations.map(migration => (
-                    <div 
-                      key={migration.name}
-                      className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-lg ${migration.executed ? '✅' : '📋'}`}>
-                            {migration.executed ? '✅' : '📋'}
-                          </span>
-                          <span className="font-medium text-zinc-800 dark:text-zinc-200">
-                            {migration.name}
-                          </span>
-                          {migration.executed && (
-                            <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded">
-                              Executed
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1 ml-7">
-                          {migration.description}
-                        </p>
-                        {migration.executedAt && (
-                          <p className="text-xs text-zinc-500 dark:text-zinc-500 mt-1 ml-7">
-                            Executed at: {new Date(migration.executedAt).toLocaleString()}
-                          </p>
-                        )}
-                        {migrationResults[migration.name] && (
-                          <div className={`mt-2 ml-7 text-sm ${
-                            migrationResults[migration.name].success
-                              ? 'text-green-600 dark:text-green-400'
-                              : 'text-red-600 dark:text-red-400'
-                          }`}>
-                            {migrationResults[migration.name].success ? '✅' : '❌'} {migrationResults[migration.name].message}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleRunMigration(migration.name)}
-                        disabled={isRunningMigration === migration.name || migration.executed}
-                        className={`px-4 py-2 rounded-md font-medium flex items-center gap-2 ${
-                          migration.executed
-                            ? 'bg-zinc-300 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400 cursor-not-allowed'
-                            : 'bg-orange-500 hover:bg-orange-600 disabled:bg-orange-400 text-white'
-                        }`}
-                      >
-                        {isRunningMigration === migration.name ? (
-                          <>
-                            <span className="animate-spin">⏳</span> Running...
-                          </>
-                        ) : migration.executed ? (
-                          <>✓ Done</>
-                        ) : (
-                          <>▶️ Run</>
-                        )}
-                      </button>
-                    </div>
-                  ))}
+                <div className="flex items-center gap-3 mb-4">
+                  <button
+                    onClick={loadDatabases}
+                    disabled={isLoadingDatabases}
+                    className="px-3 py-2 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-md text-sm flex items-center gap-2"
+                  >
+                    {isLoadingDatabases ? (
+                      <>
+                        <span className="animate-spin">⏳</span> Loading...
+                      </>
+                    ) : (
+                      <>🔄 Refresh List</>
+                    )}
+                  </button>
                 </div>
+
+                {databases.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-2">
+                      {databases.map(db => (
+                        <label
+                          key={db.name}
+                          className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${
+                            selectedDatabase === db.name
+                              ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                              : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="radio"
+                              name="database"
+                              value={db.name}
+                              checked={selectedDatabase === db.name}
+                              onChange={(e) => {
+                                setSelectedDatabase(e.target.value)
+                                setShowDeleteConfirm(false)
+                                setDeleteConfirmText('')
+                                setDeleteResult(null)
+                              }}
+                              className="w-4 h-4 text-red-500 border-zinc-300 focus:ring-red-500"
+                            />
+                            <div>
+                              <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                                🗄️ {db.name}
+                              </span>
+                              {db.name === dbConfig.database && (
+                                <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded">
+                                  Current
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-sm text-zinc-500 dark:text-zinc-400">
+                            {db.size} • Owner: {db.owner}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+
+                    {selectedDatabase && !showDeleteConfirm && (
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="mt-4 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md font-medium flex items-center gap-2"
+                      >
+                        🗑️ Delete "{selectedDatabase}"
+                      </button>
+                    )}
+
+                    {showDeleteConfirm && selectedDatabase && (
+                      <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                        <p className="text-red-700 dark:text-red-400 font-medium mb-3">
+                          ⚠️ Are you sure you want to delete "{selectedDatabase}"?
+                        </p>
+                        <p className="text-sm text-red-600 dark:text-red-400 mb-3">
+                          This will permanently delete all data in this database. Type the database name to confirm:
+                        </p>
+                        <input
+                          type="text"
+                          value={deleteConfirmText}
+                          onChange={(e) => setDeleteConfirmText(e.target.value)}
+                          placeholder={`Type "${selectedDatabase}" to confirm`}
+                          className="w-full px-3 py-2 border border-red-300 dark:border-red-700 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500 dark:bg-zinc-800 dark:text-zinc-100 mb-3"
+                        />
+                        <div className="flex gap-3">
+                          <button
+                            onClick={handleDeleteDatabase}
+                            disabled={isDeleting || deleteConfirmText !== selectedDatabase}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-md font-medium flex items-center gap-2"
+                          >
+                            {isDeleting ? (
+                              <>
+                                <span className="animate-spin">⏳</span> Deleting...
+                              </>
+                            ) : (
+                              <>🗑️ Confirm Delete</>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowDeleteConfirm(false)
+                              setDeleteConfirmText('')
+                            }}
+                            className="px-4 py-2 bg-zinc-300 hover:bg-zinc-400 dark:bg-zinc-600 dark:hover:bg-zinc-500 text-zinc-700 dark:text-zinc-200 rounded-md font-medium"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {deleteResult && (
+                      <div className={`mt-4 p-3 rounded-md ${
+                        deleteResult.success 
+                          ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800'
+                          : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+                      }`}>
+                        {deleteResult.success ? '✅' : '❌'} {deleteResult.message}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-zinc-500 dark:text-zinc-400">
+                    {isLoadingDatabases ? (
+                      <span>Loading databases...</span>
+                    ) : (
+                      <span>No user databases found. Click "Refresh List" to load.</span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
