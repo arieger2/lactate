@@ -232,12 +232,32 @@ const getManager = () => {
   return dbPoolManager
 }
 
-// Export lazy-loaded pool
+// Export lazy-loaded pool with null safety
 export const pool = {
-  connect: async () => getManager().getPool().connect(),
+  connect: async () => {
+    const poolInstance = getManager().getPool()
+    if (!poolInstance) {
+      throw new Error('Database pool is not available. Check database configuration.')
+    }
+    return poolInstance.connect()
+  },
   query: async (text: string, values?: any[]) => getManager().query(text, values),
-  end: async () => getManager().getPool().end(),
-  on: (event: string, listener: (...args: any[]) => void) => getManager().getPool().on(event, listener)
+  end: async () => {
+    const poolInstance = getManager().getPool()
+    if (!poolInstance) {
+      console.warn('⚠️ Cannot end pool - pool is not initialized')
+      return
+    }
+    return poolInstance.end()
+  },
+  on: (event: 'connect' | 'acquire' | 'remove' | 'release' | 'error', listener: any) => {
+    const poolInstance = getManager().getPool()
+    if (!poolInstance) {
+      console.warn('⚠️ Cannot add event listener - pool is not initialized')
+      return
+    }
+    return poolInstance.on(event as any, listener)
+  }
 }
 
 // Export the manager for advanced usage
