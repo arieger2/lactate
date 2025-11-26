@@ -6,8 +6,9 @@ import LactateInput from './LactateInput'
 import LactateGraph from './LactateGraph'
 import LactatePerformanceCurve from './LactatePerformanceCurve'
 import Documentation from './Documentation'
+import Settings from './Settings'
 
-type TabType = 'input' | 'graph' | 'performance' | 'docs'
+type TabType = 'input' | 'graph' | 'performance' | 'docs' | 'settings'
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('input')
@@ -49,7 +50,7 @@ export default function Dashboard() {
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
             >
-              Lactate Input
+              ✏️ Lactate Input
             </button>
             <button
               onClick={() => setActiveTab('graph')}
@@ -59,7 +60,7 @@ export default function Dashboard() {
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
             >
-              Lactate Graph
+              📊 Lactate Graph
             </button>
             <button
               onClick={() => setActiveTab('performance')}
@@ -69,7 +70,7 @@ export default function Dashboard() {
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
             >
-              Performance Kurve
+              📈 Performance Kurve
             </button>
             <button
               onClick={() => setActiveTab('docs')}
@@ -81,6 +82,16 @@ export default function Dashboard() {
             >
               📚 Dokumentation
             </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`px-6 py-3 rounded-md font-medium transition-all duration-200 whitespace-nowrap ${
+                activeTab === 'settings'
+                  ? 'bg-blue-500 text-white shadow-sm'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+              }`}
+            >
+              ⚙️ Settings
+            </button>
           </div>
         </div>
 
@@ -90,6 +101,7 @@ export default function Dashboard() {
           {activeTab === 'graph' && <LactateGraph />}
           {activeTab === 'performance' && <LactatePerformanceCurve />}
           {activeTab === 'docs' && <Documentation />}
+          {activeTab === 'settings' && <Settings />}
         </div>
       </div>
     </div>
