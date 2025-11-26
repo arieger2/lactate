@@ -1015,7 +1015,7 @@ const LactatePerformanceCurve = () => {
   }, [])
 
   // Find which boundary is near the mouse position - returns the CLOSEST boundary
-  const findNearBoundary = useCallback((power: number): string | null => {
+  const findNearBoundary = useCallback((power: number): keyof ZoneBoundaries | null => {
     const zones = getFiveTrainingZones()
     if (zones.length < 5) return null
     
@@ -1028,7 +1028,7 @@ const LactatePerformanceCurve = () => {
     const z3End = zones[2].range[1]
     const z4End = zones[3].range[1]
     
-    const boundaries: { key: string; value: number; label: string }[] = [
+    const boundaries: { key: keyof ZoneBoundaries; value: number; label: string }[] = [
       { key: 'z1End', value: z1End, label: 'Z1|Z2' },
       { key: 'z2End', value: z2End, label: 'Z2|Z3' },
       { key: 'z3End', value: z3End, label: 'Z3|Z4' },
@@ -1047,7 +1047,7 @@ const LactatePerformanceCurve = () => {
     const threshold = 15 // Watt tolerance for detection
     
     // Find the closest boundary within threshold
-    let closestBoundary: string | null = null
+    let closestBoundary: keyof ZoneBoundaries | null = null
     let closestDistance = Infinity
     let closestLabel = ''
     
