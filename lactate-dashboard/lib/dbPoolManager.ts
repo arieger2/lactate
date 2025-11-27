@@ -61,6 +61,9 @@ class DatabasePoolManager {
   constructor() {
     // Don't initialize pool immediately to prevent startup crashes
     console.log('🔧 DatabasePoolManager created (lazy initialization)')
+    
+    // Subscribe to configuration changes for automatic pool recreation
+    this.subscribeToConfigChanges()
   }
 
   /**
@@ -137,8 +140,26 @@ class DatabasePoolManager {
    * Listen for configuration changes and reinitialize pool
    */
   private subscribeToConfigChanges() {
-    // Simplified - no auto-reload for now, just manual reinit
-    console.log('📝 Config auto-reload disabled - use forceReinitialize() for updates')
+    // File watching based config reload for production
+    const configPath = path.join(process.cwd(), 'config', 'app.config.json')
+    
+    try {
+      if (fs.existsSync(configPath)) {
+        // Watch config file for changes
+        fs.watchFile(configPath, { persistent: false }, () => {
+          console.log('🔄 Database configuration file changed - recreating pool automatically')
+          setTimeout(() => {
+            this.forceReinitialize()
+          }, 100) // Small delay to ensure file write is complete
+        })
+        console.log('📝 Config file watching enabled - pool will recreate on config changes')
+      } else {
+        console.log('📝 Config file not found - auto-reload disabled')
+      }
+    } catch (error) {
+      console.error('❌ Failed to setup config file watching:', error)
+      console.log('📝 Config auto-reload disabled - use forceReinitialize() for updates')
+    }
   }
 
   /**

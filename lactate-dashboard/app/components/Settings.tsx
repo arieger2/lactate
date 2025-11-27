@@ -45,11 +45,16 @@ export default function Settings() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
-  // Load current database config
+  // Load current database config only once on component mount
   useEffect(() => {
     loadDatabaseConfig()
     loadDatabases()
-  }, [])
+  }, []) // Only run once
+
+  // Prevent config reload on tab changes
+  useEffect(() => {
+    // No-op - prevent unnecessary reloads
+  }, [activeTab])
 
   const loadDatabaseConfig = async () => {
     setIsLoadingConfig(true)
@@ -59,13 +64,26 @@ export default function Settings() {
       if (response.ok) {
         const data = await response.json()
         console.log('🔍 Settings data received:', data)
-        setDbConfig({
-          host: data.host || 'localhost',
-          port: String(data.port || 5432),
-          database: data.database || 'laktat',
-          user: data.user || 'postgres',
-          password: '', // Keep empty, user must re-enter to change
-          ssl: data.ssl || false
+        
+        // Preserve user-entered values, only update from server if not already modified
+        setDbConfig(prevConfig => {
+          // Only update if this is initial load or user hasn't modified values
+          const isInitialLoad = prevConfig.host === 'localhost' && prevConfig.database === 'laktat'
+          
+          if (isInitialLoad) {
+            return {
+              host: data.host || 'localhost',
+              port: String(data.port || 5432),
+              database: data.database || 'laktat',
+              user: data.user || 'postgres',
+              password: '', // Keep empty, user must re-enter to change
+              ssl: data.ssl || false
+            }
+          } else {
+            // Preserve user changes, don't overwrite
+            console.log('🔒 Preserving user-modified config, not overwriting with server data')
+            return prevConfig
+          }
         })
         console.log('🔍 DbConfig set to:', {
           host: data.host || 'localhost',

@@ -648,21 +648,7 @@ Content-Type: application/json
         </pre>
       </div>
 
-      {/* Database Migration Note */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-        <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">💾 Datenbank-Migration</h4>
-        <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
-          Um die Device Metadaten zu speichern, muss die Datenbank-Migration ausgeführt werden:
-        </p>
-        <pre className="bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-100 p-3 rounded-lg text-xs overflow-x-auto">
-{`# Migration ausführen:
-chmod +x scripts/run-migration.sh
-./scripts/run-migration.sh
 
-# Oder manuell:
-psql -d laktat -f scripts/add-device-metadata.sql`}
-        </pre>
-      </div>
     </div>
   )
 }

@@ -206,9 +206,8 @@ const configManager = new ConfigManager(
   path.join(process.cwd(), 'config', 'app.config.json')
 )
 
-// Start watching for changes in development
-if (process.env.NODE_ENV !== 'production') {
-  configManager.startWatching()
-}
+// Start watching for changes in all environments (critical for production)
+configManager.startWatching()
+console.log('👁️ Config file watching enabled for environment:', process.env.NODE_ENV || 'development')
 
 export default configManager
