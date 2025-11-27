@@ -178,9 +178,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: false,
       error: errorMessage,
-      details: process.env.NODE_ENV === 'development' ? 
-        (error instanceof Error ? error.message : String(error)) : 
-        undefined
+      details: error instanceof Error ? error.message : String(error), // Always show details for debugging
+      isDevelopment: process.env.NODE_ENV === 'development'
     }, { status: 500 })
   } finally {
     if (client) {

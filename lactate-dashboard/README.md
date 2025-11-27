@@ -14,7 +14,9 @@ Ein wissenschaftliches Dashboard zur Laktatdiagnostik und Trainingszonenberechnu
 
 ## Dokumentation
 
-- **[Wissenschaftliche Schwellenmethoden](./docs/THRESHOLD_METHODS.md)** - Detaillierte Beschreibung aller implementierten Methoden mit physiologischen und mathematischen Erklärungen
+- **[USER_GUIDE.md](./USER_GUIDE.md)** - Complete setup and usage instructions
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Technical architecture and system design  
+- **[Wissenschaftliche Schwellenmethoden](./docs/THRESHOLD_METHODS.md)** - Scientific threshold methods with physiological explanations
 
 ## Tech Stack
 
