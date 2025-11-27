@@ -463,6 +463,7 @@ export default function LactateInput() {
                       value={newCustomer.dateOfBirth}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, dateOfBirth: e.target.value }))}
                       className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="YYYY-MM-DD"
                     />
                   </div>
                   <div>

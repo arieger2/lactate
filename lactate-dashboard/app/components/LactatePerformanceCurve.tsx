@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import ReactEcharts from 'echarts-for-react'
 import { lactateDataService } from '@/lib/lactateDataService'
 import { useCustomer } from '@/lib/CustomerContext'
+import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 
 // Types for the webhook data
 interface LactateWebhookData {
@@ -49,6 +51,11 @@ const LactatePerformanceCurve = () => {
   const [webhookData, setWebhookData] = useState<LactateWebhookData[]>([])
   // Local sessionId synced with global context
   const [sessionId, setSessionIdLocal] = useState<string>(selectedSessionId || '')
+  
+  // Refs for PDF export
+  const chartRef = useRef<any>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+
   const [availableSessions, setAvailableSessions] = useState<{id: string, lastUpdated: string, pointCount: number}[]>([])
   const [isReceivingData, setIsReceivingData] = useState(false)
   const [isSimulating, setIsSimulating] = useState(false)
@@ -64,7 +71,6 @@ const LactatePerformanceCurve = () => {
   const [hoverBoundary, setHoverBoundary] = useState<string | null>(null)
   const [hasSavedAdjustedZones, setHasSavedAdjustedZones] = useState(false)
   const [savedAdjustedBoundaries, setSavedAdjustedBoundaries] = useState<ZoneBoundaries | null>(null)
-  const chartRef = useRef<any>(null)
   const chartContainerRef = useRef<HTMLDivElement>(null)
 
   // ============================================================================
@@ -1537,13 +1543,221 @@ const LactatePerformanceCurve = () => {
     lactateDataService.simulateData()
   }
 
+  // PDF Export Function
+  const exportToPDF = async () => {
+    try {
+      if (!contentRef.current || webhookData.length === 0) {
+        alert('Keine Daten zum Exportieren verfügbar!')
+        return
+      }
+
+      // Create a temporary container for PDF content
+      const pdfContainer = document.createElement('div')
+      pdfContainer.style.background = 'white'
+      pdfContainer.style.padding = '20px'
+      pdfContainer.style.width = '210mm' // A4 width
+      pdfContainer.style.position = 'absolute'
+      pdfContainer.style.left = '-9999px'
+      pdfContainer.style.fontFamily = 'Arial, sans-serif'
+      
+      // Header
+      const header = document.createElement('div')
+      header.innerHTML = `
+        <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 15px;">
+          <h1 style="margin: 0; font-size: 24px; color: #333;">Laktat Leistungsdiagnostik</h1>
+          <h2 style="margin: 5px 0 0 0; font-size: 18px; color: #666;">${selectedCustomer?.name || 'Unbekannter Kunde'} (ID: ${selectedCustomer?.customer_id || 'N/A'})</h2>
+          <p style="margin: 5px 0 0 0; font-size: 12px; color: #888;">Erstellt am: ${new Date().toLocaleDateString('de-DE')} um ${new Date().toLocaleTimeString('de-DE')}</p>
+        </div>
+      `
+      pdfContainer.appendChild(header)
+
+      // Chart section
+      const chartSection = document.createElement('div')
+      chartSection.innerHTML = `
+        <div style="margin: 20px 0;">
+          <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #333;">📊 Laktat-Leistungskurve</h3>
+          <div id="chart-placeholder" style="width: 100%; height: 400px; border: 1px solid #ddd; background: #f9f9f9;"></div>
+        </div>
+      `
+      pdfContainer.appendChild(chartSection)
+
+      // Get chart image if available
+      let chartDataURL = ''
+      if (chartRef.current) {
+        try {
+          const chartInstance = chartRef.current.getEchartsInstance()
+          chartDataURL = chartInstance.getDataURL({
+            type: 'png',
+            backgroundColor: '#fff',
+            pixelRatio: 2
+          })
+        } catch (error) {
+          console.warn('Could not capture chart:', error)
+        }
+      }
+
+      // Threshold data summary
+      const thresholds = calculateThresholds(webhookData)
+      const summarySection = document.createElement('div')
+      const method = activeOverlay ? thresholdMethods[activeOverlay] : null
+      
+      if (thresholds) {
+        summarySection.innerHTML = `
+          <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9ff;">
+            <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #333;">🎯 Schwellenwerte${method ? ` (${method.name})` : ''}</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+              <div>
+                <strong>LT1 (Aerobe Schwelle):</strong><br>
+                Leistung: ${Math.round(thresholds.lt1.power)} W<br>
+                Laktat: ${thresholds.lt1.lactate.toFixed(1)} mmol/L
+                ${thresholds.lt1.heartRate ? `<br>HF: ${Math.round(thresholds.lt1.heartRate)} bpm` : ''}
+              </div>
+              <div>
+                <strong>LT2 (Anaerobe Schwelle):</strong><br>
+                Leistung: ${Math.round(thresholds.lt2.power)} W<br>
+                Laktat: ${thresholds.lt2.lactate.toFixed(1)} mmol/L
+                ${thresholds.lt2.heartRate ? `<br>HF: ${Math.round(thresholds.lt2.heartRate)} bpm` : ''}
+              </div>
+            </div>
+          </div>
+        `
+      } else {
+        summarySection.innerHTML = `
+          <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background: #fff3cd;">
+            <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #333;">⚠️ Schwellenwerte</h3>
+            <p>Nicht genügend Datenpunkte für zuverlässige Schwellenwertberechnung.</p>
+          </div>
+        `
+      }
+      pdfContainer.appendChild(summarySection)
+
+      // Training zones
+      const zones = getFiveTrainingZones()
+      const zonesSection = document.createElement('div')
+      zonesSection.innerHTML = `
+        <div style="margin: 20px 0;">
+          <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #333;">🏃‍♂️ 5-Zonen Trainingsmodell</h3>
+          <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; font-size: 11px;">
+            ${zones.map(zone => `
+              <div style="padding: 10px; border: 2px solid ${zone.borderColor}; border-radius: 8px; background-color: ${zone.color}; text-align: center;">
+                <div style="font-weight: bold; margin-bottom: 5px;">Zone ${zone.id}</div>
+                <div style="margin-bottom: 3px;">${zone.name.split(' - ')[1] || zone.name}</div>
+                <div style="font-weight: bold;">${Math.round(zone.range[0])}-${Math.round(zone.range[1])} W</div>
+                <div>${zone.lactateRange}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `
+      pdfContainer.appendChild(zonesSection)
+
+      // Data table
+      const dataSection = document.createElement('div')
+      dataSection.innerHTML = `
+        <div style="margin: 20px 0;">
+          <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #333;">📋 Messdaten</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+            <thead>
+              <tr style="background: #f0f0f0;">
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Leistung (W)</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Laktat (mmol/L)</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Herzfrequenz (bpm)</th>
+                <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Fettoxidation (g/min)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${webhookData.map(point => `
+                <tr>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${point.power}</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${point.lactate.toFixed(1)}</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${point.heartRate || '-'}</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${point.fatOxidation?.toFixed(2) || '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `
+      pdfContainer.appendChild(dataSection)
+
+      // Scientific explanation
+      if (method) {
+        const explanationSection = document.createElement('div')
+        explanationSection.innerHTML = `
+          <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background: #fff8dc;">
+            <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #333;">🔬 Wissenschaftliche Methode: ${method.name}</h3>
+            <p style="margin: 0; font-size: 11px; line-height: 1.4;">${method.description}</p>
+          </div>
+        `
+        pdfContainer.appendChild(explanationSection)
+      }
+
+      document.body.appendChild(pdfContainer)
+
+      // Replace chart placeholder with actual chart image if available
+      if (chartDataURL) {
+        const chartPlaceholder = pdfContainer.querySelector('#chart-placeholder')
+        if (chartPlaceholder) {
+          chartPlaceholder.innerHTML = `<img src="${chartDataURL}" style="width: 100%; height: 400px; object-fit: contain;">`
+        }
+      }
+
+      // Convert to PDF
+      const canvas = await html2canvas(pdfContainer, {
+        scale: 1.5,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false
+      })
+
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF('p', 'mm', 'a4')
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+      const imgWidth = pdfWidth
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width
+
+      let heightLeft = imgHeight
+      let position = 0
+
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pdfHeight
+
+      // Add additional pages if content is longer than one page
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight
+        pdf.addPage()
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pdfHeight
+      }
+
+      // Generate filename
+      const customerName = selectedCustomer?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unbekannt'
+      const timestamp = new Date().toISOString().split('T')[0]
+      const filename = `Laktat_Analyse_${customerName}_${timestamp}.pdf`
+
+      // Save PDF
+      pdf.save(filename)
+
+      // Cleanup
+      document.body.removeChild(pdfContainer)
+      
+      console.log('✅ PDF erfolgreich erstellt:', filename)
+    } catch (error) {
+      console.error('❌ Fehler beim PDF Export:', error)
+      alert('Fehler beim Erstellen der PDF. Bitte versuchen Sie es erneut.')
+    }
+  }
+
   const clearSimulation = () => {
     lactateDataService.clearSimulation()
     setThresholds(null)
   }
 
   return (
-    <div className="space-y-6">
+    <div ref={contentRef} className="space-y-6">
       {/* Header */}
       <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-4">
@@ -1572,6 +1786,15 @@ const LactatePerformanceCurve = () => {
                 className="button-press px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md"
               >
                 🗑️ Simulation Löschen
+              </button>
+            )}
+            {webhookData.length > 0 && (
+              <button
+                onClick={exportToPDF}
+                className="button-press px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center gap-2"
+                title="Analysebericht als PDF exportieren"
+              >
+                📄 PDF Export
               </button>
             )}
           </div>
