@@ -169,6 +169,7 @@ export default function LactatePerformanceCurve() {
 
       // Chart options
       const options = {
+        animation: false,
         title: {
           text: 'Laktat-Leistungskurve',
           left: 'center',
