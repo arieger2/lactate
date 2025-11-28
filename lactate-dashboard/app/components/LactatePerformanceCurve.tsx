@@ -101,7 +101,6 @@ export default function LactatePerformanceCurve() {
           const result = await response.json()
           const data = Array.isArray(result) ? result : (result.data || [])
           
-          // Fallback: wenn keine Daten vorhanden sind, erstelle Test-Daten
           if (data.length === 0) {
             const testData = [
               { power: 100, lactate: 1.2, heartRate: 130, timestamp: new Date().toISOString() },
@@ -303,10 +302,12 @@ export default function LactatePerformanceCurve() {
               padding: [2, 4],
               borderRadius: 3
             },
-            emphasis: {
-              scale: true,
-              scaleSize: 28
-            },
+            ...(isDragging.type ? {} : {
+              emphasis: {
+                scale: true,
+                scaleSize: 28
+              }
+            }),
             markLine: {
               data: [{
                 xAxis: lt1.power,
@@ -348,10 +349,12 @@ export default function LactatePerformanceCurve() {
               padding: [2, 4],
               borderRadius: 3
             },
-            emphasis: {
-              scale: true,
-              scaleSize: 28
-            },
+            ...(isDragging.type ? {} : {
+              emphasis: {
+                scale: true,
+                scaleSize: 28
+              }
+            }),
             markLine: {
               data: [{
                 xAxis: lt2.power,
