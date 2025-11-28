@@ -5,33 +5,15 @@ import { useCustomer } from '@/lib/CustomerContext'
 import * as echarts from 'echarts'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
-
-// ===== WISSENSCHAFTLICHE SCHWELLENMETHODEN =====
-// Exakt nach Requirements-Dokument implementiert
-
-interface LactateDataPoint {
-  power: number
-  lactate: number
-  heartRate?: number
-  vo2?: number
-  timestamp: string
-}
-
-interface ThresholdPoint {
-  power: number
-  lactate: number
-}
-
-interface TrainingZone {
-  id: number
-  name: string
-  range: [number, number]
-  color: string
-  borderColor: string
-  description: string
-}
-
-type ThresholdMethod = 'mader' | 'dmax' | 'dickhuth' | 'loglog' | 'plus1mmol' | 'moddmax' | 'seiler' | 'fatmax' | 'adjusted'
+import { LactateDataPoint, ThresholdPoint, TrainingZone } from '@/lib/types'
+import { 
+  calculateThresholds, 
+  calculateTrainingZones, 
+  getMethodDisplayName,
+  ThresholdMethod,
+  interpolateThreshold
+} from '@/lib/lactateCalculations'
+import { createLactateChartOptions } from '@/lib/lactateChartOptions'
 
 export default function LactatePerformanceCurve() {
   const { selectedCustomer, selectedSessionId, setSelectedSessionId } = useCustomer()
@@ -111,10 +93,10 @@ export default function LactatePerformanceCurve() {
               { power: 350, lactate: 7.2, heartRate: 195, timestamp: new Date().toISOString() }
             ]
             setWebhookData(testData)
-            calculateThresholds(testData)
+            calculateThresholdsWrapper(testData)
           } else {
             setWebhookData(data)
-            calculateThresholds(data)
+            calculateThresholdsWrapper(data)
           }
         } else {
           console.error('❌ API response not ok:', response.status, response.statusText)
@@ -144,7 +126,7 @@ export default function LactatePerformanceCurve() {
             await loadAdjustedThresholds()
           } else {
             setSelectedMethod('dmax')
-            calculateThresholds(webhookData, 'dmax')
+            calculateThresholdsWrapper(webhookData, 'dmax')
           }
         }
       }
@@ -167,219 +149,18 @@ export default function LactatePerformanceCurve() {
         chartInstanceRef.current = echarts.init(chartRef.current)
       }
 
-      // Chart options
-      const options = {
-        animation: false,
-        title: {
-          text: 'Laktat-Leistungskurve',
-          left: 'center',
-          textStyle: { 
-            fontSize: 16, 
-            fontWeight: 'bold',
-            overflow: 'truncate'
-          }
-        },
-        tooltip: {
-          trigger: 'axis',
-          formatter: (params: any) => {
-            let tooltip = `Leistung: ${params[0].value[0]} W<br/>`
-            params.forEach((param: any) => {
-              if (param.seriesName === 'Laktat') {
-                tooltip += `${param.seriesName}: ${param.value[1].toFixed(2)} mmol/L<br/>`
-              } else if (param.seriesName === 'Herzfrequenz') {
-                tooltip += `${param.seriesName}: ${param.value[1]} bpm<br/>`
-              }
-            })
-            return tooltip
-          }
-        },
-        legend: {
-          top: 30,
-          data: ['Laktat', 'Herzfrequenz', 'LT1', 'LT2']
-        },
-        xAxis: {
-          type: 'value',
-          name: 'Leistung (W)',
-          nameLocation: 'middle',
-          nameGap: 30
-        },
-        yAxis: [
-          {
-            type: 'value',
-            name: 'Laktat (mmol/L)',
-            nameLocation: 'middle',
-            nameGap: 40,
-            min: 0,
-            max: 12
-          },
-          {
-            type: 'value',
-            name: 'Herzfrequenz (bpm)',
-            nameLocation: 'middle',
-            nameGap: 40,
-            position: 'right'
-          }
-        ],
-        grid: {
-          left: 80,
-          right: 80,
-          top: 80,
-          bottom: 80
-        },
-        series: [
-          // Lactate curve mit Trainingszonen als Hintergrundbereiche
-          {
-            name: 'Laktat',
-            type: 'line',
-            data: webhookData.map(d => [d.power, d.lactate]),
-            smooth: true,
-            lineStyle: {
-              color: '#ef4444',
-              width: 3
-            },
-            itemStyle: {
-              color: '#ef4444'
-            },
-            yAxisIndex: 0,
-            markArea: {
-              silent: true,
-              label: {
-                show: true,
-                position: 'insideTop',
-                fontSize: 11,
-                color: '#333',
-                fontWeight: 'bold',
-                overflow: 'truncate',
-                width: 120
-              },
-              data: trainingZones.map(zone => [{
-                name: zone.name.length > 15 ? zone.name.substring(0, 15) + '...' : zone.name,
-                xAxis: zone.range[0],
-                itemStyle: {
-                  color: zone.color,
-                  borderColor: zone.borderColor,
-                  borderWidth: 1
-                }
-              }, {
-                xAxis: zone.range[1]
-              }])
-            }
-          },
-          // Heart rate curve (if available)
-          ...(webhookData.some(d => d.heartRate) ? [{
-            name: 'Herzfrequenz',
-            type: 'line',
-            data: webhookData.filter(d => d.heartRate).map(d => [d.power, d.heartRate]),
-            smooth: true,
-            lineStyle: {
-              color: '#3b82f6',
-              width: 2
-            },
-            itemStyle: {
-              color: '#3b82f6'
-            },
-            yAxisIndex: 1
-          }] : []),
-          // LT1 marker (verschiebbar)
-          ...(lt1 ? [{
-            name: 'LT1',
-            type: 'scatter',
-            data: [[lt1.power, lt1.lactate]],
-            symbolSize: 22,
-            itemStyle: {
-              color: '#10b981',
-              borderColor: '#fff',
-              borderWidth: 3
-            },
-            yAxisIndex: 0,
-            label: {
-              show: true,
-              position: 'top',
-              formatter: 'LT1',
-              fontSize: 12,
-              fontWeight: 'bold',
-              color: '#10b981',
-              backgroundColor: 'rgba(255, 255, 255, 0.8)',
-              padding: [2, 4],
-              borderRadius: 3
-            },
-            ...(isDragging.type ? {} : {
-              emphasis: {
-                scale: true,
-                scaleSize: 28
-              }
-            }),
-            markLine: {
-              data: [{
-                xAxis: lt1.power,
-                lineStyle: { color: '#10b981', type: 'dashed', width: 3 },
-                label: {
-                  show: true,
-                  position: 'insideEndTop',
-                  formatter: 'LT1\n{c}W',
-                  fontSize: 11,
-                  fontWeight: 'bold',
-                  color: '#10b981',
-                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                  padding: [2, 4],
-                  borderRadius: 3
-                }
-              }]
-            }
-          }] : []),
-          // LT2 marker (verschiebbar)
-          ...(lt2 ? [{
-            name: 'LT2',
-            type: 'scatter',
-            data: [[lt2.power, lt2.lactate]],
-            symbolSize: 22,
-            itemStyle: {
-              color: '#f59e0b',
-              borderColor: '#fff',
-              borderWidth: 3
-            },
-            yAxisIndex: 0,
-            label: {
-              show: true,
-              position: 'top',
-              formatter: 'LT2',
-              fontSize: 12,
-              fontWeight: 'bold',
-              color: '#f59e0b',
-              backgroundColor: 'rgba(255, 255, 255, 0.8)',
-              padding: [2, 4],
-              borderRadius: 3
-            },
-            ...(isDragging.type ? {} : {
-              emphasis: {
-                scale: true,
-                scaleSize: 28
-              }
-            }),
-            markLine: {
-              data: [{
-                xAxis: lt2.power,
-                lineStyle: { color: '#f59e0b', type: 'dashed', width: 3 },
-                label: {
-                  show: true,
-                  position: 'insideEndTop',
-                  formatter: 'LT2\n{c}W',
-                  fontSize: 11,
-                  fontWeight: 'bold',
-                  color: '#f59e0b',
-                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                  padding: [2, 4],
-                  borderRadius: 3
-                }
-              }]
-            }
-          }] : [])
-        ]
-      }
+      // Generate chart options using extracted function
+      const options = createLactateChartOptions(
+        webhookData,
+        trainingZones,
+        lt1,
+        lt2,
+        isDragging.type !== null
+      )
 
       chartInstanceRef.current.setOption(options, true)
     }
-  }, [webhookData, lt1, lt2, trainingZones])
+  }, [webhookData, trainingZones, lt1, lt2, isDragging])
 
   // Handle window resize
   useEffect(() => {
@@ -401,7 +182,7 @@ export default function LactatePerformanceCurve() {
   }, [])
 
   // ===== SCHWELLENMETHODEN =====
-  const calculateThresholds = (data: LactateDataPoint[], method: ThresholdMethod = selectedMethod) => {
+  const calculateThresholdsWrapper = (data: LactateDataPoint[], method: ThresholdMethod = selectedMethod) => {
     if (data.length === 0) {
       setLt1(null)
       setLt2(null)
@@ -409,67 +190,13 @@ export default function LactatePerformanceCurve() {
       return
     }
 
-    const sortedData = [...data].sort((a, b) => a.power - b.power)
-    let lt1Point: ThresholdPoint | null = null
-    let lt2Point: ThresholdPoint | null = null
-
-    switch (method) {
-      case 'mader':
-        // Mader 4mmol/L Methode (OBLA) - Mader (1976)
-        const baseline = Math.min(...sortedData.map(d => d.lactate))
-        lt1Point = interpolateThreshold(sortedData, baseline + 0.3)
-        lt2Point = interpolateThreshold(sortedData, 4.0)
-        break
-
-      case 'dmax':
-        // DMAX - Cheng et al.
-        lt2Point = calculateDMax(sortedData)
-        lt1Point = calculateLT1FromLT2(sortedData, lt2Point, 'dmax')
-        break
-
-      case 'dickhuth':
-        // Dickhuth et al. - Minimum + 1.5 mmol/L
-        const minLactate = Math.min(...sortedData.map(d => d.lactate))
-        lt1Point = interpolateThreshold(sortedData, minLactate + 1.5)
-        lt2Point = interpolateThreshold(sortedData, minLactate + 2.5)
-        break
-
-      case 'loglog':
-        // Log-Log Methode - Beaver et al.
-        lt2Point = calculateLogLog(sortedData)
-        lt1Point = calculateLT1FromLT2(sortedData, lt2Point, 'loglog')
-        break
-
-      case 'plus1mmol':
-        // +1.0 mmol/L - Faude et al.
-        const baseLactate = Math.min(...sortedData.map(d => d.lactate))
-        lt1Point = interpolateThreshold(sortedData, baseLactate + 1.0)
-        lt2Point = interpolateThreshold(sortedData, baseLactate + 4.0)
-        break
-
-      case 'moddmax':
-        // ModDMAX - Bishop et al.
-        lt2Point = calculateModDMax(sortedData)
-        lt1Point = calculateLT1FromLT2(sortedData, lt2Point, 'moddmax')
-        break
-
-      case 'seiler':
-        // Seiler 3-Zone Model - Seiler-Polarisiertes Training
-        lt1Point = calculateSeilerLT1(sortedData)
-        lt2Point = calculateSeilerLT2(sortedData)
-        break
-
-      case 'fatmax':
-        // FatMax/LT - San-Millán - FatMax
-        lt1Point = calculateFatMax(sortedData)
-        lt2Point = interpolateThreshold(sortedData, 4.0)
-        break
-
-      case 'adjusted':
-        // Manuelle Anpassung - verwende bereits gesetzte LT1/LT2 Werte
-        // Diese werden durch loadAdjustedThresholds() oder Drag&Drop gesetzt
-        return // Früher Return, da LT1/LT2 bereits gesetzt sind
+    // For adjusted method, don't recalculate - values are set manually
+    if (method === 'adjusted') {
+      return
     }
+
+    // Use imported calculation function
+    const { lt1: lt1Point, lt2: lt2Point } = calculateThresholds(data, method)
 
     setLt1(lt1Point)
     setLt2(lt2Point)
@@ -485,312 +212,6 @@ export default function LactatePerformanceCurve() {
     const maxPower = Math.max(...data.map(d => d.power))
     const zones = calculateTrainingZones(lt1Point, lt2Point, maxPower, method)
     setTrainingZones(zones)
-  }
-
-  // Hilfsfunktionen für Schwellenberechnung
-  const interpolateThreshold = (data: LactateDataPoint[], targetLactate: number): ThresholdPoint | null => {
-    for (let i = 0; i < data.length - 1; i++) {
-      if (data[i].lactate <= targetLactate && data[i + 1].lactate >= targetLactate) {
-        const ratio = (targetLactate - data[i].lactate) / (data[i + 1].lactate - data[i].lactate)
-        const power = data[i].power + ratio * (data[i + 1].power - data[i].power)
-        return { power: Math.round(power * 100) / 100, lactate: targetLactate }
-      }
-    }
-    return null
-  }
-
-  const calculateDMax = (data: LactateDataPoint[]): ThresholdPoint | null => {
-    if (data.length < 3) return null
-    
-    const first = data[0]
-    const last = data[data.length - 1]
-    let maxDistance = 0
-    let maxIndex = 0
-
-    for (let i = 1; i < data.length - 1; i++) {
-      const point = data[i]
-      const A = last.lactate - first.lactate
-      const B = first.power - last.power
-      const C = last.power * first.lactate - first.power * last.lactate
-      const distance = Math.abs(A * point.power + B * point.lactate + C) / Math.sqrt(A * A + B * B)
-      
-      if (distance > maxDistance) {
-        maxDistance = distance
-        maxIndex = i
-      }
-    }
-
-    return { power: data[maxIndex].power, lactate: data[maxIndex].lactate }
-  }
-
-  const calculateLogLog = (data: LactateDataPoint[]): ThresholdPoint | null => {
-    if (data.length < 3) return null
-    
-    let maxSlope = 0
-    let maxIndex = 0
-
-    for (let i = 1; i < data.length - 1; i++) {
-      if (data[i].lactate > 0 && data[i].power > 0) {
-        const slope1 = Math.log(data[i].lactate) / Math.log(data[i].power)
-        const slope2 = Math.log(data[i + 1].lactate) / Math.log(data[i + 1].power)
-        const slopeChange = Math.abs(slope2 - slope1)
-        
-        if (slopeChange > maxSlope) {
-          maxSlope = slopeChange
-          maxIndex = i
-        }
-      }
-    }
-
-    return { power: data[maxIndex].power, lactate: data[maxIndex].lactate }
-  }
-
-  const getMethodDisplayName = (method: ThresholdMethod): string => {
-    const methodNames = {
-      'mader': 'Mader 4mmol/L (OBLA)',
-      'dmax': 'DMAX (Cheng et al.)',
-      'dickhuth': 'Dickhuth et al.',
-      'loglog': 'Log-Log (Beaver et al.)',
-      'plus1mmol': '+1.0 mmol/L (Faude et al.)',
-      'moddmax': 'ModDMAX (Bishop et al.)',
-      'seiler': 'Seiler 3-Zone',
-      'fatmax': 'FatMax/LT (San-Millán)',
-      'adjusted': '🔧 Adjusted (Manuell angepasst)'
-    }
-    return methodNames[method] || method.toUpperCase()
-  }
-
-  const calculateModDMax = (data: LactateDataPoint[]): ThresholdPoint | null => {
-    // ModDMAX: Modifizierte DMAX mit exponentieller Anpassung
-    if (data.length < 4) return null
-    
-    const first = data[0]
-    const last = data[data.length - 1]
-    let maxDistance = 0
-    let maxIndex = 0
-
-    // Exponentieller Fit für bessere Kurvenanpassung
-    for (let i = 1; i < data.length - 1; i++) {
-      const point = data[i]
-      const expectedY = first.lactate + (last.lactate - first.lactate) * 
-        Math.pow((point.power - first.power) / (last.power - first.power), 1.5)
-      const distance = Math.abs(point.lactate - expectedY)
-      
-      if (distance > maxDistance) {
-        maxDistance = distance
-        maxIndex = i
-      }
-    }
-
-    return { power: data[maxIndex].power, lactate: data[maxIndex].lactate }
-  }
-
-  const calculateSeilerLT1 = (data: LactateDataPoint[]): ThresholdPoint | null => {
-    // Seiler VT1: Erste deutliche Erhöhung über Baseline
-    const baseline = Math.min(...data.map(d => d.lactate))
-    return interpolateThreshold(data, baseline + 0.5)
-  }
-
-  const calculateSeilerLT2 = (data: LactateDataPoint[]): ThresholdPoint | null => {
-    // Seiler VT2: Steiler Anstieg, oft um 2.5-3.0 mmol/L
-    const baseline = Math.min(...data.map(d => d.lactate))
-    return interpolateThreshold(data, baseline + 2.8)
-  }
-
-  const calculateFatMax = (data: LactateDataPoint[]): ThresholdPoint | null => {
-    // FatMax approximiert bei niedriger Intensität, oft um baseline + 0.3
-    const baseline = Math.min(...data.map(d => d.lactate))
-    return interpolateThreshold(data, baseline + 0.3)
-  }
-
-  const calculateLT1FromLT2 = (data: LactateDataPoint[], lt2: ThresholdPoint | null, method: string): ThresholdPoint | null => {
-    if (!lt2) return null
-    
-    switch (method) {
-      case 'dmax':
-      case 'moddmax':
-        return interpolateThreshold(data, lt2.lactate * 0.6)
-      case 'loglog':
-        return interpolateThreshold(data, lt2.lactate * 0.65)
-      default:
-        return interpolateThreshold(data, 2.0)
-    }
-  }
-
-  // ===== 5-ZONEN TRAININGSSYSTEM =====
-  // Wissenschaftlich basierte Trainingszonen nach internationalen Standards
-  // Verschiedene Methoden können unterschiedliche LT1/LT2 Positionen in Zonen haben
-  const calculateTrainingZones = (lt1: ThresholdPoint | null, lt2: ThresholdPoint | null, maxPower: number, method: ThresholdMethod = 'mader'): TrainingZone[] => {
-    const lt1Power = lt1?.power || maxPower * 0.65
-    const lt2Power = lt2?.power || maxPower * 0.85
-
-    // Methodenspezifische Zonenberechnung
-    switch (method) {
-      case 'seiler':
-        // Seiler 3-Zonen Modell: Zone 1 (<LT1), Zone 2 (LT1-LT2), Zone 3 (>LT2)
-        return [
-          {
-            id: 1,
-            name: 'Zone 1 - Aerob',
-            range: [0, lt1Power],  // Bis LT1
-            color: 'rgba(34, 197, 94, 0.2)',
-            borderColor: 'rgba(34, 197, 94, 0.8)',
-            description: 'Aerobe Zone (bis LT1 ~2mmol/L)'
-          },
-          {
-            id: 2,
-            name: 'Zone 2 - Schwelle',
-            range: [lt1Power, lt2Power],  // LT1 bis LT2
-            color: 'rgba(251, 191, 36, 0.2)',
-            borderColor: 'rgba(251, 191, 36, 0.8)',
-            description: 'Schwellenzone (LT1 bis LT2 ~4mmol/L)'
-          },
-          {
-            id: 3,
-            name: 'Zone 3 - Anaerob',
-            range: [lt2Power, maxPower * 1.1],  // Ab LT2
-            color: 'rgba(239, 68, 68, 0.2)',
-            borderColor: 'rgba(239, 68, 68, 0.8)',
-            description: 'Anaerobe Zone (>LT2)'
-          }
-        ]
-
-      case 'dickhuth':
-        // Dickhuth: LT1 bei +1.5mmol, LT2 bei +2.5mmol (geringerer Abstand)
-        return [
-          {
-            id: 1,
-            name: 'Zone 1 - Regeneration',
-            range: [0, lt1Power * 0.75],  // Unter LT1
-            color: 'rgba(34, 197, 94, 0.2)',
-            borderColor: 'rgba(34, 197, 94, 0.8)',
-            description: 'Regenerationsbereich'
-          },
-          {
-            id: 2,
-            name: 'Zone 2 - Aerobe Basis',
-            range: [lt1Power * 0.75, lt1Power],  // Bis LT1 (+1.5mmol)
-            color: 'rgba(59, 130, 246, 0.2)',
-            borderColor: 'rgba(59, 130, 246, 0.8)',
-            description: 'Aerob bis LT1 (+1.5mmol/L)'
-          },
-          {
-            id: 3,
-            name: 'Zone 3 - Schwelle',
-            range: [lt1Power, lt2Power],  // LT1 bis LT2 (kleinerer Bereich)
-            color: 'rgba(251, 191, 36, 0.2)',
-            borderColor: 'rgba(251, 191, 36, 0.8)',
-            description: 'LT1 bis LT2 (+2.5mmol/L)'
-          },
-          {
-            id: 4,
-            name: 'Zone 4 - Anaerob',
-            range: [lt2Power, lt2Power * 1.15],  // Nach LT2
-            color: 'rgba(239, 68, 68, 0.2)',
-            borderColor: 'rgba(239, 68, 68, 0.8)',
-            description: 'Anaerober Bereich'
-          },
-          {
-            id: 5,
-            name: 'Zone 5 - Power',
-            range: [lt2Power * 1.15, maxPower * 1.1],
-            color: 'rgba(147, 51, 234, 0.2)',
-            borderColor: 'rgba(147, 51, 234, 0.8)',
-            description: 'Maximale Power'
-          }
-        ]
-
-      case 'adjusted':
-        // Manuelle Anpassung - identische Logik wie Standard 5-Zonen
-        return [
-          {
-            id: 1,
-            name: 'Zone 1 - Regeneration',
-            range: [0, lt1Power * 0.68],
-            color: 'rgba(34, 197, 94, 0.2)',
-            borderColor: 'rgba(34, 197, 94, 0.8)',
-            description: 'Regeneration & Fettstoffwechsel'
-          },
-          {
-            id: 2,
-            name: 'Zone 2 - Aerobe Basis',
-            range: [lt1Power * 0.68, lt1Power],
-            color: 'rgba(59, 130, 246, 0.2)',
-            borderColor: 'rgba(59, 130, 246, 0.8)',
-            description: 'Aerober Grundlagenbereich (bis LT1)'
-          },
-          {
-            id: 3,
-            name: 'Zone 3 - Schwelle',
-            range: [lt1Power, lt2Power],
-            color: 'rgba(251, 191, 36, 0.2)',
-            borderColor: 'rgba(251, 191, 36, 0.8)',
-            description: 'Tempobereich (LT1 bis LT2)'
-          },
-          {
-            id: 4,
-            name: 'Zone 4 - Anaerob',
-            range: [lt2Power, lt2Power * 1.08],
-            color: 'rgba(239, 68, 68, 0.2)',
-            borderColor: 'rgba(239, 68, 68, 0.8)',
-            description: 'Schwellenbereich (um LT2)'
-          },
-          {
-            id: 5,
-            name: 'Zone 5 - Power',
-            range: [lt2Power * 1.08, maxPower * 1.1],
-            color: 'rgba(147, 51, 234, 0.2)',
-            borderColor: 'rgba(147, 51, 234, 0.8)',
-            description: 'Maximale Power'
-          }
-        ]
-
-      default:
-        // Standard 5-Zonen Model für alle anderen Methoden
-        // LT1 = Ende Zone 2, LT2 = Ende Zone 3
-        return [
-          {
-            id: 1,
-            name: 'Zone 1 - Regeneration',
-            range: [0, lt1Power * 0.68],  // Bis ~68% von LT1
-            color: 'rgba(34, 197, 94, 0.2)',
-            borderColor: 'rgba(34, 197, 94, 0.8)',
-            description: 'Regeneration & Fettstoffwechsel'
-          },
-          {
-            id: 2,
-            name: 'Zone 2 - Aerobe Basis',
-            range: [lt1Power * 0.68, lt1Power],  // Bis LT1 (Ende Zone 2)
-            color: 'rgba(59, 130, 246, 0.2)',
-            borderColor: 'rgba(59, 130, 246, 0.8)',
-            description: 'Aerober Grundlagenbereich (bis LT1)'
-          },
-          {
-            id: 3,
-            name: 'Zone 3 - Schwelle',
-            range: [lt1Power, lt2Power],  // LT1 bis LT2 (Ende Zone 3)
-            color: 'rgba(251, 191, 36, 0.2)',
-            borderColor: 'rgba(251, 191, 36, 0.8)',
-            description: 'Tempobereich (LT1 bis LT2)'
-          },
-          {
-            id: 4,
-            name: 'Zone 4 - Anaerob',
-            range: [lt2Power, lt2Power * 1.08],  // Knapp oberhalb LT2
-            color: 'rgba(239, 68, 68, 0.2)',
-            borderColor: 'rgba(239, 68, 68, 0.8)',
-            description: 'Schwellenbereich (um LT2)'
-          },
-          {
-            id: 5,
-            name: 'Zone 5 - Power',
-            range: [lt2Power * 1.08, maxPower * 1.1],  // Oberhalb LT2
-            color: 'rgba(147, 51, 234, 0.2)',
-            borderColor: 'rgba(147, 51, 234, 0.8)',
-            description: 'Maximale anaerobe Leistung (>LT2)'
-          }
-        ]
-    }
   }
 
   // ===== INTERAKTIVITÄT =====
@@ -1127,7 +548,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('dmax')
-                  calculateThresholds(webhookData, 'dmax')
+                  calculateThresholdsWrapper(webhookData, 'dmax')
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'dmax' 
@@ -1160,7 +581,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('dickhuth')
-                  calculateThresholds(webhookData, 'dickhuth')
+                  calculateThresholdsWrapper(webhookData, 'dickhuth')
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'dickhuth' 
@@ -1193,7 +614,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('mader')
-                  calculateThresholds(webhookData, 'mader')
+                  calculateThresholdsWrapper(webhookData, 'mader')
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'mader' 
@@ -1226,7 +647,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('loglog')
-                  calculateThresholds(webhookData, 'loglog')
+                  calculateThresholdsWrapper(webhookData, 'loglog')
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'loglog' 
@@ -1262,7 +683,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('plus1mmol')
-                  calculateThresholds(webhookData, 'plus1mmol')
+                  calculateThresholdsWrapper(webhookData, 'plus1mmol')
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'plus1mmol' 
@@ -1295,7 +716,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('moddmax')
-                  calculateThresholds(webhookData, 'moddmax')
+                  calculateThresholdsWrapper(webhookData, 'moddmax')
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'moddmax' 
@@ -1328,7 +749,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('seiler')
-                  calculateThresholds(webhookData, 'seiler')
+                  calculateThresholdsWrapper(webhookData, 'seiler')
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'seiler' 
@@ -1366,7 +787,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('fatmax')
-                  calculateThresholds(webhookData, 'fatmax')
+                  calculateThresholdsWrapper(webhookData, 'fatmax')
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'fatmax' 
@@ -1422,7 +843,7 @@ export default function LactatePerformanceCurve() {
                     if (!loaded) {
                       console.warn('⚠️ No adjusted thresholds found - switching back to DMAX')
                       setSelectedMethod('dmax')
-                      calculateThresholds(webhookData, 'dmax')
+                      calculateThresholdsWrapper(webhookData, 'dmax')
                     }
                     
                     // Reset manual loading flag
