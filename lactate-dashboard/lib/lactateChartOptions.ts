@@ -8,6 +8,7 @@ import { LactateDataPoint, ThresholdPoint, TrainingZone } from './types'
  * @param lt1 - LT1 Schwellenpunkt
  * @param lt2 - LT2 Schwellenpunkt
  * @param isDragging - Ob gerade ein Marker gezogen wird
+ * @param unit - Einheit: 'watt', 'kmh' oder 'other'
  * @returns ECharts-Optionen Objekt
  */
 export function createLactateChartOptions(
@@ -15,8 +16,14 @@ export function createLactateChartOptions(
   trainingZones: TrainingZone[],
   lt1: ThresholdPoint | null,
   lt2: ThresholdPoint | null,
-  isDragging: boolean
+  isDragging: boolean,
+  unit: string = 'watt'
 ): echarts.EChartsOption {
+  // Determine axis label based on unit
+  const xAxisLabel = unit === 'kmh' ? 'Geschwindigkeit (km/h)' : 'Leistung (W)'
+  const tooltipLabel = unit === 'kmh' ? 'Geschwindigkeit' : 'Leistung'
+  const tooltipUnit = unit === 'kmh' ? 'km/h' : 'W'
+  
   return {
     animation: false,
     title: {
@@ -31,7 +38,7 @@ export function createLactateChartOptions(
     tooltip: {
       trigger: 'axis',
       formatter: (params: any) => {
-        let tooltip = `Leistung: ${params[0].value[0]} W<br/>`
+        let tooltip = `${tooltipLabel}: ${params[0].value[0]} ${tooltipUnit}<br/>`
         params.forEach((param: any) => {
           if (param.seriesName === 'Laktat') {
             tooltip += `${param.seriesName}: ${param.value[1].toFixed(2)} mmol/L<br/>`
@@ -48,7 +55,7 @@ export function createLactateChartOptions(
     },
     xAxis: {
       type: 'value',
-      name: 'Leistung (W)',
+      name: xAxisLabel,
       nameLocation: 'middle',
       nameGap: 30
     },

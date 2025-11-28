@@ -3,23 +3,31 @@ import pool from '@/lib/db'
 
 interface LactateWebhookPayload {
   timestamp?: string
-  power: number // Watts
+  load: number // Generic load (watt or kmh depending on unit)
+  power?: number // Backward compatibility
   lactate: number // mmol/L
   heartRate?: number // bpm
   fatOxidation?: number // g/min
   vo2?: number // mL/kg/min
-  sessionId?: string
+  sessionId?: string  // Maps to test_id
+  testId?: string     // Direct mapping
   testType?: 'incremental' | 'steady-state'
-  // Device metadata (optional)
-  sampleId?: string // Position/number
-  glucose?: number // mmol/L
-  ph?: number // pH value
-  temperature?: number // Temperature of measurement unit
-  measurementDate?: string // YYYY-MM-DD
-  measurementTime?: string // HH:MM:SS
-  errorCode?: string // Error code if measurement failed
-  deviceId?: string // Device identifier
-  rawData?: Record<string, unknown> // Any additional raw data
+  stage?: number      // Stage number
+  duration?: number   // Duration in minutes
+  rrSystolic?: number // Blood pressure systolic
+  rrDiastolic?: number // Blood pressure diastolic
+  isFinalApproximation?: boolean
+  notes?: string
+  // Device metadata (optional - legacy support)
+  sampleId?: string
+  glucose?: number
+  ph?: number
+  temperature?: number
+  measurementDate?: string
+  measurementTime?: string
+  errorCode?: string
+  deviceId?: string
+  rawData?: Record<string, unknown>
 }
 
 // PostgreSQL store with memory fallback
@@ -29,18 +37,19 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    // Validate required fields
-    if (!body.power || !body.lactate) {
+    // Validate required fields - support both 'power' (legacy) and 'load' (new)
+    const load = body.load || body.power
+    if (!load || !body.lactate) {
       return NextResponse.json(
-        { error: 'Missing required fields: power and lactate are required' },
+        { error: 'Missing required fields: load (or power) and lactate are required' },
         { status: 400 }
       )
     }
 
     // Validate data types and ranges
-    if (typeof body.power !== 'number' || body.power < 0) {
+    if (typeof load !== 'number' || load < 0) {
       return NextResponse.json(
-        { error: 'Power must be a positive number' },
+        { error: 'Load must be a positive number' },
         { status: 400 }
       )
     }
@@ -55,14 +64,22 @@ export async function POST(request: NextRequest) {
     // Create the data entry with all optional metadata
     const dataEntry: LactateWebhookPayload = {
       timestamp: body.timestamp || new Date().toISOString(),
-      power: body.power,
+      load: load,
+      power: load, // Backward compatibility
       lactate: body.lactate,
       heartRate: body.heartRate,
       fatOxidation: body.fatOxidation,
       vo2: body.vo2 || body.VO2,
-      sessionId: body.sessionId || 'default',
+      sessionId: body.sessionId || body.testId || 'default',
+      testId: body.testId || body.sessionId || 'default',
       testType: body.testType || 'incremental',
-      // Device metadata (optional)
+      stage: body.stage,
+      duration: body.duration,
+      rrSystolic: body.rrSystolic || body.rr_systolic,
+      rrDiastolic: body.rrDiastolic || body.rr_diastolic,
+      isFinalApproximation: body.isFinalApproximation || false,
+      notes: body.notes,
+      // Device metadata (optional - legacy)
       sampleId: body.sampleId || body.SampleID,
       glucose: body.glucose || body.Glucose,
       ph: body.ph || body.pH,
@@ -75,46 +92,61 @@ export async function POST(request: NextRequest) {
     }
 
     // Store the data in PostgreSQL
-    const sessionId = dataEntry.sessionId!
+    const testId = dataEntry.testId!
+    const sessionId = testId // For backward compatibility
     
     try {
       const client = await pool.connect()
       try {
-        // Ensure session exists
-        await client.query(`
-          INSERT INTO sessions (session_id, test_date, test_type) 
-          VALUES ($1, NOW(), $2) 
-          ON CONFLICT (session_id) DO UPDATE SET updated_at = NOW()
-        `, [sessionId, dataEntry.testType])
-
-        // Insert lactate data with extended metadata
-        await client.query(`
-          INSERT INTO lactate_data (
-            session_id, customer_id, timestamp, power, lactate, heart_rate, fat_oxidation, vo2,
-            sample_id, glucose, ph, temperature, measurement_date, measurement_time, 
-            error_code, device_id, raw_data
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-        `, [
-          sessionId,
-          body.customerId || null,
-          dataEntry.timestamp,
-          dataEntry.power,
-          dataEntry.lactate,
-          dataEntry.heartRate || null,
-          dataEntry.fatOxidation || null,
-          dataEntry.vo2 || null,
-          dataEntry.sampleId || null,
-          dataEntry.glucose || null,
-          dataEntry.ph || null,
-          dataEntry.temperature || null,
-          dataEntry.measurementDate || null,
-          dataEntry.measurementTime || null,
-          dataEntry.errorCode || null,
-          dataEntry.deviceId || null,
-          dataEntry.rawData ? JSON.stringify(dataEntry.rawData) : null
-        ])
-
+        // Check if test_info exists, if not skip (user must create test_info first)
+        const testExists = await client.query(
+          'SELECT test_id FROM test_infos WHERE test_id = $1',
+          [testId]
+        )
+        
+        if (testExists.rows.length === 0) {
+          console.warn(`Test ${testId} not found - stage data not saved to database`)
+        } else {
+          // Get next stage number if not provided
+          let stageNumber = dataEntry.stage
+          if (!stageNumber) {
+            const maxStage = await client.query(
+              'SELECT COALESCE(MAX(stage), 0) as max_stage FROM stages WHERE test_id = $1',
+              [testId]
+            )
+            stageNumber = maxStage.rows[0].max_stage + 1
+          }
+          
+          // Insert stage data
+          await client.query(`
+            INSERT INTO stages (
+              test_id, stage, duration_min, load, heart_rate_bpm, lactate_mmol,
+              rr_systolic, rr_diastolic, is_final_approximation, notes
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (test_id, stage) 
+            DO UPDATE SET 
+              duration_min = EXCLUDED.duration_min,
+              load = EXCLUDED.load,
+              heart_rate_bpm = EXCLUDED.heart_rate_bpm,
+              lactate_mmol = EXCLUDED.lactate_mmol,
+              rr_systolic = EXCLUDED.rr_systolic,
+              rr_diastolic = EXCLUDED.rr_diastolic,
+              is_final_approximation = EXCLUDED.is_final_approximation,
+              notes = EXCLUDED.notes
+          `, [
+            testId,
+            stageNumber,
+            dataEntry.duration || 3, // Default 3 minutes
+            dataEntry.load,
+            dataEntry.heartRate || null,
+            dataEntry.lactate,
+            dataEntry.rrSystolic || null,
+            dataEntry.rrDiastolic || null,
+            dataEntry.isFinalApproximation || false,
+            dataEntry.notes || null
+          ])
+        }
 
       } finally {
         client.release()
@@ -133,7 +165,8 @@ export async function POST(request: NextRequest) {
       success: true,
       message: 'Data received successfully',
       data: dataEntry,
-      sessionId: sessionId,
+      testId: testId,
+      sessionId: sessionId, // For backward compatibility
       totalPoints: dataStore.get(sessionId)!.length
     })
 
@@ -148,51 +181,51 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  const sessionId = searchParams.get('sessionId') || 'default'
+  const sessionId = searchParams.get('sessionId') || searchParams.get('testId') || 'default'
+  const testId = sessionId // Use same value
   const includeMetadata = searchParams.get('includeMetadata') === 'true'
 
   try {
     // Get data from PostgreSQL
     const client = await pool.connect()
     try {
-      // Extended query with optional metadata fields
+      // Query stages from new schema
       const result = await client.query(`
-        SELECT timestamp, power, lactate, heart_rate as "heartRate", 
-               fat_oxidation as "fatOxidation", vo2, 'incremental' as "testType",
-               sample_id as "sampleId", glucose, ph, temperature,
-               measurement_date as "measurementDate", measurement_time as "measurementTime",
-               error_code as "errorCode", device_id as "deviceId", raw_data as "rawData"
-        FROM lactate_data 
-        WHERE session_id = $1 
-        ORDER BY timestamp ASC
-      `, [sessionId])
+        SELECT 
+          s.stage,
+          s.duration_min as duration,
+          s.load,
+          s.heart_rate_bpm as "heartRate",
+          s.lactate_mmol as lactate,
+          s.rr_systolic as "rrSystolic",
+          s.rr_diastolic as "rrDiastolic",
+          s.is_final_approximation as "isFinalApproximation",
+          s.notes,
+          s.created_at as timestamp,
+          ti.unit,
+          ti.device
+        FROM stages s
+        JOIN test_infos ti ON s.test_id = ti.test_id
+        WHERE s.test_id = $1 
+        ORDER BY s.stage ASC
+      `, [testId])
 
       const dbData: LactateWebhookPayload[] = result.rows.map(row => {
         const baseData: LactateWebhookPayload = {
           timestamp: row.timestamp,
-          power: row.power,
+          load: row.load,
+          power: row.load, // Backward compatibility
           lactate: parseFloat(row.lactate),
           heartRate: row.heartRate,
-          fatOxidation: row.fatOxidation ? parseFloat(row.fatOxidation) : undefined,
-          vo2: row.vo2 ? parseFloat(row.vo2) : undefined,
-          sessionId: sessionId,
-          testType: row.testType
-        }
-        
-        // Include metadata if requested or if any metadata exists
-        if (includeMetadata || row.sampleId || row.glucose || row.ph || row.errorCode) {
-          return {
-            ...baseData,
-            sampleId: row.sampleId || undefined,
-            glucose: row.glucose ? parseFloat(row.glucose) : undefined,
-            ph: row.ph ? parseFloat(row.ph) : undefined,
-            temperature: row.temperature ? parseFloat(row.temperature) : undefined,
-            measurementDate: row.measurementDate || undefined,
-            measurementTime: row.measurementTime || undefined,
-            errorCode: row.errorCode || undefined,
-            deviceId: row.deviceId || undefined,
-            rawData: row.rawData || undefined
-          }
+          sessionId: testId,
+          testId: testId,
+          testType: 'incremental',
+          stage: row.stage,
+          duration: row.duration,
+          rrSystolic: row.rrSystolic,
+          rrDiastolic: row.rrDiastolic,
+          isFinalApproximation: row.isFinalApproximation,
+          notes: row.notes
         }
         
         return baseData
@@ -203,6 +236,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         sessionId: sessionId,
+        testId: testId,
         data: dbData,
         totalPoints: dbData.length,
         lastUpdated: dbData.length > 0 ? dbData[dbData.length - 1].timestamp : null,
@@ -218,6 +252,7 @@ export async function GET(request: NextRequest) {
     const sessionData = dataStore.get(sessionId) || []
     return NextResponse.json({
       sessionId: sessionId,
+      testId: testId,
       data: sessionData,
       totalPoints: sessionData.length,
       lastUpdated: sessionData.length > 0 ? sessionData[sessionData.length - 1].timestamp : null,
@@ -228,40 +263,44 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  const sessionId = searchParams.get('sessionId')
+  const sessionId = searchParams.get('sessionId') || searchParams.get('testId')
+  const testId = sessionId
 
   try {
     const client = await pool.connect()
     try {
-      if (sessionId) {
-        // Delete specific session from PostgreSQL
-        await client.query('DELETE FROM lactate_data WHERE session_id = $1', [sessionId])
-        await client.query('DELETE FROM threshold_results WHERE session_id = $1', [sessionId])
-        await client.query('DELETE FROM training_zones WHERE session_id = $1', [sessionId])
-        await client.query('DELETE FROM sessions WHERE session_id = $1', [sessionId])
+      if (testId) {
+        // Delete specific test and its stages from PostgreSQL
+        // Note: stages will be cascade deleted via FK constraint
+        await client.query('DELETE FROM adjusted_thresholds WHERE test_id = $1', [testId])
+        await client.query('DELETE FROM training_zones WHERE test_id = $1', [testId])
+        await client.query('DELETE FROM threshold_results WHERE test_id = $1', [testId])
+        await client.query('DELETE FROM stages WHERE test_id = $1', [testId])
+        await client.query('DELETE FROM test_infos WHERE test_id = $1', [testId])
         
         // Also delete from memory
-        dataStore.delete(sessionId)
+        dataStore.delete(testId)
         
 
         return NextResponse.json({
           success: true,
-          message: `Session ${sessionId} data cleared from database`,
+          message: `Test ${testId} data cleared from database`,
           source: 'postgresql'
         })
       } else {
-        // Clear all sessions from PostgreSQL
-        await client.query('DELETE FROM lactate_data')
-        await client.query('DELETE FROM threshold_results')
+        // Clear all tests from PostgreSQL
+        await client.query('DELETE FROM adjusted_thresholds')
         await client.query('DELETE FROM training_zones')
-        await client.query('DELETE FROM sessions')
+        await client.query('DELETE FROM threshold_results')
+        await client.query('DELETE FROM stages')
+        await client.query('DELETE FROM test_infos')
         
         // Also clear memory
         dataStore.clear()
         
         return NextResponse.json({
           success: true,
-          message: 'All session data cleared from database',
+          message: 'All test data cleared from database',
           source: 'postgresql'
         })
       }
@@ -272,18 +311,18 @@ export async function DELETE(request: NextRequest) {
     console.error('PostgreSQL error during deletion:', dbError)
     
     // Fallback to memory deletion
-    if (sessionId) {
-      dataStore.delete(sessionId)
+    if (testId) {
+      dataStore.delete(testId)
       return NextResponse.json({
         success: true,
-        message: `Session ${sessionId} data cleared from memory (DB error)`,
+        message: `Test ${testId} data cleared from memory (DB error)`,
         source: 'memory_fallback'
       })
     } else {
       dataStore.clear()
       return NextResponse.json({
         success: true,
-        message: 'All session data cleared from memory (DB error)',
+        message: 'All test data cleared from memory (DB error)',
         source: 'memory_fallback'
       })
     }

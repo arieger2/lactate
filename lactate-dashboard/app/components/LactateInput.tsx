@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { lactateDataService } from '@/lib/lactateDataService'
 import { useCustomer, Customer } from '@/lib/CustomerContext'
 
 interface CustomerSession {
@@ -13,14 +12,44 @@ interface CustomerSession {
   notes?: string
 }
 
-interface MeasurementRow {
-  id: string
-  power: number
+interface TestInfo {
+  testId: string
+  testDate: string
+  testTime: string
+  device: string
+  unit: string
+  startLoad: string
+  increment: string
+  stageDuration_min: string
+}
+
+interface Stage {
+  stage: number
+  load: number
   lactate: number
   heartRate?: number
-  vo2?: number
-  timestamp: string
+  rrSystolic?: number
+  rrDiastolic?: number
+  duration?: number
   notes?: string
+}
+
+interface PatientProfile {
+  firstName: string
+  lastName: string
+  birthDate?: string
+  height_cm?: number
+  weight_kg?: number
+  email?: string
+  phone?: string
+  additionalNotes?: string
+}
+
+interface CustomerProfile {
+  profileId: string
+  patient: PatientProfile
+  testInfos: TestInfo[]
+  stages: Stage[]
 }
 
 export default function LactateInput() {
@@ -42,458 +71,750 @@ export default function LactateInput() {
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
   const [newCustomerError, setNewCustomerError] = useState<string | null>(null)
   const [newCustomer, setNewCustomer] = useState({
-    name: '',
-    customerId: '',
+    firstName: '',
+    lastName: '',
+    profileId: '',
+    birthDate: '',
+    height_cm: '',
+    weight_kg: '',
     email: '',
     phone: '',
-    dateOfBirth: '',
-    notes: ''
+    additionalNotes: ''
   })
-  
-  // Measurement Entry States
-  const [measurementRows, setMeasurementRows] = useState<MeasurementRow[]>([])
-  const [editingRowId, setEditingRowId] = useState<string | null>(null)
-  const [isEditingEnabled, setIsEditingEnabled] = useState(false)
-  const [currentMeasurement, setCurrentMeasurement] = useState({
-    power: '',
+
+  // Test Protocol States
+  const [testInfos, setTestInfos] = useState<TestInfo[]>([])
+  const [currentTestInfo, setCurrentTestInfo] = useState<TestInfo>({
+    testId: '',
+    testDate: new Date().toISOString().split('T')[0],
+    testTime: new Date().toTimeString().split(' ')[0].substring(0, 5),
+    device: 'bike',
+    unit: 'watt',
+    startLoad: '50',
+    increment: '50',
+    stageDuration_min: '3'
+  })
+
+  // Stage Input States
+  const [selectedTestInfo, setSelectedTestInfo] = useState<TestInfo | null>(null)
+  const [stages, setStages] = useState<Stage[]>([])
+  const [currentStage, setCurrentStage] = useState({
+    stage: 1,
+    load: '50',
     lactate: '',
     heartRate: '',
+    rrSystolic: '',
+    rrDiastolic: '',
+    duration: '3',
     notes: ''
   })
-  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Search customers with debouncing
+  // Search customers
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (customerSearch.trim()) {
-        searchCustomers(customerSearch)
-      } else {
+    const searchCustomers = async () => {
+      if (customerSearch.length < 2) {
         setCustomerResults([])
+        return
       }
-    }, 300)
-    
-    return () => clearTimeout(timer)
+
+      setIsSearching(true)
+      try {
+        const response = await fetch(`/api/customers?search=${encodeURIComponent(customerSearch)}`)
+        if (response.ok) {
+          const data = await response.json()
+          setCustomerResults(data.customers || [])
+        }
+      } catch (error) {
+        console.error('Error searching customers:', error)
+      } finally {
+        setIsSearching(false)
+      }
+    }
+
+    const debounceTimer = setTimeout(searchCustomers, 300)
+    return () => clearTimeout(debounceTimer)
   }, [customerSearch])
 
-  // Auto-load sessions when customer changes
-  useEffect(() => {
-    if (selectedCustomer) {
-      fetchCustomerSessions(selectedCustomer.customer_id)
-    } else {
-      setCustomerSessions([])
-      setSelectedSession(null)
-      setSelectedSessionId(null) // Clear global session ID
-      setShowSessionSelector(false)
-    }
-  }, [selectedCustomer])
-
-  // Load session data when selectedSession changes
-  useEffect(() => {
-    const loadSessionData = async () => {
-      if (selectedSession) {
-        try {
-          const response = await fetch(`/api/lactate-webhook?sessionId=${selectedSession.session_id}`)
-          if (response.ok) {
-            const result = await response.json()
-            console.log('Loading session data:', result)
-            
-            // Handle different API response formats
-            const dataArray = result.data || result || []
-            if (Array.isArray(dataArray) && dataArray.length > 0) {
-              const loadedRows: MeasurementRow[] = dataArray.map((item: any, index: number) => ({
-                id: `loaded_${selectedSession.session_id}_${index}`,
-                power: item.power || 0,
-                lactate: item.lactate || 0,
-                heartRate: item.heartRate || item.heart_rate || undefined,
-                vo2: item.fatOxidation ? item.fatOxidation * 100 : (item.fat_oxidation ? item.fat_oxidation * 100 : undefined),
-                timestamp: item.timestamp || new Date().toISOString(),
-                notes: item.notes || undefined
-              }))
-              setMeasurementRows(loadedRows)
-            }
-          }
-        } catch (error) {
-          console.error('Error loading session data:', error)
-        }
-      }
-    }
-    
-    loadSessionData()
-  }, [selectedSession])
-
-  // Fetch sessions for selected customer
+  // Fetch customer sessions
   const fetchCustomerSessions = async (customerId: string) => {
     setIsLoadingSessions(true)
     try {
       const response = await fetch(`/api/customer-sessions?customerId=${customerId}`)
       if (response.ok) {
         const data = await response.json()
-        // Handle different API response formats
-        const sessions = data.success ? data.sessions : (Array.isArray(data) ? data : [])
-        setCustomerSessions(sessions)
-        setShowSessionSelector(sessions.length > 0)
-      } else {
-        setCustomerSessions([])
-        setShowSessionSelector(false)
+        setCustomerSessions(data.sessions || [])
+        setShowSessionSelector(true)
       }
     } catch (error) {
-      console.error('Error fetching customer sessions:', error)
-      setCustomerSessions([])
-      setShowSessionSelector(false)
+      console.error('Error fetching sessions:', error)
     } finally {
       setIsLoadingSessions(false)
     }
   }
 
-  // Handle customer selection and load their sessions
-  const handleCustomerSelect = async (customer: Customer) => {
-    setSelectedCustomer(customer)
-    setCustomerSearch('')
-    setCustomerResults([])
-    
-    // Fetch sessions for this customer
-    await fetchCustomerSessions(customer.customer_id)
-  }
-
-  // Handle session selection and load session data
-  const handleSessionSelect = async (session: CustomerSession) => {
-    setSelectedSession(session)
-    setSelectedSessionId(session.session_id) // Set global session ID for Performance Curve
-    setShowSessionSelector(false)
-    
-    // Load the session data into the Entered Measurements table
+  // Fetch test infos for selected customer
+  const fetchTestInfos = async (profileId: string) => {
     try {
-      const response = await fetch(`/api/lactate-webhook?sessionId=${session.session_id}`)
+      const response = await fetch(`/api/test-infos?profile_id=${profileId}`)
       if (response.ok) {
-        const result = await response.json()
-        console.log('Loaded session data:', result)
-        
-        // Convert session data to measurement rows
-        if (result.data && Array.isArray(result.data)) {
-          const loadedRows: MeasurementRow[] = result.data.map((item: any, index: number) => ({
-            id: `loaded_${session.session_id}_${index}`,
-            power: item.power || 0,
-            lactate: item.lactate || 0,
-            heartRate: item.heartRate || item.heart_rate || undefined,
-            vo2: item.fatOxidation ? item.fatOxidation * 100 : (item.fat_oxidation ? item.fat_oxidation * 100 : undefined),
-            timestamp: item.timestamp || new Date().toISOString(),
-            notes: item.notes || undefined
-          }))
-          setMeasurementRows(loadedRows)
-        }
+        const data = await response.json()
+        // Transform snake_case from API to camelCase for component
+        const transformedTestInfos = (data.testInfos || []).map((ti: any) => ({
+          testId: ti.test_id,
+          testDate: ti.test_date,
+          testTime: ti.test_time,
+          device: ti.device,
+          unit: ti.unit,
+          startLoad: ti.start_load?.toString() || '50',
+          increment: ti.increment?.toString() || '50',
+          stageDuration_min: ti.stage_duration_min?.toString() || '3'
+        }))
+        setTestInfos(transformedTestInfos)
       }
     } catch (error) {
-      console.error('Error loading session data:', error)
-      alert('Fehler beim Laden der Session-Daten')
+      console.error('Error fetching test infos:', error)
     }
   }
 
-  // Send data to global lactate service
-  const sendToGlobalService = async (data: { 
-    power: number; 
-    lactate: number; 
-    heartRate?: number; 
-    fatOxidation?: number 
-  }) => {
-    try {
-      const state = lactateDataService.getState()
-      const response = await fetch(`/api/lactate-webhook?sessionId=${state.sessionId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          timestamp: new Date().toISOString(),
-          power: data.power,
-          lactate: data.lactate,
-          heartRate: data.heartRate,
-          fatOxidation: data.fatOxidation,
-          sessionId: state.sessionId,
-          testType: 'manual',
-          customerId: selectedCustomer?.customer_id
-        })
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const result = await response.json()
-      console.log('Data sent to global service:', result)
-      return result
-    } catch (error) {
-      console.error('Error sending to global service:', error)
-      throw error
-    }
-  }
-
-  // Customer search function
-  const searchCustomers = async (query: string) => {
-    if (!query.trim()) {
-      setCustomerResults([])
-      return
-    }
-    
-    setIsSearching(true)
-    try {
-      const response = await fetch(`/api/customers?search=${encodeURIComponent(query)}`)
-      const data = await response.json()
-      if (data.success) {
-        setCustomerResults(data.customers)
-      }
-    } catch (error) {
-      console.error('Error searching customers:', error)
-    } finally {
-      setIsSearching(false)
-    }
+  // Handle session selection
+  const handleSessionSelect = (session: CustomerSession) => {
+    setSelectedSession(session)
+    setSelectedSessionId(session.session_id)
   }
 
   // Create new customer
   const createCustomer = async () => {
-    setNewCustomerError(null)
-    
-    if (!newCustomer.name || !newCustomer.customerId) {
-      setNewCustomerError('Name and Customer ID are required')
-      return
-    }
-
     try {
+      const finalFirstName = (newCustomer.firstName || '').trim() || 'Max'
+      const finalLastName = (newCustomer.lastName || '').trim() || 'Mustermann'
+      const finalProfileId = (newCustomer.profileId || '').trim() || `CUST-${Date.now()}`
+
+      console.log('Creating customer with:', {
+        firstName: finalFirstName,
+        lastName: finalLastName,
+        profileId: finalProfileId,
+        original: newCustomer
+      })
+
+      const customerProfile: CustomerProfile = {
+        profileId: finalProfileId,
+        patient: {
+          firstName: finalFirstName,
+          lastName: finalLastName,
+          birthDate: newCustomer.birthDate || undefined,
+          height_cm: newCustomer.height_cm ? parseFloat(newCustomer.height_cm) : undefined,
+          weight_kg: newCustomer.weight_kg ? parseFloat(newCustomer.weight_kg) : undefined,
+          email: newCustomer.email || undefined,
+          phone: newCustomer.phone || undefined,
+          additionalNotes: newCustomer.additionalNotes || undefined
+        },
+        testInfos: testInfos.map(ti => ({
+          testId: ti.testId || `TEST-${Date.now()}`,
+          testDate: ti.testDate,
+          testTime: ti.testTime,
+          device: ti.device,
+          unit: ti.unit,
+          startLoad: ti.startLoad,
+          increment: ti.increment,
+          stageDuration_min: ti.stageDuration_min
+        })),
+        stages: []
+      }
+
       const response = await fetch('/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCustomer)
+        body: JSON.stringify(customerProfile)
       })
-      
-      const data = await response.json()
-      if (response.ok && data.success) {
-        setSelectedCustomer(data.customer)
+
+      if (response.ok) {
+        const data = await response.json()
+        setSelectedCustomer({
+          customer_id: data.customer.customer_id,
+          name: data.customer.name,
+          email: data.customer.email,
+          phone: data.customer.phone
+        })
+        
+        // Save test infos to database
+        for (const testInfo of customerProfile.testInfos) {
+          await fetch('/api/test-infos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              test_id: testInfo.testId,
+              profile_id: finalProfileId,
+              test_date: testInfo.testDate,
+              test_time: testInfo.testTime,
+              device: testInfo.device,
+              unit: testInfo.unit,
+              start_load: parseFloat(testInfo.startLoad),
+              increment: parseFloat(testInfo.increment),
+              stage_duration_min: parseInt(testInfo.stageDuration_min)
+            })
+          })
+        }
+
         setShowNewCustomerForm(false)
-        setNewCustomer({ name: '', customerId: '', email: '', phone: '', dateOfBirth: '', notes: '' })
         setNewCustomerError(null)
+        setNewCustomer({
+          firstName: '',
+          lastName: '',
+          profileId: '',
+          birthDate: '',
+          height_cm: '',
+          weight_kg: '',
+          email: '',
+          phone: '',
+          additionalNotes: ''
+        })
+        
+        // Fetch test infos for the new customer
+        await fetchTestInfos(finalProfileId)
       } else {
-        setNewCustomerError(data.error || `Failed to create customer (HTTP ${response.status})`)
+        const error = await response.json()
+        setNewCustomerError(error.error || 'Failed to create customer')
       }
     } catch (error) {
       console.error('Error creating customer:', error)
-      setNewCustomerError(error instanceof Error ? error.message : 'Failed to create customer')
+      setNewCustomerError('Network error. Please try again.')
     }
   }
 
-  // Add measurement row
-  const addMeasurementRow = () => {
-    if (!currentMeasurement.lactate || !currentMeasurement.power) {
-      alert('Power and Lactate values are required')
-      return
+  // Add test info
+  const addTestInfo = () => {
+    const testId = `TEST-${Date.now()}`
+    const newTestInfo: TestInfo = {
+      ...currentTestInfo,
+      testId,
+      testDate: currentTestInfo.testDate || new Date().toISOString().split('T')[0],
+      testTime: currentTestInfo.testTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
+      device: currentTestInfo.device || 'bike',
+      unit: currentTestInfo.unit || 'watt',
+      startLoad: currentTestInfo.startLoad || '50',
+      increment: currentTestInfo.increment || '50',
+      stageDuration_min: currentTestInfo.stageDuration_min || '3'
     }
-
-    const newRow: MeasurementRow = {
-      id: Date.now().toString(),
-      power: Number(currentMeasurement.power),
-      lactate: Number(currentMeasurement.lactate),
-      heartRate: currentMeasurement.heartRate ? Number(currentMeasurement.heartRate) : undefined,
-      timestamp: new Date().toISOString(),
-      notes: currentMeasurement.notes || undefined
-    }
-
-    setMeasurementRows(prev => [...prev, newRow])
-    setCurrentMeasurement({ power: '', lactate: '', heartRate: '', notes: '' })
-  }
-
-  // Edit measurement row
-  const editMeasurementRow = (row: MeasurementRow) => {
-    setEditingRowId(row.id)
-    setCurrentMeasurement({
-      power: row.power.toString(),
-      lactate: row.lactate.toString(),
-      heartRate: row.heartRate?.toString() || '',
-      notes: row.notes || ''
+    
+    setTestInfos(prev => [...prev, newTestInfo])
+    setCurrentTestInfo({
+      testId: '',
+      testDate: new Date().toISOString().split('T')[0],
+      testTime: new Date().toTimeString().split(' ')[0].substring(0, 5),
+      device: 'bike',
+      unit: 'watt',
+      startLoad: '50',
+      increment: '50',
+      stageDuration_min: '3'
     })
   }
 
-  // Save edited measurement
-  const saveEditedMeasurement = () => {
-    if (!editingRowId) return
-    
-    setMeasurementRows(prev => prev.map(row => 
-      row.id === editingRowId ? {
-        ...row,
-        power: Number(currentMeasurement.power),
-        lactate: Number(currentMeasurement.lactate),
-        heartRate: currentMeasurement.heartRate ? Number(currentMeasurement.heartRate) : undefined,
-        notes: currentMeasurement.notes || undefined
-      } : row
-    ))
-    
-    setEditingRowId(null)
-    setCurrentMeasurement({ power: '', lactate: '', heartRate: '', notes: '' })
+  const removeTestInfo = (index: number) => {
+    setTestInfos(prev => prev.filter((_, i) => i !== index))
   }
 
-  // Delete measurement row
-  const deleteMeasurementRow = (id: string) => {
-    setMeasurementRows(prev => prev.filter(row => row.id !== id))
-  }
-
-  // Send all measurements to dashboard
-  const sendAllMeasurements = async () => {
-    if (measurementRows.length === 0) {
-      alert('No measurements to send')
+  // Auto-save stage data to database whenever values change
+  const autoSaveStage = async (stageData: typeof currentStage) => {
+    if (!selectedTestInfo || !stageData.load || !stageData.lactate) {
       return
     }
-
-    setIsSubmitting(true)
+    
     try {
-      for (const row of measurementRows) {
-        await sendToGlobalService({
-          power: row.power,
-          lactate: row.lactate,
-          heartRate: row.heartRate,
-          fatOxidation: row.vo2 ? row.vo2 / 100 : undefined
-        })
-        // Small delay to maintain order
-        await new Promise(resolve => setTimeout(resolve, 100))
+      const payload = {
+        testId: selectedTestInfo.testId,
+        stage: stageData.stage,
+        load: parseFloat(stageData.load),
+        lactate: parseFloat(stageData.lactate),
+        heartRate: stageData.heartRate ? parseInt(stageData.heartRate) : undefined,
+        rrSystolic: stageData.rrSystolic ? parseInt(stageData.rrSystolic) : undefined,
+        rrDiastolic: stageData.rrDiastolic ? parseInt(stageData.rrDiastolic) : undefined,
+        duration: stageData.duration ? parseInt(stageData.duration) : undefined,
+        notes: stageData.notes || undefined
       }
       
-      alert(`✅ All ${measurementRows.length} measurements sent to dashboard successfully!`)
-      // Clear measurements after successful send
-      setMeasurementRows([])
+      const response = await fetch('/api/lactate-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      
+      const responseData = await response.json()
+      
+      if (response.ok) {
+        // Update local stages array
+        setStages(prev => {
+          const existing = prev.find(s => s.stage === stageData.stage)
+          if (existing) {
+            return prev.map(s => s.stage === stageData.stage ? {
+              stage: stageData.stage,
+              load: parseFloat(stageData.load),
+              lactate: parseFloat(stageData.lactate),
+              heartRate: stageData.heartRate ? parseInt(stageData.heartRate) : undefined,
+              rrSystolic: stageData.rrSystolic ? parseInt(stageData.rrSystolic) : undefined,
+              rrDiastolic: stageData.rrDiastolic ? parseInt(stageData.rrDiastolic) : undefined,
+              duration: stageData.duration ? parseInt(stageData.duration) : undefined,
+              notes: stageData.notes || undefined
+            } : s)
+          } else {
+            return [...prev, {
+              stage: stageData.stage,
+              load: parseFloat(stageData.load),
+              lactate: parseFloat(stageData.lactate),
+              heartRate: stageData.heartRate ? parseInt(stageData.heartRate) : undefined,
+              rrSystolic: stageData.rrSystolic ? parseInt(stageData.rrSystolic) : undefined,
+              rrDiastolic: stageData.rrDiastolic ? parseInt(stageData.rrDiastolic) : undefined,
+              duration: stageData.duration ? parseInt(stageData.duration) : undefined,
+              notes: stageData.notes || undefined
+            }].sort((a, b) => a.stage - b.stage)
+          }
+        })
+      } else {
+        console.error('Failed to save stage:', response.status, responseData)
+      }
     } catch (error) {
-      alert('❌ Error sending measurements')
-    } finally {
-      setIsSubmitting(false)
+      console.error('❌ Error auto-saving stage:', error)
+    }
+  }
+  
+  const addStage = () => {
+    if (!selectedTestInfo || !currentStage.load || !currentStage.lactate) {
+      alert('Please enter load and lactate values')
+      return
+    }
+    
+    // Calculate next load based on increment
+    const nextLoad = parseFloat(currentStage.load) + parseFloat(selectedTestInfo.increment)
+    
+    // Move to next stage
+    setCurrentStage({
+      stage: currentStage.stage + 1,
+      load: nextLoad.toString(),
+      lactate: '',
+      heartRate: '',
+      rrSystolic: '',
+      rrDiastolic: '',
+      duration: currentStage.duration,
+      notes: ''
+    })
+  }
+  
+  const removeStage = async (stageNumber: number) => {
+    if (!selectedTestInfo) return
+    
+    try {
+      const remainingStages = stages.filter(s => s.stage !== stageNumber)
+      
+      // Delete entire test and re-save stages (cascade delete)
+      await fetch(`/api/lactate-webhook?testId=${selectedTestInfo.testId}`, {
+        method: 'DELETE'
+      })
+      
+      // Re-save test_info
+      await fetch('/api/test-infos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          test_id: selectedTestInfo.testId,
+          profile_id: selectedCustomer?.customer_id,
+          test_date: selectedTestInfo.testDate,
+          test_time: selectedTestInfo.testTime,
+          device: selectedTestInfo.device,
+          unit: selectedTestInfo.unit,
+          start_load: parseFloat(selectedTestInfo.startLoad),
+          increment: parseFloat(selectedTestInfo.increment),
+          stage_duration_min: parseInt(selectedTestInfo.stageDuration_min)
+        })
+      })
+      
+      // Re-save all remaining stages
+      for (const stage of remainingStages) {
+        await fetch('/api/lactate-webhook', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            testId: selectedTestInfo.testId,
+            stage: stage.stage,
+            load: stage.load,
+            lactate: stage.lactate,
+            heartRate: stage.heartRate,
+            rrSystolic: stage.rrSystolic,
+            rrDiastolic: stage.rrDiastolic,
+            duration: stage.duration,
+            notes: stage.notes
+          })
+        })
+      }
+      
+      setStages(remainingStages)
+    } catch (error) {
+      console.error('Error removing stage:', error)
+      alert('Failed to remove stage')
+    }
+  }
+  
+  const selectTestForStageEntry = async (testInfo: TestInfo) => {
+    setSelectedTestInfo(testInfo)
+    
+    // Load existing stages from database
+    try {
+      const response = await fetch(`/api/lactate-webhook?testId=${testInfo.testId}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.data && data.data.length > 0) {
+          const loadedStages = data.data.map((s: any) => ({
+            stage: s.stage,
+            load: s.load,
+            lactate: s.lactate,
+            heartRate: s.heartRate,
+            rrSystolic: s.rrSystolic,
+            rrDiastolic: s.rrDiastolic,
+            duration: s.duration,
+            notes: s.notes
+          }))
+          setStages(loadedStages)
+          
+          const maxStage = Math.max(...loadedStages.map((s: any) => s.stage))
+          const nextLoad = parseFloat(testInfo.startLoad) + (parseFloat(testInfo.increment) * maxStage)
+          setCurrentStage({
+            stage: maxStage + 1,
+            load: nextLoad.toString(),
+            lactate: '',
+            heartRate: '',
+            rrSystolic: '',
+            rrDiastolic: '',
+            duration: testInfo.stageDuration_min,
+            notes: ''
+          })
+        } else {
+          setStages([])
+          setCurrentStage({
+            stage: 1,
+            load: testInfo.startLoad,
+            lactate: '',
+            heartRate: '',
+            rrSystolic: '',
+            rrDiastolic: '',
+            duration: testInfo.stageDuration_min,
+            notes: ''
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Error loading stages:', error)
+      setCurrentStage({
+        stage: 1,
+        load: testInfo.startLoad,
+        lactate: '',
+        heartRate: '',
+        rrSystolic: '',
+        rrDiastolic: '',
+        duration: testInfo.stageDuration_min,
+        notes: ''
+      })
+      setStages([])
     }
   }
 
+  // Load test infos when customer is selected
+  useEffect(() => {
+    if (selectedCustomer) {
+      fetchTestInfos(selectedCustomer.customer_id)
+    }
+  }, [selectedCustomer])
+
   return (
-    <div className="space-y-8">
-      {/* Customer Management Section */}
+    <div className="space-y-6">
+      {/* Customer Selection */}
       <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
         <h2 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
-          Customer Information
+          👤 Customer / Patient
         </h2>
-        
+
         {!selectedCustomer ? (
-          <div className="space-y-4">
+          <div>
             {/* Customer Search */}
-            <div>
+            <div className="mb-4">
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
                 Search Existing Customer
               </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={customerSearch}
-                  onChange={(e) => setCustomerSearch(e.target.value)}
-                  placeholder="Search by name, ID, or email..."
-                  className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
-                />
-                <button
-                  onClick={() => setShowNewCustomerForm(!showNewCustomerForm)}
-                  className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-md font-medium"
-                >
-                  {showNewCustomerForm ? 'Cancel' : 'New Customer'}
-                </button>
-              </div>
-              
-              {isSearching && (
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Searching...</p>
-              )}
-              
-              {/* Search Results */}
+              <input
+                type="text"
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                placeholder="Search by name or ID..."
+                className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              {isSearching && <p className="text-sm text-zinc-500 mt-1">Searching...</p>}
               {customerResults.length > 0 && (
-                <div className="mt-2 max-h-48 overflow-y-auto border border-zinc-200 dark:border-zinc-700 rounded-md">
+                <div className="mt-2 border border-zinc-200 dark:border-zinc-700 rounded-md max-h-48 overflow-y-auto">
                   {customerResults.map(customer => (
                     <div
                       key={customer.customer_id}
-                      onClick={() => handleCustomerSelect(customer)}
+                      onClick={() => {
+                        setSelectedCustomer(customer)
+                        setCustomerSearch('')
+                        setCustomerResults([])
+                      }}
                       className="p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer border-b border-zinc-100 dark:border-zinc-800 last:border-b-0"
                     >
                       <div className="font-medium text-zinc-900 dark:text-zinc-100">{customer.name}</div>
-                      <div className="text-sm text-zinc-500 dark:text-zinc-400">ID: {customer.customer_id}</div>
-                      {customer.email && (
-                        <div className="text-sm text-zinc-500 dark:text-zinc-400">{customer.email}</div>
-                      )}
+                      <div className="text-sm text-zinc-600 dark:text-zinc-400">ID: {customer.customer_id}</div>
                     </div>
                   ))}
                 </div>
               )}
-
-              {customerSearch.trim() && customerResults.length === 0 && !isSearching && (
-                <div className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  No customers found. Use "New Customer" to create one.
-                </div>
-              )}
             </div>
-            
+
+            {/* Create New Customer Button */}
+            <button
+              onClick={() => setShowNewCustomerForm(!showNewCustomerForm)}
+              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md font-medium"
+            >
+              {showNewCustomerForm ? '✕ Cancel' : '➕ Create New Customer'}
+            </button>
+
             {/* New Customer Form */}
             {showNewCustomerForm && (
-              <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-zinc-50 dark:bg-zinc-800">
-                <h3 className="text-lg font-medium mb-3 text-zinc-900 dark:text-zinc-100">New Customer</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="mt-4 p-4 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-zinc-50 dark:bg-zinc-800/50">
+                <h3 className="font-medium text-zinc-900 dark:text-zinc-100 mb-3">New Customer Information</h3>
+                
+                {/* Patient Info */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                   <div>
-                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                      Name <span className="text-red-500">*</span>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      First Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
-                      value={newCustomer.name}
-                      onChange={(e) => setNewCustomer(prev => ({ ...prev, name: e.target.value }))}
-                      className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
-                      placeholder="Full name"
+                      value={newCustomer.firstName}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, firstName: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="Max"
                     />
                   </div>
+                  
                   <div>
-                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                      Customer ID <span className="text-red-500">*</span>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Last Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
-                      value={newCustomer.customerId}
-                      onChange={(e) => setNewCustomer(prev => ({ ...prev, customerId: e.target.value }))}
-                      className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
-                      placeholder="Unique ID"
+                      value={newCustomer.lastName}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, lastName: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="Mustermann"
                     />
                   </div>
+
                   <div>
-                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Email</label>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Profile ID
+                    </label>
+                    <input
+                      type="text"
+                      value={newCustomer.profileId}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, profileId: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="Auto-generated if empty"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Birth Date
+                    </label>
+                    <input
+                      type="date"
+                      value={newCustomer.birthDate}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, birthDate: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Height (cm)
+                    </label>
+                    <input
+                      type="number"
+                      value={newCustomer.height_cm}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, height_cm: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="175"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Weight (kg)
+                    </label>
+                    <input
+                      type="number"
+                      value={newCustomer.weight_kg}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, weight_kg: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="75"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Email
+                    </label>
                     <input
                       type="email"
                       value={newCustomer.email}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, email: e.target.value }))}
-                      className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
-                      placeholder="email@example.com"
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="max@example.com"
                     />
                   </div>
+
                   <div>
-                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Phone</label>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Phone
+                    </label>
                     <input
                       type="tel"
                       value={newCustomer.phone}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
-                      className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
-                      placeholder="Phone number"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Date of Birth</label>
-                    <input
-                      type="date"
-                      value={newCustomer.dateOfBirth}
-                      onChange={(e) => setNewCustomer(prev => ({ ...prev, dateOfBirth: e.target.value }))}
-                      className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
-                      placeholder="YYYY-MM-DD"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Notes</label>
-                    <textarea
-                      value={newCustomer.notes}
-                      onChange={(e) => setNewCustomer(prev => ({ ...prev, notes: e.target.value }))}
-                      className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
-                      placeholder="Additional notes..."
-                      rows={2}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="+49 123 456789"
                     />
                   </div>
                 </div>
+
+                {/* Test Protocol Section */}
+                <div className="mb-4 p-3 border border-blue-200 dark:border-blue-800 rounded bg-blue-50 dark:bg-blue-900/20">
+                  <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">Test Protocol (Optional)</h4>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                    <div>
+                      <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Date</label>
+                      <input
+                        type="date"
+                        value={currentTestInfo.testDate}
+                        onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, testDate: e.target.value }))}
+                        className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Time</label>
+                      <input
+                        type="time"
+                        value={currentTestInfo.testTime}
+                        onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, testTime: e.target.value }))}
+                        className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Device</label>
+                      <select
+                        value={currentTestInfo.device}
+                        onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, device: e.target.value }))}
+                        className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                      >
+                        <option value="bike">Bike</option>
+                        <option value="ergometer">Ergometer</option>
+                        <option value="treadmill">Treadmill</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Unit</label>
+                      <select
+                        value={currentTestInfo.unit}
+                        onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, unit: e.target.value }))}
+                        className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                      >
+                        <option value="watt">Watt (W)</option>
+                        <option value="kmh">Speed (km/h)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Start Load</label>
+                      <input
+                        type="number"
+                        value={currentTestInfo.startLoad}
+                        onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, startLoad: e.target.value }))}
+                        className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        placeholder="50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Increment</label>
+                      <input
+                        type="number"
+                        value={currentTestInfo.increment}
+                        onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, increment: e.target.value }))}
+                        className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        placeholder="50"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Duration (min)</label>
+                      <input
+                        type="number"
+                        value={currentTestInfo.stageDuration_min}
+                        onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, stageDuration_min: e.target.value }))}
+                        className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        placeholder="3"
+                      />
+                    </div>
+
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={addTestInfo}
+                        className="w-full px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded"
+                      >
+                        + Add Protocol
+                      </button>
+                    </div>
+                  </div>
+
+                  {testInfos.length > 0 && (
+                    <div className="space-y-1">
+                      {testInfos.map((ti, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs bg-white dark:bg-blue-900/30 p-2 rounded">
+                          <div className="flex-1">
+                            <span className="font-medium text-blue-900 dark:text-blue-100">{ti.testDate}</span>
+                            <span className="mx-2 text-blue-700 dark:text-blue-300">•</span>
+                            <span className="text-blue-700 dark:text-blue-300">
+                              {ti.device} ({ti.unit}): {ti.startLoad} +{ti.increment} / {ti.stageDuration_min}min
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeTestInfo(idx)}
+                            className="ml-2 px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                    Additional Notes
+                  </label>
+                  <textarea
+                    value={newCustomer.additionalNotes}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, additionalNotes: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                    placeholder="Additional notes..."
+                    rows={2}
+                  />
+                </div>
+
                 <div className="flex gap-2 mt-4 items-center">
                   <button
                     onClick={createCustomer}
@@ -529,301 +850,318 @@ export default function LactateInput() {
                 {selectedCustomer.email && <p className="text-sm text-blue-700 dark:text-blue-300">{selectedCustomer.email}</p>}
                 {selectedCustomer.phone && <p className="text-sm text-blue-700 dark:text-blue-300">{selectedCustomer.phone}</p>}
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    if (customerSessions.length > 0) {
-                      setShowSessionSelector(!showSessionSelector)
-                    } else {
-                      fetchCustomerSessions(selectedCustomer.customer_id)
-                    }
-                  }}
-                  disabled={isLoadingSessions}
-                  className="px-3 py-1 text-sm bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-md"
-                >
-                  {isLoadingSessions ? '⏳' : '📊'} Sessions {customerSessions.length > 0 && `(${customerSessions.length})`}
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedCustomer(null)
-                    setSelectedSession(null)
-                    setSelectedSessionId(null) // Clear global session ID
-                    setCustomerSessions([])
-                    setShowSessionSelector(false)
-                    setMeasurementRows([])
-                  }}
-                  className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md"
-                >
-                  Change Customer
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  setSelectedCustomer(null)
+                  setSelectedSession(null)
+                  setSelectedSessionId(null)
+                  setCustomerSessions([])
+                  setShowSessionSelector(false)
+                  setTestInfos([])
+                  setSelectedTestInfo(null)
+                  setStages([])
+                }}
+                className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md"
+              >
+                Change Customer
+              </button>
             </div>
-
-            {/* Session Selection */}
-            {showSessionSelector && customerSessions.length > 0 && (
-              <div className="mt-3 border-t border-blue-200 dark:border-blue-700 pt-3">
-                <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
-                  Verfügbare Sessions ({customerSessions.length})
-                </h4>
-                <div className="max-h-32 overflow-y-auto space-y-1">
-                  {customerSessions.map(session => (
-                    <div
-                      key={session.session_id}
-                      onClick={() => handleSessionSelect(session)}
-                      className={`p-2 rounded-md cursor-pointer border transition-colors ${
-                        selectedSession?.session_id === session.session_id
-                          ? 'border-blue-500 bg-blue-100 dark:bg-blue-800/50'
-                          : 'border-blue-200 dark:border-blue-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-800/30'
-                      }`}
-                    >
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <div className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                            {new Date(session.test_date).toLocaleDateString('de-DE')} - {session.test_type}
-                          </div>
-                          <div className="text-xs text-blue-700 dark:text-blue-300">
-                            {session.point_count} Datenpunkte
-                          </div>
-                        </div>
-                        <div className="text-xs text-blue-600 dark:text-blue-400">
-                          {new Date(session.last_updated).toLocaleTimeString('de-DE')}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {selectedSession && (
-              <div className="mt-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
-                <div className="text-sm font-medium text-green-900 dark:text-green-100">
-                  ✅ Session ausgewählt: {new Date(selectedSession.test_date).toLocaleDateString('de-DE')}
-                </div>
-                <div className="text-xs text-green-700 dark:text-green-300">
-                  {selectedSession.point_count} Datenpunkte - {selectedSession.test_type}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
 
-      {/* Manual Measurement Entry */}
-      <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
-          ✏️ Manual Measurement Entry
-        </h2>
+      {/* Test Protocol Selection & Stage Entry */}
+      {selectedCustomer && (
+        <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
+            🧪 Stage-by-Stage Data Entry
+          </h2>
 
-        {/* Customer Required Message */}
-        {!selectedCustomer && (
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg mb-6">
-            <p className="text-yellow-800 dark:text-yellow-200">
-              ⚠️ Please select or create a customer above before adding measurements.
-            </p>
-          </div>
-        )}
-
-        {/* Measurement Input Form */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className={selectedCustomer ? '' : 'opacity-50 pointer-events-none'}>
-            <h3 className="text-lg font-medium mb-4 text-zinc-900 dark:text-zinc-100">Add New Measurement</h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Power (W) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    value={currentMeasurement.power}
-                    onChange={(e) => setCurrentMeasurement(prev => ({ ...prev, power: e.target.value }))}
-                    className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
-                    placeholder="e.g., 200"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Lactate (mmol/L) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="30"
-                    value={currentMeasurement.lactate}
-                    onChange={(e) => setCurrentMeasurement(prev => ({ ...prev, lactate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
-                    placeholder="e.g., 2.5"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Heart Rate (bpm)</label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    max="250"
-                    value={currentMeasurement.heartRate}
-                    onChange={(e) => setCurrentMeasurement(prev => ({ ...prev, heartRate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
-                    placeholder="e.g., 150"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Notes</label>
-                <input
-                  type="text"
-                  value={currentMeasurement.notes}
-                  onChange={(e) => setCurrentMeasurement(prev => ({ ...prev, notes: e.target.value }))}
-                  className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
-                  placeholder="Optional notes..."
-                />
-              </div>
-              
-              <div className="flex gap-2">
-                {editingRowId ? (
-                  <>
-                    <button
-                      onClick={saveEditedMeasurement}
-                      className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-md font-medium"
-                    >
-                      Save Changes
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingRowId(null)
-                        setCurrentMeasurement({ power: '', lactate: '', heartRate: '', notes: '' })
-                      }}
-                      className="px-4 py-2 bg-zinc-500 hover:bg-zinc-600 text-white rounded-md font-medium"
-                    >
-                      Cancel
-                    </button>
-                  </>
+          {!selectedTestInfo ? (
+            <div>
+              {/* Test Protocol Selection */}
+              <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg">
+                <h3 className="font-medium text-zinc-900 dark:text-zinc-100 mb-3">
+                  Select Test Protocol
+                </h3>
+                {testInfos.length === 0 ? (
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400 text-center py-4">
+                    No test protocols available. Create a customer with a test protocol first.
+                  </p>
                 ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {testInfos.map((ti, idx) => (
+                      <button
+                        key={ti.testId || `test-${idx}`}
+                        type="button"
+                        onClick={() => selectTestForStageEntry(ti)}
+                        className="w-full p-4 text-left border border-blue-300 dark:border-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                      >
+                        <div className="font-medium text-blue-900 dark:text-blue-100">{ti.testId}</div>
+                        <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                          {ti.testDate} • {ti.device} • {ti.unit === 'watt' ? 'Power (W)' : 'Speed (km/h)'}
+                        </div>
+                        <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                          Start: {ti.startLoad} {ti.unit} • Increment: +{ti.increment} • Duration: {ti.stageDuration_min} min
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              {/* Selected Protocol Info */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-medium text-blue-900 dark:text-blue-100">{selectedTestInfo.testId}</h3>
+                    <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                      {selectedTestInfo.device} • {selectedTestInfo.unit === 'watt' ? 'Power (W)' : 'Speed (km/h)'} • 
+                      Start: {selectedTestInfo.startLoad} • +{selectedTestInfo.increment} / {selectedTestInfo.stageDuration_min}min
+                    </p>
+                  </div>
                   <button
-                    onClick={addMeasurementRow}
-                    disabled={!selectedCustomer}
-                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-zinc-400 text-white rounded-md font-medium"
+                    onClick={() => {
+                      setSelectedTestInfo(null)
+                      setStages([])
+                    }}
+                    className="px-3 py-1 text-sm bg-zinc-500 hover:bg-zinc-600 text-white rounded"
                   >
-                    Add Measurement
+                    Change Protocol
                   </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Measurements Table */}
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
-                Entered Measurements ({measurementRows.length})
-              </h3>
-              <div className="flex gap-2">
-                {measurementRows.length > 0 && (
-                  <>
-                    <button
-                      onClick={() => setIsEditingEnabled(!isEditingEnabled)}
-                      className={`px-3 py-2 rounded-md font-medium text-sm transition-colors ${
-                        isEditingEnabled
-                          ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                          : 'bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300'
-                      }`}
-                    >
-                      {isEditingEnabled ? '✏️ Bearbeitung An' : '🔒 Bearbeitung Aus'}
-                    </button>
-                    <button
-                      onClick={sendAllMeasurements}
-                      disabled={isSubmitting}
-                      className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-md font-medium text-sm"
-                    >
-                      {isSubmitting ? 'Sending...' : `Send All ${measurementRows.length} to Dashboard`}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-            
-            {measurementRows.length > 0 ? (
-              <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
-                <div className="overflow-x-auto max-h-96 overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-zinc-50 dark:bg-zinc-800 sticky top-0">
-                      <tr>
-                        <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">Power (W)</th>
-                        <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">Lactate</th>
-                        <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">HR</th>
-                        {isEditingEnabled && (
-                          <th className="text-left p-2 font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {measurementRows.map((row) => (
-                        <tr 
-                          key={row.id} 
-                          className={`border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${
-                            editingRowId === row.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                          }`}
-                        >
-                          <td className="p-2 font-medium">{row.power} W</td>
-                          <td className="p-2">{row.lactate} mmol/L</td>
-                          <td className="p-2">{row.heartRate ? `${row.heartRate} bpm` : '-'}</td>
-                          {isEditingEnabled && (
-                            <td className="p-2">
-                              <div className="flex gap-1">
-                                <button
-                                  onClick={() => editMeasurementRow(row)}
-                                  className="px-2 py-1 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => deleteMeasurementRow(row.id)}
-                                  className="px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
                 </div>
               </div>
-            ) : (
-              <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center text-zinc-500 dark:text-zinc-400">
-                {selectedCustomer 
-                  ? "No measurements entered yet. Add your first measurement using the form on the left."
-                  : "Select a customer first to begin adding measurements."
-                }
-              </div>
-            )}
-            
-            {measurementRows.length > 0 && (
-              <div className="mt-4 text-xs text-zinc-600 dark:text-zinc-400">
-                <p>💡 {isEditingEnabled ? 'Bearbeitung aktiviert - klicken Sie auf "Edit" oder "Delete"' : 'Klicken Sie auf "🔒 Bearbeitung Aus" um Daten zu bearbeiten'}</p>
-                <p>🚀 Use "Send All" to transfer all measurements to the Performance Curve tab for analysis</p>
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* Session Information */}
-        {selectedCustomer && (
-          <div className="mt-6 text-xs bg-zinc-50 dark:bg-zinc-800 p-3 rounded border">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <div><strong>Customer:</strong> {selectedCustomer.name}</div>
-              <div><strong>Session ID:</strong> <code className="text-blue-600 dark:text-blue-400">{lactateDataService.getState().sessionId}</code></div>
+              {/* Stage Input Form */}
+              <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg mb-4" key={`stage-${currentStage.stage}`}>
+                <h4 className="font-medium text-zinc-900 dark:text-zinc-100 mb-3">
+                  Stage {currentStage.stage}
+                </h4>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      {selectedTestInfo.unit === 'watt' ? 'Power (W)' : 'Speed (km/h)'} <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step={selectedTestInfo.unit === 'watt' ? '5' : '0.5'}
+                      value={currentStage.load || ''}
+                      onBlur={(e) => {
+                        if (e.target.value && currentStage.lactate) {
+                          autoSaveStage(currentStage)
+                        }
+                      }}
+                      onChange={(e) => {
+                        setCurrentStage(prev => ({ ...prev, load: e.target.value }))
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder={selectedTestInfo.unit === 'watt' ? '200' : '10.0'}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Lactate (mmol/L) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={currentStage.lactate || ''}
+                      onBlur={(e) => {
+                        if (e.target.value && currentStage.load) {
+                          autoSaveStage(currentStage)
+                        }
+                      }}
+                      onChange={(e) => {
+                        setCurrentStage(prev => ({ ...prev, lactate: e.target.value }))
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="2.5"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Heart Rate (bpm)
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={currentStage.heartRate || ''}
+                      onBlur={() => {
+                        if (currentStage.load && currentStage.lactate) {
+                          autoSaveStage(currentStage)
+                        }
+                      }}
+                      onChange={(e) => {
+                        setCurrentStage(prev => ({ ...prev, heartRate: e.target.value }))
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="150"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Duration (min)
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={currentStage.duration || ''}
+                      onBlur={() => {
+                        if (currentStage.load && currentStage.lactate) {
+                          autoSaveStage(currentStage)
+                        }
+                      }}
+                      onChange={(e) => {
+                        setCurrentStage(prev => ({ ...prev, duration: e.target.value }))
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="3"
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Blood Pressure Systolic
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={currentStage.rrSystolic || ''}
+                      onBlur={() => {
+                        if (currentStage.load && currentStage.lactate) {
+                          autoSaveStage(currentStage)
+                        }
+                      }}
+                      onChange={(e) => {
+                        setCurrentStage(prev => ({ ...prev, rrSystolic: e.target.value }))
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="120"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Blood Pressure Diastolic
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={currentStage.rrDiastolic || ''}
+                      onBlur={() => {
+                        if (currentStage.load && currentStage.lactate) {
+                          autoSaveStage(currentStage)
+                        }
+                      }}
+                      onChange={(e) => {
+                        setCurrentStage(prev => ({ ...prev, rrDiastolic: e.target.value }))
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="80"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Notes
+                    </label>
+                    <input
+                      type="text"
+                      value={currentStage.notes || ''}
+                      onBlur={() => {
+                        if (currentStage.load && currentStage.lactate) {
+                          autoSaveStage(currentStage)
+                        }
+                      }}
+                      onChange={(e) => {
+                        setCurrentStage(prev => ({ ...prev, notes: e.target.value }))
+                      }}
+                      className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      placeholder="Optional"
+                    />
+                  </div>
+                </div>
+                
+                <button
+                  onClick={addStage}
+                  disabled={!currentStage.load || !currentStage.lactate}
+                  className="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-zinc-400 text-white rounded font-medium"
+                >
+                  ✓ Continue to Next Stage
+                </button>
+              </div>
+
+              {/* Stages List */}
+              {stages.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-zinc-900 dark:text-zinc-100 mb-3">
+                    Recorded Stages ({stages.length}) - Click to Edit
+                  </h4>
+                  <div className="space-y-2">
+                    {stages.map((stage) => (
+                      <div 
+                        key={stage.stage} 
+                        className="flex items-center justify-between bg-green-50 dark:bg-green-900/20 p-3 rounded border border-green-200 dark:border-green-700 hover:bg-green-100 dark:hover:bg-green-900/30 cursor-pointer transition-colors"
+                        onClick={() => {
+                          setCurrentStage({
+                            stage: stage.stage,
+                            load: stage.load.toString(),
+                            lactate: stage.lactate.toString(),
+                            heartRate: stage.heartRate ? stage.heartRate.toString() : '',
+                            rrSystolic: stage.rrSystolic ? stage.rrSystolic.toString() : '',
+                            rrDiastolic: stage.rrDiastolic ? stage.rrDiastolic.toString() : '',
+                            duration: stage.duration ? stage.duration.toString() : '',
+                            notes: stage.notes || ''
+                          })
+                        }}
+                      >
+                        <div className="flex-1">
+                          <span className="font-medium text-green-900 dark:text-green-100">Stage {stage.stage}</span>
+                          <span className="mx-2 text-green-700 dark:text-green-300">•</span>
+                          <span className="text-green-700 dark:text-green-300">
+                            {stage.load} {selectedTestInfo.unit} • {stage.lactate} mmol/L
+                          </span>
+                          {stage.heartRate && (
+                            <>
+                              <span className="mx-2 text-green-700 dark:text-green-300">•</span>
+                              <span className="text-green-700 dark:text-green-300">{stage.heartRate} bpm</span>
+                            </>
+                          )}
+                          {(stage.rrSystolic || stage.rrDiastolic) && (
+                            <>
+                              <span className="mx-2 text-green-700 dark:text-green-300">•</span>
+                              <span className="text-green-700 dark:text-green-300">
+                                RR: {stage.rrSystolic}/{stage.rrDiastolic}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeStage(stage.stage)
+                          }}
+                          className="ml-2 px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

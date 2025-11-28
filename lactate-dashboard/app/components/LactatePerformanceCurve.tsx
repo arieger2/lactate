@@ -27,6 +27,8 @@ export default function LactatePerformanceCurve() {
   const [isDragging, setIsDragging] = useState<{ type: 'LT1' | 'LT2' | null }>({ type: null })
   const [isAdjusted, setIsAdjusted] = useState(false)
   const [isManuallyLoading, setIsManuallyLoading] = useState(false)
+  const [currentUnit, setCurrentUnit] = useState<'watt' | 'kmh' | 'other'>('watt')
+  const [testInfo, setTestInfo] = useState<{ device?: string; unit?: string } | null>(null)
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstanceRef = useRef<echarts.ECharts | null>(null)
   const currentLt1Ref = useRef<ThresholdPoint | null>(null)
@@ -93,10 +95,21 @@ export default function LactatePerformanceCurve() {
               { power: 350, lactate: 7.2, heartRate: 195, timestamp: new Date().toISOString() }
             ]
             setWebhookData(testData)
-            calculateThresholdsWrapper(testData)
+            setCurrentUnit('watt')
+            calculateThresholdsWrapper(testData, selectedMethod, 'watt')
           } else {
-            setWebhookData(data)
-            calculateThresholdsWrapper(data)
+            // Map load/power fields for backward compatibility
+            const mappedData = data.map((point: any) => ({
+              power: point.power || point.load, // API sends both for compatibility
+              lactate: point.lactate,
+              heartRate: point.heartRate,
+              vo2: point.vo2,
+              timestamp: point.timestamp
+            }))
+            setWebhookData(mappedData)
+            const unit = data[0]?.unit || 'watt'
+            setCurrentUnit(unit)
+            calculateThresholdsWrapper(mappedData, selectedMethod, unit)
           }
         } else {
           console.error('❌ API response not ok:', response.status, response.statusText)
@@ -126,7 +139,7 @@ export default function LactatePerformanceCurve() {
             await loadAdjustedThresholds()
           } else {
             setSelectedMethod('dmax')
-            calculateThresholdsWrapper(webhookData, 'dmax')
+            calculateThresholdsWrapper(webhookData, 'dmax', currentUnit)
           }
         }
       }
@@ -155,7 +168,8 @@ export default function LactatePerformanceCurve() {
         trainingZones,
         lt1,
         lt2,
-        isDragging.type !== null
+        isDragging.type !== null,
+        currentUnit
       )
 
       chartInstanceRef.current.setOption(options, true)
@@ -182,7 +196,7 @@ export default function LactatePerformanceCurve() {
   }, [])
 
   // ===== SCHWELLENMETHODEN =====
-  const calculateThresholdsWrapper = (data: LactateDataPoint[], method: ThresholdMethod = selectedMethod) => {
+  const calculateThresholdsWrapper = (data: LactateDataPoint[], method: ThresholdMethod = selectedMethod, unit: string = currentUnit) => {
     if (data.length === 0) {
       setLt1(null)
       setLt2(null)
@@ -195,11 +209,36 @@ export default function LactatePerformanceCurve() {
       return
     }
 
-    // Use imported calculation function
-    const { lt1: lt1Point, lt2: lt2Point } = calculateThresholds(data, method)
+    // For km/h, we need to convert to a comparable power metric first
+    // Using a simple approximation: speed² × weight factor
+    // This is a placeholder - proper conversion would need more data
+    let calculationData = data
+    if (unit === 'kmh') {
+      // For km/h (treadmill), use squared speed as approximation for intensity
+      // This maintains relative relationships for threshold detection
+      calculationData = data.map(point => ({
+        ...point,
+        power: Math.round(point.power * point.power * 10) // speed² × 10 for scaling
+      }))
+    }
 
-    setLt1(lt1Point)
-    setLt2(lt2Point)
+    // Use imported calculation function
+    const { lt1: lt1Point, lt2: lt2Point } = calculateThresholds(calculationData, method)
+
+    // For km/h, convert back to original scale
+    if (unit === 'kmh' && lt1Point && lt2Point) {
+      setLt1({
+        power: Math.round(Math.sqrt(lt1Point.power / 10) * 10) / 10,
+        lactate: lt1Point.lactate
+      })
+      setLt2({
+        power: Math.round(Math.sqrt(lt2Point.power / 10) * 10) / 10,
+        lactate: lt2Point.lactate
+      })
+    } else {
+      setLt1(lt1Point)
+      setLt2(lt2Point)
+    }
 
     // Speichere die berechneten Werte automatisch in der Datenbank
     if (lt1Point && lt2Point && selectedSessionId && selectedCustomer) {
@@ -369,7 +408,7 @@ export default function LactatePerformanceCurve() {
 
   // ===== DATABASE SAVE & LOAD =====
   const saveAdjustedThresholds = async () => {
-    if (!selectedSessionId || !selectedCustomer || !lt1 || !lt2) {
+    if (!selectedSessionId || !lt1 || !lt2 || !selectedCustomer) {
       console.warn('⚠️ Cannot save: missing session, customer, or threshold data')
       return
     }
@@ -387,7 +426,7 @@ export default function LactatePerformanceCurve() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: selectedSessionId,
-          customerId: selectedCustomer.customer_id,
+          profileId: selectedCustomer.customer_id,
           lt1Power: lt1.power,
           lt1Lactate: lt1.lactate,
           lt2Power: lt2.power,
@@ -511,6 +550,11 @@ export default function LactatePerformanceCurve() {
             <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Laktat-Performance-Kurve</h2>
             <p className="text-zinc-600 dark:text-zinc-400">
               Kunde: {selectedCustomer?.name || 'Unbekannt'} | Methode: {getMethodDisplayName(selectedMethod)}
+              {currentUnit && (
+                <span className="ml-2 px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-sm">
+                  {currentUnit === 'watt' ? '⚡ Power (W)' : currentUnit === 'kmh' ? '🏃 Speed (km/h)' : currentUnit}
+                </span>
+              )}
             </p>
           </div>
           <button
@@ -548,7 +592,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('dmax')
-                  calculateThresholdsWrapper(webhookData, 'dmax')
+                  calculateThresholdsWrapper(webhookData, 'dmax', currentUnit)
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'dmax' 
@@ -581,7 +625,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('dickhuth')
-                  calculateThresholdsWrapper(webhookData, 'dickhuth')
+                  calculateThresholdsWrapper(webhookData, 'dickhuth', currentUnit)
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'dickhuth' 
@@ -614,7 +658,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('mader')
-                  calculateThresholdsWrapper(webhookData, 'mader')
+                  calculateThresholdsWrapper(webhookData, 'mader', currentUnit)
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'mader' 
@@ -647,7 +691,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('loglog')
-                  calculateThresholdsWrapper(webhookData, 'loglog')
+                  calculateThresholdsWrapper(webhookData, 'loglog', currentUnit)
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'loglog' 
@@ -683,7 +727,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('plus1mmol')
-                  calculateThresholdsWrapper(webhookData, 'plus1mmol')
+                  calculateThresholdsWrapper(webhookData, 'plus1mmol', currentUnit)
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'plus1mmol' 
@@ -716,7 +760,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('moddmax')
-                  calculateThresholdsWrapper(webhookData, 'moddmax')
+                  calculateThresholdsWrapper(webhookData, 'moddmax', currentUnit)
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'moddmax' 
@@ -749,7 +793,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('seiler')
-                  calculateThresholdsWrapper(webhookData, 'seiler')
+                  calculateThresholdsWrapper(webhookData, 'seiler', currentUnit)
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'seiler' 
@@ -787,7 +831,7 @@ export default function LactatePerformanceCurve() {
               <button
                 onClick={() => {
                   setSelectedMethod('fatmax')
-                  calculateThresholdsWrapper(webhookData, 'fatmax')
+                  calculateThresholdsWrapper(webhookData, 'fatmax', currentUnit)
                 }}
                 className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'fatmax' 
@@ -843,7 +887,7 @@ export default function LactatePerformanceCurve() {
                     if (!loaded) {
                       console.warn('⚠️ No adjusted thresholds found - switching back to DMAX')
                       setSelectedMethod('dmax')
-                      calculateThresholdsWrapper(webhookData, 'dmax')
+                      calculateThresholdsWrapper(webhookData, 'dmax', currentUnit)
                     }
                     
                     // Reset manual loading flag

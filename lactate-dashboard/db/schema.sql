@@ -1,114 +1,141 @@
 -- Lactate Dashboard Database Schema
 -- Database: laktat
+-- Version: 2.0 - New CustomerProfile structure
 
--- Create customers table for managing customer information
-CREATE TABLE IF NOT EXISTS customers (
-    id SERIAL PRIMARY KEY,
-    customer_id VARCHAR(255) UNIQUE NOT NULL,
-    name VARCHAR(255) NOT NULL,
+-- Drop old tables if they exist
+DROP TABLE IF EXISTS adjusted_thresholds CASCADE;
+DROP TABLE IF EXISTS training_zones CASCADE;
+DROP TABLE IF EXISTS threshold_results CASCADE;
+DROP TABLE IF EXISTS lactate_data CASCADE;
+DROP TABLE IF EXISTS sessions CASCADE;
+DROP TABLE IF EXISTS customers CASCADE;
+
+-- Create patient_profiles table (replaces customers)
+CREATE TABLE patient_profiles (
+    profile_id VARCHAR(255) PRIMARY KEY,
+    first_name VARCHAR(255) NOT NULL,
+    last_name VARCHAR(255) NOT NULL,
+    birth_date DATE,
+    height_cm INTEGER,
+    weight_kg DECIMAL(5,2),
     email VARCHAR(255),
     phone VARCHAR(50),
-    date_of_birth DATE,
-    notes TEXT,
+    additional_notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create sessions table for tracking test sessions
-CREATE TABLE IF NOT EXISTS sessions (
-    id SERIAL PRIMARY KEY,
-    session_id VARCHAR(255) UNIQUE NOT NULL,
-    customer_id VARCHAR(255),
-    athlete_name VARCHAR(255),
-    test_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    test_type VARCHAR(100),
-    notes TEXT,
+-- Create test_infos table (replaces sessions)
+CREATE TABLE test_infos (
+    test_id VARCHAR(255) PRIMARY KEY,
+    profile_id VARCHAR(255) NOT NULL,
+    test_date DATE NOT NULL,
+    test_time TIME NOT NULL,
+    device VARCHAR(50) NOT NULL CHECK (device IN ('bike', 'treadmill', 'other')),
+    unit VARCHAR(20) NOT NULL CHECK (unit IN ('watt', 'kmh', 'other')),
+    start_load INTEGER NOT NULL,
+    increment INTEGER NOT NULL,
+    stage_duration_min INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE SET NULL
+    FOREIGN KEY (profile_id) REFERENCES patient_profiles(profile_id) ON DELETE CASCADE
 );
 
--- Create lactate_data table for storing measurement points
-CREATE TABLE IF NOT EXISTS lactate_data (
+-- Create stages table (replaces lactate_data)
+CREATE TABLE stages (
     id SERIAL PRIMARY KEY,
-    session_id VARCHAR(255) NOT NULL,
-    customer_id VARCHAR(255),
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    power INTEGER NOT NULL,
-    lactate DECIMAL(4,2) NOT NULL,
-    heart_rate INTEGER,
-    fat_oxidation DECIMAL(4,2),
+    test_id VARCHAR(255) NOT NULL,
+    stage INTEGER NOT NULL,
+    duration_min INTEGER NOT NULL,
+    load INTEGER NOT NULL,
+    heart_rate_bpm INTEGER,
+    lactate_mmol DECIMAL(4,2) NOT NULL,
+    rr_systolic INTEGER,
+    rr_diastolic INTEGER,
+    is_final_approximation BOOLEAN DEFAULT FALSE,
+    notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
-    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE SET NULL
+    FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
+    UNIQUE(test_id, stage)
 );
 
--- Create threshold_results table for storing calculated thresholds
-CREATE TABLE IF NOT EXISTS threshold_results (
+-- Create threshold_results table (updated to use test_id)
+CREATE TABLE threshold_results (
     id SERIAL PRIMARY KEY,
-    session_id VARCHAR(255) NOT NULL,
+    test_id VARCHAR(255) NOT NULL,
     method VARCHAR(50) NOT NULL,
-    lt1_power INTEGER,
+    lt1_load INTEGER,
     lt1_lactate DECIMAL(4,2),
-    lt2_power INTEGER,
+    lt2_load INTEGER,
     lt2_lactate DECIMAL(4,2),
     calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
-    UNIQUE(session_id, method)
+    FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
+    UNIQUE(test_id, method)
 );
 
--- Create training_zones table for storing calculated training zones
-CREATE TABLE IF NOT EXISTS training_zones (
+-- Create training_zones table (updated to use test_id)
+CREATE TABLE training_zones (
     id SERIAL PRIMARY KEY,
-    session_id VARCHAR(255) NOT NULL,
+    test_id VARCHAR(255) NOT NULL,
     method VARCHAR(50) NOT NULL,
     zone_number INTEGER NOT NULL,
     zone_name VARCHAR(100) NOT NULL,
-    power_min INTEGER NOT NULL,
-    power_max INTEGER NOT NULL,
+    load_min INTEGER NOT NULL,
+    load_max INTEGER NOT NULL,
     lactate_range VARCHAR(50),
     description TEXT,
     calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+    FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE
 );
 
--- Create adjusted_thresholds table for storing manually adjusted threshold values
-CREATE TABLE IF NOT EXISTS adjusted_thresholds (
+-- Create adjusted_thresholds table (updated to use test_id/profile_id)
+CREATE TABLE adjusted_thresholds (
     id SERIAL PRIMARY KEY,
-    session_id VARCHAR(255) NOT NULL,
-    customer_id VARCHAR(255) NOT NULL,
-    lt1_power INTEGER NOT NULL,
+    test_id VARCHAR(255) NOT NULL,
+    profile_id VARCHAR(255) NOT NULL,
+    lt1_load INTEGER NOT NULL,
     lt1_lactate DECIMAL(4,2) NOT NULL,
-    lt2_power INTEGER NOT NULL,
+    lt2_load INTEGER NOT NULL,
     lt2_lactate DECIMAL(4,2) NOT NULL,
     adjusted_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
-    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
-    UNIQUE(session_id, customer_id)
+    FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
+    FOREIGN KEY (profile_id) REFERENCES patient_profiles(profile_id) ON DELETE CASCADE,
+    UNIQUE(test_id, profile_id)
 );
 
 -- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_customers_customer_id ON customers(customer_id);
-CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
-CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON sessions(customer_id);
-CREATE INDEX IF NOT EXISTS idx_lactate_data_session_id ON lactate_data(session_id);
-CREATE INDEX IF NOT EXISTS idx_lactate_data_customer_id ON lactate_data(customer_id);
-CREATE INDEX IF NOT EXISTS idx_lactate_data_timestamp ON lactate_data(timestamp);
-CREATE INDEX IF NOT EXISTS idx_threshold_results_session_id ON threshold_results(session_id);
-CREATE INDEX IF NOT EXISTS idx_training_zones_session_id ON training_zones(session_id);
-CREATE INDEX IF NOT EXISTS idx_adjusted_thresholds_session_id ON adjusted_thresholds(session_id);
-CREATE INDEX IF NOT EXISTS idx_adjusted_thresholds_customer_id ON adjusted_thresholds(customer_id);
+CREATE INDEX idx_patient_profiles_name ON patient_profiles(last_name, first_name);
+CREATE INDEX idx_patient_profiles_email ON patient_profiles(email);
 
--- Insert sample data (optional)
--- INSERT INTO sessions (session_id, athlete_name, test_type) 
--- VALUES ('sample-session-1', 'Max Mustermann', 'Stufentest');
+CREATE INDEX idx_test_infos_profile_id ON test_infos(profile_id);
+CREATE INDEX idx_test_infos_test_date ON test_infos(test_date);
+CREATE INDEX idx_test_infos_device ON test_infos(device);
+
+CREATE INDEX idx_stages_test_id ON stages(test_id);
+CREATE INDEX idx_stages_stage ON stages(stage);
+CREATE INDEX idx_stages_load ON stages(load);
+
+CREATE INDEX idx_threshold_results_test_id ON threshold_results(test_id);
+CREATE INDEX idx_threshold_results_method ON threshold_results(method);
+
+CREATE INDEX idx_training_zones_test_id ON training_zones(test_id);
+CREATE INDEX idx_training_zones_method ON training_zones(method);
+
+CREATE INDEX idx_adjusted_thresholds_test_id ON adjusted_thresholds(test_id);
+CREATE INDEX idx_adjusted_thresholds_profile_id ON adjusted_thresholds(profile_id);
 
 -- Add comments to tables
-COMMENT ON TABLE customers IS 'Stores customer/athlete information';
-COMMENT ON TABLE sessions IS 'Stores lactate test sessions';
-COMMENT ON TABLE lactate_data IS 'Stores individual lactate measurement points';
+COMMENT ON TABLE patient_profiles IS 'Stores patient/athlete profile information';
+COMMENT ON TABLE test_infos IS 'Stores test protocol information (device, unit, increment, etc.)';
+COMMENT ON TABLE stages IS 'Stores individual lactate test stage measurements';
 COMMENT ON TABLE threshold_results IS 'Stores calculated lactate thresholds for different methods';
 COMMENT ON TABLE training_zones IS 'Stores calculated training zones based on threshold methods';
 COMMENT ON TABLE adjusted_thresholds IS 'Stores manually adjusted threshold values by users';
+
+-- Add column comments for clarity
+COMMENT ON COLUMN stages.load IS 'Load value (watt or kmh depending on test_infos.unit)';
+COMMENT ON COLUMN stages.is_final_approximation IS 'Indicates if this stage was estimated/approximated';
+COMMENT ON COLUMN test_infos.unit IS 'Unit of measurement: watt (bike), kmh (treadmill), or other';
+COMMENT ON COLUMN test_infos.device IS 'Test device: bike, treadmill, or other';

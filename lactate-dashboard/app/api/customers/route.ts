@@ -12,28 +12,34 @@ export async function GET(request: NextRequest) {
     
     let query = `
       SELECT 
-        customer_id,
-        name,
+        profile_id as customer_id,
+        first_name,
+        last_name,
+        CONCAT(first_name, ' ', last_name) as name,
         email,
         phone,
-        date_of_birth,
-        notes,
+        birth_date as date_of_birth,
+        height_cm,
+        weight_kg,
+        additional_notes as notes,
         created_at,
         updated_at
-      FROM customers
+      FROM patient_profiles
     `
     let params: any[] = []
     
     if (search && search.trim()) {
       query += ` WHERE 
-        name ILIKE $1 OR 
-        customer_id ILIKE $1 OR 
+        first_name ILIKE $1 OR 
+        last_name ILIKE $1 OR
+        CONCAT(first_name, ' ', last_name) ILIKE $1 OR
+        profile_id ILIKE $1 OR 
         email ILIKE $1
       `
       params = [`%${search.trim()}%`]
     }
     
-    query += ` ORDER BY name ASC LIMIT 50`
+    query += ` ORDER BY last_name, first_name ASC LIMIT 50`
     
     const result = await client.query(query, params)
     
@@ -59,15 +65,47 @@ export async function POST(request: NextRequest) {
   let client
   try {
     const body = await request.json()
-    const { name, customerId, email, phone, dateOfBirth, notes } = body
     
-
+    // Check if this is the new CustomerProfile format
+    let finalFirstName, finalLastName, finalProfileId, finalBirthDate, finalNotes, height_cm, weight_kg, email, phone
+    
+    if (body.profileId && body.patient) {
+      // New CustomerProfile format
+      finalProfileId = body.profileId
+      finalFirstName = body.patient.firstName
+      finalLastName = body.patient.lastName
+      finalBirthDate = body.patient.birthDate
+      finalNotes = body.patient.additionalNotes
+      height_cm = body.patient.height_cm
+      weight_kg = body.patient.weight_kg
+      email = body.patient.email
+      phone = body.patient.phone
+    } else {
+      // Legacy format or direct fields
+      const { 
+        name, customerId,  // legacy format
+        firstName, lastName, profileId,  // new format
+        dateOfBirth, birthDate,  // legacy vs new
+        notes, additionalNotes  // legacy vs new
+      } = body
+      
+      const isNewFormat = firstName || lastName || profileId
+      finalFirstName = isNewFormat ? firstName : name?.split(' ')[0] || ''
+      finalLastName = isNewFormat ? lastName : name?.split(' ').slice(1).join(' ') || ''
+      finalProfileId = isNewFormat ? profileId : customerId
+      finalBirthDate = birthDate || dateOfBirth
+      finalNotes = additionalNotes || notes
+      height_cm = body.height_cm
+      weight_kg = body.weight_kg
+      email = body.email
+      phone = body.phone
+    }
     
     // Validation
-    if (!name || !customerId) {
+    if (!finalFirstName || !finalProfileId) {
       const missingFields = []
-      if (!name) missingFields.push('Name')
-      if (!customerId) missingFields.push('Customer ID')
+      if (!finalFirstName) missingFields.push('First Name')
+      if (!finalProfileId) missingFields.push('Profile ID')
       
       return NextResponse.json({
         success: false,
@@ -76,17 +114,17 @@ export async function POST(request: NextRequest) {
     }
     
     // Additional validation
-    if (name.trim().length < 2) {
+    if (finalFirstName.trim().length < 2) {
       return NextResponse.json({
         success: false,
-        error: 'Name must be at least 2 characters long'
+        error: 'First name must be at least 2 characters long'
       }, { status: 400 })
     }
     
-    if (customerId.trim().length < 1) {
+    if (finalProfileId.trim().length < 1) {
       return NextResponse.json({
         success: false,
-        error: 'Customer ID cannot be empty'
+        error: 'Profile ID cannot be empty'
       }, { status: 400 })
     }
     
@@ -101,39 +139,45 @@ export async function POST(request: NextRequest) {
     client = await pool.connect()
 
     
-    // Check if customer already exists
-    const existingCustomer = await client.query(
-      'SELECT customer_id, name FROM customers WHERE customer_id = $1',
-      [customerId.trim()]
+    // Check if profile already exists
+    const existingProfile = await client.query(
+      'SELECT profile_id, first_name, last_name FROM patient_profiles WHERE profile_id = $1',
+      [finalProfileId.trim()]
     )
     
-    if (existingCustomer.rows.length > 0) {
-      const existing = existingCustomer.rows[0]
+    if (existingProfile.rows.length > 0) {
+      const existing = existingProfile.rows[0]
       return NextResponse.json({
         success: false,
-        error: `Customer ID "${customerId}" already exists (assigned to "${existing.name}")`
+        error: `Profile ID "${finalProfileId}" already exists (assigned to "${existing.first_name} ${existing.last_name}")`
       }, { status: 409 })
     }
     
     // Check for duplicate name (warning, but allow)
     const duplicateName = await client.query(
-      'SELECT customer_id FROM customers WHERE LOWER(name) = LOWER($1)',
-      [name.trim()]
+      'SELECT profile_id FROM patient_profiles WHERE LOWER(first_name) = LOWER($1) AND LOWER(last_name) = LOWER($2)',
+      [finalFirstName.trim(), finalLastName?.trim() || '']
     )
     
 
     
     const result = await client.query(`
-      INSERT INTO customers (customer_id, name, email, phone, date_of_birth, notes)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING customer_id, name, email, phone, date_of_birth, notes, created_at
+      INSERT INTO patient_profiles (profile_id, first_name, last_name, email, phone, birth_date, height_cm, weight_kg, additional_notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING profile_id as customer_id, first_name, last_name, 
+                CONCAT(first_name, ' ', last_name) as name,
+                email, phone, birth_date as date_of_birth, 
+                height_cm, weight_kg, additional_notes as notes, created_at
     `, [
-      customerId.trim(), 
-      name.trim(), 
+      finalProfileId.trim(), 
+      finalFirstName.trim(), 
+      finalLastName?.trim() || null,
       email?.trim() || null, 
       phone?.trim() || null, 
-      dateOfBirth || null, 
-      notes?.trim() || null
+      finalBirthDate || null,
+      height_cm || null,
+      weight_kg || null,
+      finalNotes?.trim() || null
     ])
     
 
@@ -145,7 +189,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       customer: result.rows[0],
-      warnings: duplicateName.rows.length > 0 ? [`A customer with similar name already exists (ID: ${duplicateName.rows[0].customer_id})`] : []
+      warnings: duplicateName.rows.length > 0 ? [`A customer with similar name already exists (ID: ${duplicateName.rows[0].profile_id})`] : []
     })
     
   } catch (error) {

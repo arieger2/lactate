@@ -1,5 +1,54 @@
 // ===== CORE TYPES =====
 
+export interface PatientProfile {
+  firstName: string
+  lastName: string
+  birthDate: string
+  height_cm?: number
+  weight_kg?: number
+  phone?: string
+  email?: string
+  additionalNotes?: string
+}
+
+export interface TestInfo {
+  testId: string
+  testDate: string
+  testTime: string
+  device: 'bike' | 'treadmill' | 'other'
+  unit: 'watt' | 'kmh' | 'other'
+  startLoad: number
+  increment: number
+  stageDuration_min: number
+}
+
+export interface BloodPressure {
+  systolic_mmHg: number
+  diastolic_mmHg: number
+}
+
+export interface Stage {
+  testId: string
+  stage: number
+  duration_min: number
+  load: number
+  heartRate_bpm?: number
+  lactate_mmol: number
+  rr?: BloodPressure
+  isFinalApproximation?: boolean
+  notes?: string
+}
+
+export interface CustomerProfile {
+  profileId: string
+  patient: PatientProfile
+  testInfos: TestInfo[]
+  stages: Stage[]
+  created_at?: string
+  updated_at?: string
+}
+
+// Legacy Customer interface for backward compatibility
 export interface Customer {
   customer_id: string
   name: string
