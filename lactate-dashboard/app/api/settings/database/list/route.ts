@@ -4,7 +4,7 @@ import dbPoolManager from '@/lib/dbPoolManager'
 // GET - List all user databases (excluding system databases)
 export async function GET(request: NextRequest) {
   try {
-    console.log('🔍 API: Getting database list via shared pool')
+
     
     const pool = dbPoolManager().getPool()
     if (!pool) {

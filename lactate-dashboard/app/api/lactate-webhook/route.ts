@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
           dataEntry.rawData ? JSON.stringify(dataEntry.rawData) : null
         ])
 
-        console.log('Data stored in PostgreSQL:', dataEntry)
+
       } finally {
         client.release()
       }
@@ -243,7 +243,7 @@ export async function DELETE(request: NextRequest) {
         // Also delete from memory
         dataStore.delete(sessionId)
         
-        console.log('Session deleted from PostgreSQL:', sessionId)
+
         return NextResponse.json({
           success: true,
           message: `Session ${sessionId} data cleared from database`,

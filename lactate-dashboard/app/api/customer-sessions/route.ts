@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.log('Fetching sessions for customer:', customerId)
+
     
     const client = await pool.connect()
     try {
@@ -33,9 +33,10 @@ export async function GET(request: NextRequest) {
         ORDER BY MAX(ld.timestamp) DESC
       `, [customerId])
 
-      console.log(`Found ${result.rows.length} sessions for customer ${customerId}`)
+
 
       const sessions = result.rows.map(row => ({
+        id: row.session_id, // Use 'id' for consistency with the frontend
         session_id: row.session_id,
         test_date: row.test_date || new Date().toISOString(),
         test_type: row.test_type || 'automatic',
@@ -44,7 +45,10 @@ export async function GET(request: NextRequest) {
         updated_at: row.updated_at || new Date().toISOString()
       }))
 
-      return NextResponse.json(sessions)
+      return NextResponse.json({
+        success: true,
+        sessions: sessions
+      })
     } finally {
       client.release()
     }

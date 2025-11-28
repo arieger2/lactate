@@ -49,7 +49,7 @@ class LactateDataService {
     if (this.isReceiving) return
 
     this.isReceiving = true
-    console.log('🔄 Starting global data reception for session:', this.sessionId)
+
 
     // Poll for new data every 2 seconds
     this.intervalId = setInterval(async () => {
@@ -60,7 +60,7 @@ class LactateDataService {
           if (result.data && result.data.length !== this.data.length) {
             this.data = result.data
             this.notifyListeners()
-            console.log('📊 Updated data:', result.data.length, 'points')
+
           }
         }
       } catch (error) {
@@ -74,7 +74,7 @@ class LactateDataService {
     if (!this.isReceiving) return
 
     this.isReceiving = false
-    console.log('⏹️ Stopping global data reception')
+
 
     if (this.intervalId) {
       clearInterval(this.intervalId)
@@ -94,7 +94,7 @@ class LactateDataService {
       })
       this.data = []
       this.notifyListeners()
-      console.log('🗑️ Cleared session data:', this.sessionId)
+
     } catch (error) {
       console.error('❌ Error clearing data:', error)
     }
@@ -112,7 +112,7 @@ class LactateDataService {
     ]
 
     this.isSimulating = true
-    console.log('🎭 Simulating temporary data (not saved to database):', this.simulatedData.length, 'points')
+
     
     // Notify listeners with simulated data
     this.notifyListeners()
@@ -122,7 +122,7 @@ class LactateDataService {
   clearSimulation(): void {
     this.simulatedData = []
     this.isSimulating = false
-    console.log('🗑️ Cleared simulation data')
+
     this.notifyListeners()
   }
 

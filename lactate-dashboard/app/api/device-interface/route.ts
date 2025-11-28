@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
       processedData.push(processedMeasurement)
     }
     
-    console.log(`✅ Processed ${processedData.length} automatic measurements for session: ${sessionId}`)
+
     
     return NextResponse.json({
       success: true,

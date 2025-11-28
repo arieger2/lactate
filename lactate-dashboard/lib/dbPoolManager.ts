@@ -18,7 +18,7 @@ function getDatabaseConfig() {
     const config = JSON.parse(configContent)
     
     const dbConfig = config.database || {}
-    console.log('📖 Loaded database config from file')
+
     
     return {
       host: String(dbConfig.host || 'localhost'),
@@ -60,7 +60,7 @@ class DatabasePoolManager {
 
   constructor() {
     // Don't initialize pool immediately to prevent startup crashes
-    console.log('🔧 DatabasePoolManager created (lazy initialization)')
+
     
     // Subscribe to configuration changes for automatic pool recreation
     this.subscribeToConfigChanges()
@@ -113,20 +113,20 @@ class DatabasePoolManager {
         connectionTimeoutMillis: 30000
       }
 
-      console.log('✅ Pool config validated - creating Pool...')
+
       this.pool = new Pool(poolConfig)
       this.isInitialized = true
 
       // Setup event listeners
       this.pool.on('connect', () => {
-        console.log('✅ Connected to PostgreSQL database')
+
       })
 
       this.pool.on('error', (err) => {
         console.error('❌ Database connection error:', err)
       })
 
-      console.log('✅ Database pool created successfully')
+
     } catch (error) {
       console.error('❌ Failed to initialize database pool:', error)
       console.error('❌ Error details:', error)
@@ -147,18 +147,16 @@ class DatabasePoolManager {
       if (fs.existsSync(configPath)) {
         // Watch config file for changes
         fs.watchFile(configPath, { persistent: false }, () => {
-          console.log('🔄 Database configuration file changed - recreating pool automatically')
+
           setTimeout(() => {
             this.forceReinitialize()
           }, 100) // Small delay to ensure file write is complete
         })
-        console.log('📝 Config file watching enabled - pool will recreate on config changes')
       } else {
-        console.log('📝 Config file not found - auto-reload disabled')
       }
     } catch (error) {
       console.error('❌ Failed to setup config file watching:', error)
-      console.log('📝 Config auto-reload disabled - use forceReinitialize() for updates')
+
     }
   }
 
@@ -170,7 +168,7 @@ class DatabasePoolManager {
     try {
       // Force reinitialization to apply fixes
       if (!this.isInitialized || !this.pool) {
-        console.log('🔄 Pool not initialized, creating new one...')
+
         this.initializePool()
       }
       
@@ -222,7 +220,7 @@ class DatabasePoolManager {
    * Force reinitialize the pool (for debugging)
    */
   public forceReinitialize() {
-    console.log('🔄 Force reinitializing pool...')
+
     this.isInitialized = false
     this.initializePool()
   }
@@ -234,7 +232,7 @@ class DatabasePoolManager {
     if (this.pool) {
       try {
         await this.pool.end()
-        console.log('✓ Database pool closed')
+
       } catch (error) {
         console.error('Error closing pool:', error)
       }
@@ -247,7 +245,7 @@ let dbPoolManager: DatabasePoolManager | null = null
 
 const getManager = () => {
   if (!dbPoolManager) {
-    console.log('🚀 Initializing DatabasePoolManager')
+
     dbPoolManager = new DatabasePoolManager()
   }
   return dbPoolManager

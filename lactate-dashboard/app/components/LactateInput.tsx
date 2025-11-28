@@ -25,7 +25,7 @@ interface MeasurementRow {
 
 export default function LactateInput() {
   // Use global customer context
-  const { selectedCustomer, setSelectedCustomer } = useCustomer()
+  const { selectedCustomer, setSelectedCustomer, selectedSessionId, setSelectedSessionId } = useCustomer()
   
   // Customer Management States
   const [customerSearch, setCustomerSearch] = useState('')
@@ -75,6 +75,18 @@ export default function LactateInput() {
     return () => clearTimeout(timer)
   }, [customerSearch])
 
+  // Auto-load sessions when customer changes
+  useEffect(() => {
+    if (selectedCustomer) {
+      fetchCustomerSessions(selectedCustomer.customer_id)
+    } else {
+      setCustomerSessions([])
+      setSelectedSession(null)
+      setSelectedSessionId(null) // Clear global session ID
+      setShowSessionSelector(false)
+    }
+  }, [selectedCustomer])
+
   // Load session data when selectedSession changes
   useEffect(() => {
     const loadSessionData = async () => {
@@ -85,15 +97,17 @@ export default function LactateInput() {
             const result = await response.json()
             console.log('Loading session data:', result)
             
-            if (result.data && Array.isArray(result.data)) {
-              const loadedRows: MeasurementRow[] = result.data.map((item: any, index: number) => ({
+            // Handle different API response formats
+            const dataArray = result.data || result || []
+            if (Array.isArray(dataArray) && dataArray.length > 0) {
+              const loadedRows: MeasurementRow[] = dataArray.map((item: any, index: number) => ({
                 id: `loaded_${selectedSession.session_id}_${index}`,
                 power: item.power || 0,
                 lactate: item.lactate || 0,
-                heartRate: item.heartRate || undefined,
-                vo2: item.fatOxidation ? item.fatOxidation * 100 : undefined,
+                heartRate: item.heartRate || item.heart_rate || undefined,
+                vo2: item.fatOxidation ? item.fatOxidation * 100 : (item.fat_oxidation ? item.fat_oxidation * 100 : undefined),
                 timestamp: item.timestamp || new Date().toISOString(),
-                notes: undefined
+                notes: item.notes || undefined
               }))
               setMeasurementRows(loadedRows)
             }
@@ -113,7 +127,9 @@ export default function LactateInput() {
     try {
       const response = await fetch(`/api/customer-sessions?customerId=${customerId}`)
       if (response.ok) {
-        const sessions = await response.json()
+        const data = await response.json()
+        // Handle different API response formats
+        const sessions = data.success ? data.sessions : (Array.isArray(data) ? data : [])
         setCustomerSessions(sessions)
         setShowSessionSelector(sessions.length > 0)
       } else {
@@ -142,6 +158,7 @@ export default function LactateInput() {
   // Handle session selection and load session data
   const handleSessionSelect = async (session: CustomerSession) => {
     setSelectedSession(session)
+    setSelectedSessionId(session.session_id) // Set global session ID for Performance Curve
     setShowSessionSelector(false)
     
     // Load the session data into the Entered Measurements table
@@ -514,16 +531,23 @@ export default function LactateInput() {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => fetchCustomerSessions(selectedCustomer.customer_id)}
+                  onClick={() => {
+                    if (customerSessions.length > 0) {
+                      setShowSessionSelector(!showSessionSelector)
+                    } else {
+                      fetchCustomerSessions(selectedCustomer.customer_id)
+                    }
+                  }}
                   disabled={isLoadingSessions}
                   className="px-3 py-1 text-sm bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white rounded-md"
                 >
-                  {isLoadingSessions ? '⏳' : '📊'} Sessions
+                  {isLoadingSessions ? '⏳' : '📊'} Sessions {customerSessions.length > 0 && `(${customerSessions.length})`}
                 </button>
                 <button
                   onClick={() => {
                     setSelectedCustomer(null)
                     setSelectedSession(null)
+                    setSelectedSessionId(null) // Clear global session ID
                     setCustomerSessions([])
                     setShowSessionSelector(false)
                     setMeasurementRows([])

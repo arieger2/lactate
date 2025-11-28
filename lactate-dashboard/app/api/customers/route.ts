@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { name, customerId, email, phone, dateOfBirth, notes } = body
     
-    console.log('🔍 Customer creation request:', { name, customerId, email, phone, dateOfBirth })
+
     
     // Validation
     if (!name || !customerId) {
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     }
     
     client = await pool.connect()
-    console.log('🔗 Database connection established for customer creation')
+
     
     // Check if customer already exists
     const existingCustomer = await client.query(
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
       [name.trim()]
     )
     
-    console.log('✅ Validation passed, creating customer:', { name: name.trim(), customerId: customerId.trim() })
+
     
     const result = await client.query(`
       INSERT INTO customers (customer_id, name, email, phone, date_of_birth, notes)
@@ -136,10 +136,10 @@ export async function POST(request: NextRequest) {
       notes?.trim() || null
     ])
     
-    console.log('✅ Customer created successfully:', result.rows[0])
+
     
     if (duplicateName.rows.length > 0) {
-      console.log('⚠️ Warning: Similar name exists for customer:', duplicateName.rows[0].customer_id)
+
     }
     
     return NextResponse.json({
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
   } finally {
     if (client) {
       client.release()
-      console.log('🔓 Database connection released')
+
     }
   }
 }

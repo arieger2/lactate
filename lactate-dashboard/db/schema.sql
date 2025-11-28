@@ -72,6 +72,23 @@ CREATE TABLE IF NOT EXISTS training_zones (
     FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
 );
 
+-- Create adjusted_thresholds table for storing manually adjusted threshold values
+CREATE TABLE IF NOT EXISTS adjusted_thresholds (
+    id SERIAL PRIMARY KEY,
+    session_id VARCHAR(255) NOT NULL,
+    customer_id VARCHAR(255) NOT NULL,
+    lt1_power INTEGER NOT NULL,
+    lt1_lactate DECIMAL(4,2) NOT NULL,
+    lt2_power INTEGER NOT NULL,
+    lt2_lactate DECIMAL(4,2) NOT NULL,
+    adjusted_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+    UNIQUE(session_id, customer_id)
+);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_customers_customer_id ON customers(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
@@ -81,6 +98,8 @@ CREATE INDEX IF NOT EXISTS idx_lactate_data_customer_id ON lactate_data(customer
 CREATE INDEX IF NOT EXISTS idx_lactate_data_timestamp ON lactate_data(timestamp);
 CREATE INDEX IF NOT EXISTS idx_threshold_results_session_id ON threshold_results(session_id);
 CREATE INDEX IF NOT EXISTS idx_training_zones_session_id ON training_zones(session_id);
+CREATE INDEX IF NOT EXISTS idx_adjusted_thresholds_session_id ON adjusted_thresholds(session_id);
+CREATE INDEX IF NOT EXISTS idx_adjusted_thresholds_customer_id ON adjusted_thresholds(customer_id);
 
 -- Insert sample data (optional)
 -- INSERT INTO sessions (session_id, athlete_name, test_type) 
@@ -92,3 +111,4 @@ COMMENT ON TABLE sessions IS 'Stores lactate test sessions';
 COMMENT ON TABLE lactate_data IS 'Stores individual lactate measurement points';
 COMMENT ON TABLE threshold_results IS 'Stores calculated lactate thresholds for different methods';
 COMMENT ON TABLE training_zones IS 'Stores calculated training zones based on threshold methods';
+COMMENT ON TABLE adjusted_thresholds IS 'Stores manually adjusted threshold values by users';

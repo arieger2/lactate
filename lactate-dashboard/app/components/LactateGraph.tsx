@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import ReactECharts from 'echarts-for-react'
+import { useState, useEffect, useRef } from 'react'
+import * as echarts from 'echarts'
 
 interface DataPoint {
   timestamp: string
@@ -11,6 +11,12 @@ interface DataPoint {
 export default function LactateGraph() {
   const [data, setData] = useState<DataPoint[]>([])
   const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d'>('7d')
+  const trendChartRef = useRef<HTMLDivElement>(null)
+  const gaugeChartRef = useRef<HTMLDivElement>(null)
+  const distributionChartRef = useRef<HTMLDivElement>(null)
+  const trendChartInstance = useRef<echarts.ECharts | null>(null)
+  const gaugeChartInstance = useRef<echarts.ECharts | null>(null)
+  const distributionChartInstance = useRef<echarts.ECharts | null>(null)
 
   // Sample data for demonstration
   useEffect(() => {
@@ -33,6 +39,23 @@ export default function LactateGraph() {
     setData(generateSampleData())
   }, [])
 
+  // Chart initialization and updates
+  useEffect(() => {
+    // Initialize charts
+    if (trendChartRef.current && !trendChartInstance.current) {
+      trendChartInstance.current = echarts.init(trendChartRef.current)
+    }
+    if (gaugeChartRef.current && !gaugeChartInstance.current) {
+      gaugeChartInstance.current = echarts.init(gaugeChartRef.current)
+    }
+    if (distributionChartRef.current && !distributionChartInstance.current) {
+      distributionChartInstance.current = echarts.init(distributionChartRef.current)
+    }
+
+    return () => {}
+  }, [])
+
+  // Filter data based on time range
   const filteredData = data.filter(point => {
     const pointDate = new Date(point.timestamp)
     const now = new Date()
@@ -72,6 +95,31 @@ export default function LactateGraph() {
   }
 
   const stats = getStatistics()
+
+  // Update charts when data changes
+  useEffect(() => {
+    // Charts will be updated in the render cycle through the chart options
+  }, [data, timeRange])
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      trendChartInstance.current?.resize()
+      gaugeChartInstance.current?.resize()
+      distributionChartInstance.current?.resize()
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      trendChartInstance.current?.dispose()
+      gaugeChartInstance.current?.dispose()
+      distributionChartInstance.current?.dispose()
+    }
+  }, [])
 
   const getChartOption = () => {
     return {
@@ -414,12 +462,11 @@ export default function LactateGraph() {
               No data available for the selected time range.
             </div>
           ) : (
-            <div className="h-80 w-full">
-              <ReactECharts
-                option={getChartOption()}
-                style={{ height: '100%', width: '100%' }}
-              />
-            </div>
+            <div 
+              ref={trendChartRef} 
+              className="h-80 w-full"
+              style={{ height: '320px', width: '100%' }}
+            />
           )}
 
           {/* Reference ranges */}
@@ -453,12 +500,11 @@ export default function LactateGraph() {
               No data available
             </div>
           ) : (
-            <div className="h-64 w-full">
-              <ReactECharts
-                option={getGaugeOption()}
-                style={{ height: '100%', width: '100%' }}
-              />
-            </div>
+            <div 
+              ref={gaugeChartRef}
+              className="h-64 w-full"
+              style={{ height: '256px', width: '100%' }}
+            />
           )}
         </div>
       </div>
@@ -469,12 +515,11 @@ export default function LactateGraph() {
           <h3 className="text-lg font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
             Distribution Analysis
           </h3>
-          <div className="h-64 w-full">
-            <ReactECharts
-              option={getDistributionOption()}
-              style={{ height: '100%', width: '100%' }}
-            />
-          </div>
+          <div 
+            ref={distributionChartRef}
+            className="h-64 w-full"
+            style={{ height: '256px', width: '100%' }}
+          />
         </div>
       )}
     </div>

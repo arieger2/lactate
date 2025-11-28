@@ -8,7 +8,7 @@ import configManager from '@/lib/configManager'
 export async function GET() {
   try {
     const dbConfig = configManager.getDatabase()
-    console.log('🔍 API: ConfigManager returned:', dbConfig)
+
 
     const response = {
       host: dbConfig.host,
@@ -19,7 +19,7 @@ export async function GET() {
       hasPassword: Boolean(dbConfig.password), // Indicate if password exists
       ssl: dbConfig.ssl
     }
-    console.log('🔍 API: Sending response:', response)
+
 
     return NextResponse.json(response)
   } catch (error) {
@@ -45,8 +45,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { host, port, database, user, password, ssl } = body
 
-    console.log('📝 Updating database config:', { host, port, database, user, ssl })
-    console.log('🔑 Password received:', password ? '***' : '(empty - will preserve existing)')
+
 
     // Get current config to preserve password if empty is sent
     const currentConfig = configManager.getDatabase()
@@ -61,7 +60,7 @@ export async function POST(request: NextRequest) {
       ssl: ssl !== undefined ? Boolean(ssl) : false
     })
 
-    console.log('✅ Database configuration updated (pool recreation triggered automatically)')
+
 
     return NextResponse.json({
       success: true,
