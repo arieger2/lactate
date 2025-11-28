@@ -8,6 +8,8 @@ interface Customer {
   email?: string
   phone?: string
   date_of_birth?: string
+  height_cm?: number
+  weight_kg?: number
   notes?: string
   created_at?: string
   updated_at?: string

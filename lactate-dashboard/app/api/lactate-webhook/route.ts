@@ -225,7 +225,9 @@ export async function GET(request: NextRequest) {
           rrSystolic: row.rrSystolic,
           rrDiastolic: row.rrDiastolic,
           isFinalApproximation: row.isFinalApproximation,
-          notes: row.notes
+          notes: row.notes,
+          unit: row.unit,
+          device: row.device
         }
         
         return baseData

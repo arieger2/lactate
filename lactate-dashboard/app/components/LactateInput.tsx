@@ -82,6 +82,13 @@ export default function LactateInput() {
     additionalNotes: ''
   })
 
+  // Edit Customer States
+  const [showEditCustomerForm, setShowEditCustomerForm] = useState(false)
+  const [editCustomerError, setEditCustomerError] = useState<string | null>(null)
+
+  // New Test Protocol States
+  const [showNewTestProtocolForm, setShowNewTestProtocolForm] = useState(false)
+
   // Test Protocol States
   const [testInfos, setTestInfos] = useState<TestInfo[]>([])
   const [currentTestInfo, setCurrentTestInfo] = useState<TestInfo>({
@@ -125,7 +132,7 @@ export default function LactateInput() {
           setCustomerResults(data.customers || [])
         }
       } catch (error) {
-        console.error('Error searching customers:', error)
+        // Silent error handling
       } finally {
         setIsSearching(false)
       }
@@ -146,7 +153,7 @@ export default function LactateInput() {
         setShowSessionSelector(true)
       }
     } catch (error) {
-      console.error('Error fetching sessions:', error)
+      // Silent error handling
     } finally {
       setIsLoadingSessions(false)
     }
@@ -276,8 +283,96 @@ export default function LactateInput() {
         setNewCustomerError(error.error || 'Failed to create customer')
       }
     } catch (error) {
-      console.error('Error creating customer:', error)
       setNewCustomerError('Network error. Please try again.')
+    }
+  }
+
+  // Update existing customer
+  const updateCustomer = async () => {
+    if (!selectedCustomer) return
+    
+    try {
+      const response = await fetch(`/api/customers/${selectedCustomer.customer_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: newCustomer.firstName || selectedCustomer.name.split(' ')[0],
+          lastName: newCustomer.lastName || selectedCustomer.name.split(' ').slice(1).join(' '),
+          birthDate: newCustomer.birthDate || undefined,
+          height_cm: newCustomer.height_cm ? parseFloat(newCustomer.height_cm) : undefined,
+          weight_kg: newCustomer.weight_kg ? parseFloat(newCustomer.weight_kg) : undefined,
+          email: newCustomer.email || undefined,
+          phone: newCustomer.phone || undefined,
+          additionalNotes: newCustomer.additionalNotes || undefined
+        })
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        setSelectedCustomer(result.customer)
+        setShowEditCustomerForm(false)
+        setEditCustomerError(null)
+      } else {
+        const error = await response.json()
+        setEditCustomerError(error.error || 'Failed to update customer')
+      }
+    } catch (error) {
+      setEditCustomerError('Network error. Please try again.')
+    }
+  }
+
+  // Create new test protocol for existing customer
+  const createNewTestProtocol = async () => {
+    if (!selectedCustomer) return
+    
+    const testId = `TEST-${Date.now()}`
+    
+    try {
+      const response = await fetch('/api/test-infos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          test_id: testId,
+          profile_id: selectedCustomer.customer_id,
+          test_date: currentTestInfo.testDate || new Date().toISOString().split('T')[0],
+          test_time: currentTestInfo.testTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
+          device: currentTestInfo.device || 'bike',
+          unit: currentTestInfo.unit || 'watt',
+          start_load: parseFloat(currentTestInfo.startLoad || '50'),
+          increment: parseFloat(currentTestInfo.increment || '50'),
+          stage_duration_min: parseInt(currentTestInfo.stageDuration_min || '3')
+        })
+      })
+      
+      if (response.ok) {
+        setShowNewTestProtocolForm(false)
+        setCurrentTestInfo({
+          testId: '',
+          testDate: new Date().toISOString().split('T')[0],
+          testTime: new Date().toTimeString().split(' ')[0].substring(0, 5),
+          device: 'bike',
+          unit: 'watt',
+          startLoad: '50',
+          increment: '50',
+          stageDuration_min: '3'
+        })
+        // Manually add to list instead of fetching
+        const newTest: TestInfo = {
+          testId: testId,
+          testDate: currentTestInfo.testDate || new Date().toISOString().split('T')[0],
+          testTime: currentTestInfo.testTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
+          device: currentTestInfo.device || 'bike',
+          unit: currentTestInfo.unit || 'watt',
+          startLoad: currentTestInfo.startLoad || '50',
+          increment: currentTestInfo.increment || '50',
+          stageDuration_min: currentTestInfo.stageDuration_min || '3'
+        }
+        setTestInfos(prev => [...prev, newTest])
+      } else {
+        const error = await response.json()
+      }
+    } catch (error) {
+      // Silent error handling
     }
   }
 
@@ -378,7 +473,6 @@ export default function LactateInput() {
   
   const addStage = () => {
     if (!selectedTestInfo || !currentStage.load || !currentStage.lactate) {
-      alert('Please enter load and lactate values')
       return
     }
     
@@ -447,8 +541,7 @@ export default function LactateInput() {
       
       setStages(remainingStages)
     } catch (error) {
-      console.error('Error removing stage:', error)
-      alert('Failed to remove stage')
+      // Silent error handling
     }
   }
   
@@ -500,7 +593,6 @@ export default function LactateInput() {
         }
       }
     } catch (error) {
-      console.error('Error loading stages:', error)
       setCurrentStage({
         stage: 1,
         load: testInfo.startLoad,
@@ -717,8 +809,8 @@ export default function LactateInput() {
                         className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
                       >
                         <option value="bike">Bike</option>
-                        <option value="ergometer">Ergometer</option>
                         <option value="treadmill">Treadmill</option>
+                        <option value="other">Other</option>
                       </select>
                     </div>
 
@@ -849,23 +941,159 @@ export default function LactateInput() {
                 <p className="text-sm text-blue-700 dark:text-blue-300">ID: {selectedCustomer.customer_id}</p>
                 {selectedCustomer.email && <p className="text-sm text-blue-700 dark:text-blue-300">{selectedCustomer.email}</p>}
                 {selectedCustomer.phone && <p className="text-sm text-blue-700 dark:text-blue-300">{selectedCustomer.phone}</p>}
+                {selectedCustomer.date_of_birth && <p className="text-sm text-blue-700 dark:text-blue-300">DOB: {new Date(selectedCustomer.date_of_birth).toLocaleDateString()}</p>}
+                {selectedCustomer.height_cm && <p className="text-sm text-blue-700 dark:text-blue-300">Height: {selectedCustomer.height_cm} cm</p>}
+                {selectedCustomer.weight_kg && <p className="text-sm text-blue-700 dark:text-blue-300">Weight: {selectedCustomer.weight_kg} kg</p>}
               </div>
-              <button
-                onClick={() => {
-                  setSelectedCustomer(null)
-                  setSelectedSession(null)
-                  setSelectedSessionId(null)
-                  setCustomerSessions([])
-                  setShowSessionSelector(false)
-                  setTestInfos([])
-                  setSelectedTestInfo(null)
-                  setStages([])
-                }}
-                className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md"
-              >
-                Change Customer
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setNewCustomer({
+                      firstName: selectedCustomer.name.split(' ')[0] || '',
+                      lastName: selectedCustomer.name.split(' ').slice(1).join(' ') || '',
+                      profileId: selectedCustomer.customer_id,
+                      birthDate: selectedCustomer.date_of_birth || '',
+                      height_cm: selectedCustomer.height_cm?.toString() || '',
+                      weight_kg: selectedCustomer.weight_kg?.toString() || '',
+                      email: selectedCustomer.email || '',
+                      phone: selectedCustomer.phone || '',
+                      additionalNotes: selectedCustomer.notes || ''
+                    })
+                    setShowEditCustomerForm(true)
+                  }}
+                  className="px-3 py-1 text-sm bg-green-500 hover:bg-green-600 text-white rounded-md"
+                >
+                  ✏️ Edit Profile
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedCustomer(null)
+                    setSelectedSession(null)
+                    setSelectedSessionId(null)
+                    setCustomerSessions([])
+                    setShowSessionSelector(false)
+                    setTestInfos([])
+                    setSelectedTestInfo(null)
+                    setStages([])
+                  }}
+                  className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md"
+                >
+                  Change Customer
+                </button>
+              </div>
             </div>
+
+            {/* Edit Customer Form */}
+            {showEditCustomerForm && (
+              <div className="mt-4 p-4 border border-green-200 dark:border-green-800 rounded-lg bg-green-50 dark:bg-green-900/20">
+                <h4 className="font-medium text-green-900 dark:text-green-100 mb-3">Edit Customer Profile</h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                  <div>
+                    <label className="block text-xs font-medium text-green-700 dark:text-green-300 mb-1">First Name</label>
+                    <input
+                      type="text"
+                      value={newCustomer.firstName}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, firstName: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-green-700 dark:text-green-300 mb-1">Last Name</label>
+                    <input
+                      type="text"
+                      value={newCustomer.lastName}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, lastName: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-green-700 dark:text-green-300 mb-1">Birth Date</label>
+                    <input
+                      type="date"
+                      value={newCustomer.birthDate}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, birthDate: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-green-700 dark:text-green-300 mb-1">Height (cm)</label>
+                    <input
+                      type="number"
+                      value={newCustomer.height_cm}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, height_cm: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-green-700 dark:text-green-300 mb-1">Weight (kg)</label>
+                    <input
+                      type="number"
+                      value={newCustomer.weight_kg}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, weight_kg: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-green-700 dark:text-green-300 mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={newCustomer.email}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, email: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-green-700 dark:text-green-300 mb-1">Phone</label>
+                    <input
+                      type="tel"
+                      value={newCustomer.phone}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                    />
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-green-700 dark:text-green-300 mb-1">Additional Notes</label>
+                  <textarea
+                    value={newCustomer.additionalNotes}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, additionalNotes: e.target.value }))}
+                    rows={2}
+                    className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={updateCustomer}
+                    className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-md font-medium text-sm"
+                  >
+                    💾 Save Changes
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowEditCustomerForm(false)
+                      setEditCustomerError(null)
+                    }}
+                    className="px-4 py-2 bg-zinc-400 hover:bg-zinc-500 text-white rounded-md font-medium text-sm"
+                  >
+                    Cancel
+                  </button>
+                  {editCustomerError && (
+                    <span className="text-red-600 dark:text-red-400 text-sm font-medium ml-2 flex items-center gap-1">
+                      ⚠️ {editCustomerError}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -881,14 +1109,114 @@ export default function LactateInput() {
             <div>
               {/* Test Protocol Selection */}
               <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-lg">
-                <h3 className="font-medium text-zinc-900 dark:text-zinc-100 mb-3">
-                  Select Test Protocol
-                </h3>
-                {testInfos.length === 0 ? (
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="font-medium text-zinc-900 dark:text-zinc-100">
+                    Select Test Protocol
+                  </h3>
+                  <button
+                    onClick={() => setShowNewTestProtocolForm(!showNewTestProtocolForm)}
+                    className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md"
+                  >
+                    {showNewTestProtocolForm ? '✕ Cancel' : '➕ New Protocol'}
+                  </button>
+                </div>
+
+                {/* New Test Protocol Form */}
+                {showNewTestProtocolForm && (
+                  <div className="mb-4 p-4 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-900/20">
+                    <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-3">Create New Test Protocol</h4>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Date</label>
+                        <input
+                          type="date"
+                          value={currentTestInfo.testDate}
+                          onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, testDate: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Time</label>
+                        <input
+                          type="time"
+                          value={currentTestInfo.testTime}
+                          onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, testTime: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Device</label>
+                        <select
+                          value={currentTestInfo.device}
+                          onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, device: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        >
+                          <option value="bike">Bike</option>
+                          <option value="treadmill">Treadmill</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Unit</label>
+                        <select
+                          value={currentTestInfo.unit}
+                          onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, unit: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        >
+                          <option value="watt">Watt (W)</option>
+                          <option value="kmh">Speed (km/h)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Start Load</label>
+                        <input
+                          type="number"
+                          value={currentTestInfo.startLoad}
+                          onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, startLoad: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Increment</label>
+                        <input
+                          type="number"
+                          value={currentTestInfo.increment}
+                          onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, increment: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Stage Duration (min)</label>
+                        <input
+                          type="number"
+                          value={currentTestInfo.stageDuration_min}
+                          onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, stageDuration_min: e.target.value }))}
+                          className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={createNewTestProtocol}
+                      className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md font-medium text-sm"
+                    >
+                      💾 Create Protocol
+                    </button>
+                  </div>
+                )}
+
+                {testInfos.length === 0 && !showNewTestProtocolForm ? (
                   <p className="text-sm text-zinc-600 dark:text-zinc-400 text-center py-4">
-                    No test protocols available. Create a customer with a test protocol first.
+                    No test protocols available. Click "New Protocol" to create one.
                   </p>
-                ) : (
+                ) : !showNewTestProtocolForm ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {testInfos.map((ti, idx) => (
                       <button
@@ -907,7 +1235,7 @@ export default function LactateInput() {
                       </button>
                     ))}
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           ) : (

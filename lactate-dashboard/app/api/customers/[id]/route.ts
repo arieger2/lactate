@@ -14,16 +14,20 @@ export async function GET(
     
     const result = await client.query(`
       SELECT 
-        customer_id,
-        name,
+        profile_id as customer_id,
+        first_name,
+        last_name,
+        CONCAT(first_name, ' ', last_name) as name,
         email,
         phone,
-        date_of_birth,
-        notes,
+        birth_date as date_of_birth,
+        height_cm,
+        weight_kg,
+        additional_notes as notes,
         created_at,
         updated_at
-      FROM customers
-      WHERE customer_id = $1
+      FROM patient_profiles
+      WHERE profile_id = $1
     `, [id])
     
     if (result.rows.length === 0) {
@@ -59,29 +63,53 @@ export async function PUT(
   let client
   try {
     const body = await request.json()
-    const { name, email, phone, dateOfBirth, notes } = body
+    const { firstName, lastName, email, phone, birthDate, height_cm, weight_kg, additionalNotes } = body
     
-    if (!name) {
+    if (!firstName) {
       return NextResponse.json({
         success: false,
-        error: 'Name is required'
+        error: 'First name is required'
       }, { status: 400 })
     }
     
     client = await pool.connect()
     
     const result = await client.query(`
-      UPDATE customers 
+      UPDATE patient_profiles 
       SET 
-        name = $1,
-        email = $2,
-        phone = $3,
-        date_of_birth = $4,
-        notes = $5,
+        first_name = $1,
+        last_name = $2,
+        email = $3,
+        phone = $4,
+        birth_date = $5,
+        height_cm = $6,
+        weight_kg = $7,
+        additional_notes = $8,
         updated_at = CURRENT_TIMESTAMP
-      WHERE customer_id = $6
-      RETURNING customer_id, name, email, phone, date_of_birth, notes, updated_at
-    `, [name, email || null, phone || null, dateOfBirth || null, notes || null, id])
+      WHERE profile_id = $9
+      RETURNING 
+        profile_id as customer_id,
+        first_name,
+        last_name,
+        CONCAT(first_name, ' ', last_name) as name,
+        email,
+        phone,
+        birth_date as date_of_birth,
+        height_cm,
+        weight_kg,
+        additional_notes as notes,
+        updated_at
+    `, [
+      firstName.trim(), 
+      lastName?.trim() || null, 
+      email?.trim() || null, 
+      phone?.trim() || null, 
+      birthDate || null,
+      height_cm || null,
+      weight_kg || null,
+      additionalNotes?.trim() || null,
+      id
+    ])
     
     if (result.rows.length === 0) {
       return NextResponse.json({
