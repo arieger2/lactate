@@ -41,7 +41,7 @@ export default function LactatePerformanceCurve() {
   const [lt1, setLt1] = useState<ThresholdPoint | null>(null)
   const [lt2, setLt2] = useState<ThresholdPoint | null>(null)
   const [trainingZones, setTrainingZones] = useState<TrainingZone[]>([])
-  const [selectedMethod, setSelectedMethod] = useState<ThresholdMethod>('mader')
+  const [selectedMethod, setSelectedMethod] = useState<ThresholdMethod>('dmax')
   const [isDragging, setIsDragging] = useState<{ type: 'LT1' | 'LT2' | null }>({ type: null })
   const [isAdjusted, setIsAdjusted] = useState(false)
   const [isManuallyLoading, setIsManuallyLoading] = useState(false)
@@ -131,12 +131,34 @@ export default function LactatePerformanceCurve() {
     loadData()
   }, [selectedSessionId])
 
-  // Auto-load adjusted thresholds when session or customer changes
+  // Check for adjusted thresholds whenever session or customer changes
+  useEffect(() => {
+    const checkAdjustedThresholds = async () => {
+      if (selectedSessionId && selectedCustomer && !isManuallyLoading) {
+        const hasAdjusted = await loadAdjustedThresholds()
+        setIsAdjusted(hasAdjusted)
+        
+        // If we're currently on adjusted method and no adjusted data exists, switch to default method
+        if (selectedMethod === 'adjusted') {
+          if (hasAdjusted) {
+            // Always load and apply manual values when switching sessions in adjusted mode
+            await loadAdjustedThresholds()
+          } else {
+            setSelectedMethod('dmax')
+            calculateThresholds(webhookData, 'dmax')
+          }
+        }
+      }
+    }
+    checkAdjustedThresholds()
+  }, [selectedSessionId, selectedCustomer, isManuallyLoading])
+
+  // Auto-load adjusted thresholds when switching to adjusted method
   useEffect(() => {
     if (selectedMethod === 'adjusted' && selectedSessionId && selectedCustomer && webhookData.length > 0 && !isManuallyLoading) {
       loadAdjustedThresholds()
     }
-  }, [selectedSessionId, selectedCustomer, selectedMethod, isManuallyLoading])
+  }, [selectedMethod])
 
   // ===== CHART INITIALIZATION =====
   useEffect(() => {
@@ -149,9 +171,13 @@ export default function LactatePerformanceCurve() {
       // Chart options
       const options = {
         title: {
-          text: '5-Zonen Laktat-Leistungskurve',
+          text: 'Laktat-Leistungskurve',
           left: 'center',
-          textStyle: { fontSize: 16, fontWeight: 'bold' }
+          textStyle: { 
+            fontSize: 16, 
+            fontWeight: 'bold',
+            overflow: 'truncate'
+          }
         },
         tooltip: {
           trigger: 'axis',
@@ -217,8 +243,17 @@ export default function LactatePerformanceCurve() {
             yAxisIndex: 0,
             markArea: {
               silent: true,
+              label: {
+                show: true,
+                position: 'insideTop',
+                fontSize: 11,
+                color: '#333',
+                fontWeight: 'bold',
+                overflow: 'truncate',
+                width: 120
+              },
               data: trainingZones.map(zone => [{
-                name: zone.name,
+                name: zone.name.length > 15 ? zone.name.substring(0, 15) + '...' : zone.name,
                 xAxis: zone.range[0],
                 itemStyle: {
                   color: zone.color,
@@ -250,21 +285,43 @@ export default function LactatePerformanceCurve() {
             name: 'LT1',
             type: 'scatter',
             data: [[lt1.power, lt1.lactate]],
-            symbolSize: 20,
+            symbolSize: 22,
             itemStyle: {
               color: '#10b981',
               borderColor: '#fff',
-              borderWidth: 4
+              borderWidth: 3
             },
             yAxisIndex: 0,
+            label: {
+              show: true,
+              position: 'top',
+              formatter: 'LT1',
+              fontSize: 12,
+              fontWeight: 'bold',
+              color: '#10b981',
+              backgroundColor: 'rgba(255, 255, 255, 0.8)',
+              padding: [2, 4],
+              borderRadius: 3
+            },
             emphasis: {
               scale: true,
-              scaleSize: 25
+              scaleSize: 28
             },
             markLine: {
               data: [{
                 xAxis: lt1.power,
-                lineStyle: { color: '#10b981', type: 'dashed', width: 2 }
+                lineStyle: { color: '#10b981', type: 'dashed', width: 3 },
+                label: {
+                  show: true,
+                  position: 'insideEndTop',
+                  formatter: 'LT1\n{c}W',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  color: '#10b981',
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  padding: [2, 4],
+                  borderRadius: 3
+                }
               }]
             }
           }] : []),
@@ -273,21 +330,43 @@ export default function LactatePerformanceCurve() {
             name: 'LT2',
             type: 'scatter',
             data: [[lt2.power, lt2.lactate]],
-            symbolSize: 20,
+            symbolSize: 22,
             itemStyle: {
               color: '#f59e0b',
               borderColor: '#fff',
-              borderWidth: 4
+              borderWidth: 3
             },
             yAxisIndex: 0,
+            label: {
+              show: true,
+              position: 'top',
+              formatter: 'LT2',
+              fontSize: 12,
+              fontWeight: 'bold',
+              color: '#f59e0b',
+              backgroundColor: 'rgba(255, 255, 255, 0.8)',
+              padding: [2, 4],
+              borderRadius: 3
+            },
             emphasis: {
               scale: true,
-              scaleSize: 25
+              scaleSize: 28
             },
             markLine: {
               data: [{
                 xAxis: lt2.power,
-                lineStyle: { color: '#f59e0b', type: 'dashed', width: 2 }
+                lineStyle: { color: '#f59e0b', type: 'dashed', width: 3 },
+                label: {
+                  show: true,
+                  position: 'insideEndTop',
+                  formatter: 'LT2\n{c}W',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  color: '#f59e0b',
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  padding: [2, 4],
+                  borderRadius: 3
+                }
               }]
             }
           }] : [])
@@ -548,7 +627,7 @@ export default function LactatePerformanceCurve() {
         return [
           {
             id: 1,
-            name: 'Zone 1 - Seiler Aerob',
+            name: 'Zone 1 - Aerob',
             range: [0, lt1Power],  // Bis LT1
             color: 'rgba(34, 197, 94, 0.2)',
             borderColor: 'rgba(34, 197, 94, 0.8)',
@@ -556,7 +635,7 @@ export default function LactatePerformanceCurve() {
           },
           {
             id: 2,
-            name: 'Zone 2 - Seiler Schwelle',
+            name: 'Zone 2 - Schwelle',
             range: [lt1Power, lt2Power],  // LT1 bis LT2
             color: 'rgba(251, 191, 36, 0.2)',
             borderColor: 'rgba(251, 191, 36, 0.8)',
@@ -564,7 +643,7 @@ export default function LactatePerformanceCurve() {
           },
           {
             id: 3,
-            name: 'Zone 3 - Seiler Anaerob',
+            name: 'Zone 3 - Anaerob',
             range: [lt2Power, maxPower * 1.1],  // Ab LT2
             color: 'rgba(239, 68, 68, 0.2)',
             borderColor: 'rgba(239, 68, 68, 0.8)',
@@ -609,7 +688,7 @@ export default function LactatePerformanceCurve() {
           },
           {
             id: 5,
-            name: 'Zone 5 - Neuromuskulär',
+            name: 'Zone 5 - Power',
             range: [lt2Power * 1.15, maxPower * 1.1],
             color: 'rgba(147, 51, 234, 0.2)',
             borderColor: 'rgba(147, 51, 234, 0.8)',
@@ -618,15 +697,15 @@ export default function LactatePerformanceCurve() {
         ]
 
       case 'adjusted':
-        // Manuelle Anpassung - verwende Standard 5-Zonen mit angepassten Werten
+        // Manuelle Anpassung - identische Logik wie Standard 5-Zonen
         return [
           {
             id: 1,
-            name: 'Zone 1 - Aktive Regeneration',
+            name: 'Zone 1 - Regeneration',
             range: [0, lt1Power * 0.68],
             color: 'rgba(34, 197, 94, 0.2)',
             borderColor: 'rgba(34, 197, 94, 0.8)',
-            description: 'Regeneration (manuell angepasst)'
+            description: 'Regeneration & Fettstoffwechsel'
           },
           {
             id: 2,
@@ -634,31 +713,31 @@ export default function LactatePerformanceCurve() {
             range: [lt1Power * 0.68, lt1Power],
             color: 'rgba(59, 130, 246, 0.2)',
             borderColor: 'rgba(59, 130, 246, 0.8)',
-            description: 'Aerober Bereich bis LT1 (angepasst)'
+            description: 'Aerober Grundlagenbereich (bis LT1)'
           },
           {
             id: 3,
-            name: 'Zone 3 - Schwellenbereich',
+            name: 'Zone 3 - Schwelle',
             range: [lt1Power, lt2Power],
             color: 'rgba(251, 191, 36, 0.2)',
             borderColor: 'rgba(251, 191, 36, 0.8)',
-            description: 'LT1 bis LT2 (manuell angepasst)'
+            description: 'Tempobereich (LT1 bis LT2)'
           },
           {
             id: 4,
-            name: 'Zone 4 - Anaerober Bereich',
+            name: 'Zone 4 - Anaerob',
             range: [lt2Power, lt2Power * 1.08],
             color: 'rgba(239, 68, 68, 0.2)',
             borderColor: 'rgba(239, 68, 68, 0.8)',
-            description: 'Oberhalb LT2 (angepasst)'
+            description: 'Schwellenbereich (um LT2)'
           },
           {
             id: 5,
-            name: 'Zone 5 - Neuromuskular',
+            name: 'Zone 5 - Power',
             range: [lt2Power * 1.08, maxPower * 1.1],
             color: 'rgba(147, 51, 234, 0.2)',
             borderColor: 'rgba(147, 51, 234, 0.8)',
-            description: 'Maximale Power (angepasst)'
+            description: 'Maximale Power'
           }
         ]
 
@@ -668,7 +747,7 @@ export default function LactatePerformanceCurve() {
         return [
           {
             id: 1,
-            name: 'Zone 1 - Aktive Regeneration',
+            name: 'Zone 1 - Regeneration',
             range: [0, lt1Power * 0.68],  // Bis ~68% von LT1
             color: 'rgba(34, 197, 94, 0.2)',
             borderColor: 'rgba(34, 197, 94, 0.8)',
@@ -684,7 +763,7 @@ export default function LactatePerformanceCurve() {
           },
           {
             id: 3,
-            name: 'Zone 3 - Aerob-Anaerober Übergang',
+            name: 'Zone 3 - Schwelle',
             range: [lt1Power, lt2Power],  // LT1 bis LT2 (Ende Zone 3)
             color: 'rgba(251, 191, 36, 0.2)',
             borderColor: 'rgba(251, 191, 36, 0.8)',
@@ -692,7 +771,7 @@ export default function LactatePerformanceCurve() {
           },
           {
             id: 4,
-            name: 'Zone 4 - Lactatschwelle',
+            name: 'Zone 4 - Anaerob',
             range: [lt2Power, lt2Power * 1.08],  // Knapp oberhalb LT2
             color: 'rgba(239, 68, 68, 0.2)',
             borderColor: 'rgba(239, 68, 68, 0.8)',
@@ -700,7 +779,7 @@ export default function LactatePerformanceCurve() {
           },
           {
             id: 5,
-            name: 'Zone 5 - Neuromuskuläre Power',
+            name: 'Zone 5 - Power',
             range: [lt2Power * 1.08, maxPower * 1.1],  // Oberhalb LT2
             color: 'rgba(147, 51, 234, 0.2)',
             borderColor: 'rgba(147, 51, 234, 0.8)',
@@ -893,7 +972,15 @@ export default function LactatePerformanceCurve() {
       })
       
       if (response.ok) {
-
+        const result = await response.json()
+        if (result.success) {
+          console.log('✅ Successfully saved adjusted thresholds')
+          setIsAdjusted(true)
+        } else {
+          console.error('❌ Failed to save adjusted thresholds:', result.message)
+        }
+      } else {
+        console.error('❌ HTTP error saving adjusted thresholds:', response.status)
       }
     } catch (error) {
       console.error('❌ Error saving adjusted thresholds:', error)
@@ -902,7 +989,7 @@ export default function LactatePerformanceCurve() {
 
   const loadAdjustedThresholds = async (): Promise<boolean> => {
     if (!selectedSessionId || !selectedCustomer) {
-      console.warn('⚠️ Cannot load: missing session or customer')
+      console.log('📊 Cannot load adjusted thresholds: missing session or customer')
       return false
     }
     
@@ -924,25 +1011,33 @@ export default function LactatePerformanceCurve() {
           const lt1Data = { power: parseFloat(data.lt1.power), lactate: parseFloat(data.lt1.lactate) }
           const lt2Data = { power: parseFloat(data.lt2.power), lactate: parseFloat(data.lt2.lactate) }
           
-          setLt1(lt1Data)
-          setLt2(lt2Data)
+          console.log('✅ Loaded adjusted thresholds:', { lt1Data, lt2Data })
           
-          // Berechne Trainingszonen mit den geladenen Werten
-          if (webhookData.length > 0) {
-            const maxPower = Math.max(...webhookData.map(d => d.power), 400)
-            const zones = calculateTrainingZones(
-              lt1Data,
-              lt2Data,
-              maxPower,
-              'adjusted'
-            )
-            setTrainingZones(zones)
+          // Only update state if we're in adjusted mode or checking for existence
+          if (selectedMethod === 'adjusted') {
+            setLt1(lt1Data)
+            setLt2(lt2Data)
+            
+            // Berechne Trainingszonen mit den geladenen Werten
+            if (webhookData.length > 0) {
+              const maxPower = Math.max(...webhookData.map(d => d.power), 400)
+              const zones = calculateTrainingZones(
+                lt1Data,
+                lt2Data,
+                maxPower,
+                'adjusted'
+              )
+              setTrainingZones(zones)
+            }
           }
+          
           return true
         } else {
+          console.log('📊 No adjusted thresholds found for session:', selectedSessionId)
           return false
         }
       } else {
+        console.log('📊 No adjusted thresholds response for session:', selectedSessionId)
         return false
       }
     } catch (error) {
@@ -985,8 +1080,8 @@ export default function LactatePerformanceCurve() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
-        <div className="flex justify-between items-center mb-4">
+      <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-8">
+        <div className="flex justify-between items-center mb-6">
           <div>
             <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Laktat-Performance-Kurve</h2>
             <p className="text-zinc-600 dark:text-zinc-400">
@@ -1002,10 +1097,10 @@ export default function LactatePerformanceCurve() {
         </div>
 
         {/* Controls */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Session Selection */}
           <div>
-            <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">Session</label>
+            <label className="block text-sm font-medium mb-3 text-zinc-700 dark:text-zinc-300">Session</label>
             <select
               value={selectedSessionId || ''}
               onChange={(e) => setSelectedSessionId(e.target.value)}
@@ -1022,19 +1117,37 @@ export default function LactatePerformanceCurve() {
 
           {/* Method Selection */}
           <div className="col-span-2">
-            <label className="block text-sm font-medium mb-3 text-zinc-700 dark:text-zinc-300">Wissenschaftliche Schwellenmethoden</label>
-            <div className="grid grid-cols-4 gap-2 mb-2">
+            <label className="block text-sm font-medium mb-4 text-zinc-700 dark:text-zinc-300">Wissenschaftliche Schwellenmethoden</label>
+            <div className="grid grid-cols-4 gap-4 mb-5">
               {/* Erste Reihe */}
               <button
                 onClick={() => {
                   setSelectedMethod('dmax')
                   calculateThresholds(webhookData, 'dmax')
                 }}
-                className={`p-3 text-xs rounded-lg border ${
+                className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'dmax' 
-                    ? 'bg-blue-500 text-white border-blue-500' 
-                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                    ? 'text-gray-800 font-semibold' 
+                    : 'text-gray-600 hover:text-gray-800'
                 }`}
+                style={{
+                  backgroundColor: selectedMethod === 'dmax' 
+                    ? 'rgba(107, 114, 128, 0.25)' 
+                    : 'rgba(107, 114, 128, 0.1)',
+                  borderColor: selectedMethod === 'dmax' 
+                    ? 'rgba(107, 114, 128, 0.4)' 
+                    : 'rgba(107, 114, 128, 0.2)'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedMethod !== 'dmax') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedMethod !== 'dmax') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.1)';
+                  }
+                }}
               >
                 <div className="font-semibold">DMAX</div>
                 <div className="text-xs opacity-80">Cheng et al.</div>
@@ -1045,11 +1158,29 @@ export default function LactatePerformanceCurve() {
                   setSelectedMethod('dickhuth')
                   calculateThresholds(webhookData, 'dickhuth')
                 }}
-                className={`p-3 text-xs rounded-lg border ${
+                className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'dickhuth' 
-                    ? 'bg-blue-500 text-white border-blue-500' 
-                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                    ? 'text-gray-800 font-semibold' 
+                    : 'text-gray-600 hover:text-gray-800'
                 }`}
+                style={{
+                  backgroundColor: selectedMethod === 'dickhuth' 
+                    ? 'rgba(107, 114, 128, 0.25)' 
+                    : 'rgba(107, 114, 128, 0.1)',
+                  borderColor: selectedMethod === 'dickhuth' 
+                    ? 'rgba(107, 114, 128, 0.4)' 
+                    : 'rgba(107, 114, 128, 0.2)'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedMethod !== 'dickhuth') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedMethod !== 'dickhuth') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.1)';
+                  }
+                }}
               >
                 <div className="font-semibold">Dickhuth</div>
                 <div className="text-xs opacity-80">Dickhuth et al.</div>
@@ -1060,11 +1191,29 @@ export default function LactatePerformanceCurve() {
                   setSelectedMethod('mader')
                   calculateThresholds(webhookData, 'mader')
                 }}
-                className={`p-3 text-xs rounded-lg border ${
+                className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'mader' 
-                    ? 'bg-red-500 text-white border-red-500' 
-                    : 'bg-white dark:bg-zinc-800 border-red-300 text-zinc-700 dark:text-zinc-300 hover:bg-red-50 dark:hover:bg-zinc-700'
+                    ? 'text-gray-800 font-semibold' 
+                    : 'text-gray-600 hover:text-gray-800'
                 }`}
+                style={{
+                  backgroundColor: selectedMethod === 'mader' 
+                    ? 'rgba(107, 114, 128, 0.25)' 
+                    : 'rgba(107, 114, 128, 0.1)',
+                  borderColor: selectedMethod === 'mader' 
+                    ? 'rgba(107, 114, 128, 0.4)' 
+                    : 'rgba(107, 114, 128, 0.2)'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedMethod !== 'mader') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedMethod !== 'mader') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.1)';
+                  }
+                }}
               >
                 <div className="font-semibold">Mader 4mmol</div>
                 <div className="text-xs opacity-80">Mader (1976) -</div>
@@ -1075,29 +1224,65 @@ export default function LactatePerformanceCurve() {
                   setSelectedMethod('loglog')
                   calculateThresholds(webhookData, 'loglog')
                 }}
-                className={`p-3 text-xs rounded-lg border ${
+                className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'loglog' 
-                    ? 'bg-blue-500 text-white border-blue-500' 
-                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                    ? 'text-gray-800 font-semibold' 
+                    : 'text-gray-600 hover:text-gray-800'
                 }`}
+                style={{
+                  backgroundColor: selectedMethod === 'loglog' 
+                    ? 'rgba(107, 114, 128, 0.25)' 
+                    : 'rgba(107, 114, 128, 0.1)',
+                  borderColor: selectedMethod === 'loglog' 
+                    ? 'rgba(107, 114, 128, 0.4)' 
+                    : 'rgba(107, 114, 128, 0.2)'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedMethod !== 'loglog') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedMethod !== 'loglog') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.1)';
+                  }
+                }}
               >
                 <div className="font-semibold">Log-Log</div>
                 <div className="text-xs opacity-80">Beaver et al.</div>
               </button>
             </div>
             
-            <div className="grid grid-cols-4 gap-2 mb-2">
+            <div className="grid grid-cols-4 gap-4 mb-5">
               {/* Zweite Reihe */}
               <button
                 onClick={() => {
                   setSelectedMethod('plus1mmol')
                   calculateThresholds(webhookData, 'plus1mmol')
                 }}
-                className={`p-3 text-xs rounded-lg border ${
+                className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'plus1mmol' 
-                    ? 'bg-blue-500 text-white border-blue-500' 
-                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                    ? 'text-gray-800 font-semibold' 
+                    : 'text-gray-600 hover:text-gray-800'
                 }`}
+                style={{
+                  backgroundColor: selectedMethod === 'plus1mmol' 
+                    ? 'rgba(107, 114, 128, 0.25)' 
+                    : 'rgba(107, 114, 128, 0.1)',
+                  borderColor: selectedMethod === 'plus1mmol' 
+                    ? 'rgba(107, 114, 128, 0.4)' 
+                    : 'rgba(107, 114, 128, 0.2)'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedMethod !== 'plus1mmol') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedMethod !== 'plus1mmol') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.1)';
+                  }
+                }}
               >
                 <div className="font-semibold">+1.0 mmol/L</div>
                 <div className="text-xs opacity-80">Faude et al.</div>
@@ -1108,11 +1293,29 @@ export default function LactatePerformanceCurve() {
                   setSelectedMethod('moddmax')
                   calculateThresholds(webhookData, 'moddmax')
                 }}
-                className={`p-3 text-xs rounded-lg border ${
+                className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'moddmax' 
-                    ? 'bg-blue-500 text-white border-blue-500' 
-                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                    ? 'text-gray-800 font-semibold' 
+                    : 'text-gray-600 hover:text-gray-800'
                 }`}
+                style={{
+                  backgroundColor: selectedMethod === 'moddmax' 
+                    ? 'rgba(107, 114, 128, 0.25)' 
+                    : 'rgba(107, 114, 128, 0.1)',
+                  borderColor: selectedMethod === 'moddmax' 
+                    ? 'rgba(107, 114, 128, 0.4)' 
+                    : 'rgba(107, 114, 128, 0.2)'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedMethod !== 'moddmax') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedMethod !== 'moddmax') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.1)';
+                  }
+                }}
               >
                 <div className="font-semibold">ModDMAX</div>
                 <div className="text-xs opacity-80">Bishop et al.</div>
@@ -1123,11 +1326,29 @@ export default function LactatePerformanceCurve() {
                   setSelectedMethod('seiler')
                   calculateThresholds(webhookData, 'seiler')
                 }}
-                className={`p-3 text-xs rounded-lg border ${
+                className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'seiler' 
-                    ? 'bg-blue-500 text-white border-blue-500' 
-                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                    ? 'text-gray-800 font-semibold' 
+                    : 'text-gray-600 hover:text-gray-800'
                 }`}
+                style={{
+                  backgroundColor: selectedMethod === 'seiler' 
+                    ? 'rgba(107, 114, 128, 0.25)' 
+                    : 'rgba(107, 114, 128, 0.1)',
+                  borderColor: selectedMethod === 'seiler' 
+                    ? 'rgba(107, 114, 128, 0.4)' 
+                    : 'rgba(107, 114, 128, 0.2)'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedMethod !== 'seiler') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedMethod !== 'seiler') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.1)';
+                  }
+                }}
               >
                 <div className="font-semibold">Seiler 3-Zone</div>
                 <div className="text-xs opacity-80">Seiler - Polarisiertes</div>
@@ -1136,61 +1357,98 @@ export default function LactatePerformanceCurve() {
               <div></div>
             </div>
             
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-4">
               {/* Dritte Reihe */}
               <button
                 onClick={() => {
                   setSelectedMethod('fatmax')
                   calculateThresholds(webhookData, 'fatmax')
                 }}
-                className={`p-3 text-xs rounded-lg border ${
+                className={`p-3 text-xs rounded-lg border transition-all duration-200 ${
                   selectedMethod === 'fatmax' 
-                    ? 'bg-blue-500 text-white border-blue-500' 
-                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                    ? 'text-gray-800 font-semibold' 
+                    : 'text-gray-600 hover:text-gray-800'
                 }`}
+                style={{
+                  backgroundColor: selectedMethod === 'fatmax' 
+                    ? 'rgba(107, 114, 128, 0.25)' 
+                    : 'rgba(107, 114, 128, 0.1)',
+                  borderColor: selectedMethod === 'fatmax' 
+                    ? 'rgba(107, 114, 128, 0.4)' 
+                    : 'rgba(107, 114, 128, 0.2)'
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedMethod !== 'fatmax') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedMethod !== 'fatmax') {
+                    e.currentTarget.style.backgroundColor = 'rgba(107, 114, 128, 0.1)';
+                  }
+                }}
               >
                 <div className="font-semibold">FatMax/LT</div>
                 <div className="text-xs opacity-80">San-Millán - FatMax</div>
               </button>
               
-              <button
-                onClick={async () => {
-                  // Set manual loading flag to prevent auto-loading interference
-                  setIsManuallyLoading(true)
-                  setSelectedMethod('adjusted')
-                  
-                  // Clear current values first to force refresh
-                  setLt1(null)
-                  setLt2(null)
-                  setTrainingZones([])
-                  
-                  // Force a small delay to ensure state is cleared
-                  await new Promise(resolve => setTimeout(resolve, 50))
-                  
-                  // Daten aus Datenbank lesen und Graph aktualisieren
-                  await loadAdjustedThresholds()
-                  
-                  // Reset manual loading flag
-                  setIsManuallyLoading(false)
-                }}
-                className={`p-3 text-xs rounded-lg border relative ${
-                  selectedMethod === 'adjusted' 
-                    ? 'bg-red-500 text-white border-red-500' 
-                    : isAdjusted
-                      ? 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200 animate-pulse'
-                      : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-400 dark:text-zinc-500'
-                }`}
-              >
-                <div className="font-semibold">
-                  Manual {isAdjusted && selectedMethod !== 'adjusted' ? '●' : ''}
-                </div>
-                <div className="text-xs opacity-80">
-                  {isAdjusted ? 'Verfügbar' : 'Angepasste Werte'}
-                </div>
-                {isAdjusted && selectedMethod !== 'adjusted' && (
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></div>
-                )}
-              </button>
+              {/* Only show Manual button when there are actual manual adjustments */}
+              {isAdjusted && (
+                <button
+                  onClick={async () => {
+                    console.log('🔧 Manual button clicked - loading adjusted thresholds...')
+                    console.log('Session:', selectedSessionId, 'Customer:', selectedCustomer?.customer_id)
+                    
+                    // Set manual loading flag to prevent auto-loading interference
+                    setIsManuallyLoading(true)
+                    setSelectedMethod('adjusted')
+                    
+                    // Clear current values first to force refresh
+                    setLt1(null)
+                    setLt2(null)
+                    setTrainingZones([])
+                    
+                    // Force a small delay to ensure state is cleared
+                    await new Promise(resolve => setTimeout(resolve, 50))
+                    
+                    // Daten aus Datenbank lesen und Graph aktualisieren
+                    const loaded = await loadAdjustedThresholds()
+                    console.log('🔧 Manual loading result:', loaded)
+                    
+                    if (!loaded) {
+                      console.warn('⚠️ No adjusted thresholds found - switching back to DMAX')
+                      setSelectedMethod('dmax')
+                      calculateThresholds(webhookData, 'dmax')
+                    }
+                    
+                    // Reset manual loading flag
+                    setIsManuallyLoading(false)
+                  }}
+                  className={`p-3 text-xs rounded-lg border relative transition-all duration-200 ${
+                    selectedMethod === 'adjusted' 
+                      ? 'text-gray-800 font-semibold' 
+                      : 'text-gray-700 animate-pulse'
+                  }`}
+                  style={{
+                    backgroundColor: selectedMethod === 'adjusted' 
+                      ? 'rgba(107, 114, 128, 0.25)' 
+                      : 'rgba(107, 114, 128, 0.18)',
+                    borderColor: selectedMethod === 'adjusted' 
+                      ? 'rgba(107, 114, 128, 0.4)' 
+                      : 'rgba(107, 114, 128, 0.3)'
+                  }}
+                >
+                  <div className="font-semibold">
+                    Manual {selectedMethod !== 'adjusted' ? '●' : ''}
+                  </div>
+                  <div className="text-xs opacity-80">
+                    Verfügbar
+                  </div>
+                  {selectedMethod !== 'adjusted' && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></div>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1209,17 +1467,18 @@ export default function LactatePerformanceCurve() {
           <div 
             ref={chartRef} 
             style={{ 
-              height: '500px', 
+              height: '650px', 
               width: '100%',
               cursor: isDragging.type ? 'grabbing' : 'default',
-              transition: 'cursor 0.1s ease'
+              transition: 'cursor 0.1s ease',
+              margin: '20px 0'
             }}
           />
           
           {/* Threshold Info */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
             {lt1 && (
-              <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+              <div className="p-6 bg-green-50 dark:bg-green-900/20 rounded-lg">
                 <h3 className="font-semibold text-green-800 dark:text-green-200">
                   LT1 (Aerobe Schwelle)
                 </h3>
@@ -1229,7 +1488,7 @@ export default function LactatePerformanceCurve() {
               </div>
             )}
             {lt2 && (
-              <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+              <div className="p-6 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
                 <h3 className="font-semibold text-orange-800 dark:text-orange-200">
                   LT2 (Anaerobe Schwelle - OBLA)
                 </h3>
