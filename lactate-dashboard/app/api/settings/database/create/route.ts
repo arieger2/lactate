@@ -75,97 +75,119 @@ export async function POST(request: NextRequest) {
       const dbClient = await dbPool.connect()
       console.log(`✅ Connected to "${dbName}"`)
       
-      // Create base tables
+      // Create base tables from schema.sql
       console.log('📋 Creating tables...')
       await dbClient.query(`
-        -- Customers table
-        CREATE TABLE IF NOT EXISTS customers (
-          id SERIAL PRIMARY KEY,
-          customer_id VARCHAR(255) UNIQUE NOT NULL,
-          name VARCHAR(255) NOT NULL,
-          email VARCHAR(255),
-          phone VARCHAR(50),
-          date_of_birth DATE,
-          notes TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        -- Create patient_profiles table (replaces customers)
+        CREATE TABLE IF NOT EXISTS patient_profiles (
+            profile_id VARCHAR(255) PRIMARY KEY,
+            first_name VARCHAR(255) NOT NULL,
+            last_name VARCHAR(255) NOT NULL,
+            birth_date DATE,
+            height_cm INTEGER,
+            weight_kg DECIMAL(5,2),
+            email VARCHAR(255),
+            phone VARCHAR(50),
+            additional_notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-        
-        -- Sessions table
-        CREATE TABLE IF NOT EXISTS sessions (
-          id SERIAL PRIMARY KEY,
-          session_id VARCHAR(255) UNIQUE NOT NULL,
-          customer_id VARCHAR(255) REFERENCES customers(customer_id) ON DELETE SET NULL,
-          athlete_name VARCHAR(255),
-          test_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          test_type VARCHAR(100),
-          notes TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+        -- Create test_infos table (replaces sessions)
+        CREATE TABLE IF NOT EXISTS test_infos (
+            test_id VARCHAR(255) PRIMARY KEY,
+            profile_id VARCHAR(255) NOT NULL,
+            test_date DATE NOT NULL,
+            test_time TIME NOT NULL,
+            device VARCHAR(50) NOT NULL CHECK (device IN ('bike', 'treadmill', 'other')),
+            unit VARCHAR(20) NOT NULL CHECK (unit IN ('watt', 'kmh', 'other')),
+            start_load INTEGER NOT NULL,
+            increment INTEGER NOT NULL,
+            stage_duration_min INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (profile_id) REFERENCES patient_profiles(profile_id) ON DELETE CASCADE
         );
-        
-        -- Lactate data table
-        CREATE TABLE IF NOT EXISTS lactate_data (
-          id SERIAL PRIMARY KEY,
-          session_id VARCHAR(255) NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-          timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          power INTEGER NOT NULL,
-          lactate NUMERIC(4,2) NOT NULL,
-          heart_rate INTEGER,
-          fat_oxidation NUMERIC(4,2),
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          customer_id VARCHAR(255) REFERENCES customers(customer_id) ON DELETE SET NULL,
-          sample_id VARCHAR(50),
-          glucose NUMERIC(5,2),
-          ph NUMERIC(4,3),
-          temperature NUMERIC(4,1),
-          measurement_date DATE,
-          measurement_time TIME,
-          error_code VARCHAR(20),
-          device_id VARCHAR(100),
-          raw_data JSONB,
-          vo2 NUMERIC(5,2)
+
+        -- Create stages table (replaces lactate_data)
+        CREATE TABLE IF NOT EXISTS stages (
+            id SERIAL PRIMARY KEY,
+            test_id VARCHAR(255) NOT NULL,
+            stage INTEGER NOT NULL,
+            duration_min INTEGER NOT NULL,
+            load INTEGER NOT NULL,
+            heart_rate_bpm INTEGER,
+            lactate_mmol DECIMAL(4,2) NOT NULL,
+            rr_systolic INTEGER,
+            rr_diastolic INTEGER,
+            is_final_approximation BOOLEAN DEFAULT FALSE,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
+            UNIQUE(test_id, stage)
         );
-        
-        -- Training zones table
-        CREATE TABLE IF NOT EXISTS training_zones (
-          id SERIAL PRIMARY KEY,
-          customer_id VARCHAR(255) NOT NULL,
-          session_id VARCHAR(255) NOT NULL,
-          zone_boundaries JSONB NOT NULL,
-          method VARCHAR(50) NOT NULL,
-          modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(customer_id, session_id)
-        );
-        
-        -- Threshold results table
+
+        -- Create threshold_results table
         CREATE TABLE IF NOT EXISTS threshold_results (
-          id SERIAL PRIMARY KEY,
-          session_id VARCHAR(255) NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
-          method VARCHAR(50) NOT NULL,
-          threshold_power INTEGER,
-          threshold_lactate NUMERIC(4,2),
-          threshold_heart_rate INTEGER,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            id SERIAL PRIMARY KEY,
+            test_id VARCHAR(255) NOT NULL,
+            method VARCHAR(50) NOT NULL,
+            lt1_load INTEGER,
+            lt1_lactate DECIMAL(4,2),
+            lt2_load INTEGER,
+            lt2_lactate DECIMAL(4,2),
+            calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
+            UNIQUE(test_id, method)
         );
-        
-        -- Migrations tracking table
-        CREATE TABLE IF NOT EXISTS migrations (
-          id SERIAL PRIMARY KEY,
-          name VARCHAR(255) UNIQUE NOT NULL,
-          executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+        -- Create training_zones table
+        CREATE TABLE IF NOT EXISTS training_zones (
+            id SERIAL PRIMARY KEY,
+            test_id VARCHAR(255) NOT NULL,
+            method VARCHAR(50) NOT NULL,
+            zone_number INTEGER NOT NULL,
+            zone_name VARCHAR(100) NOT NULL,
+            load_min INTEGER NOT NULL,
+            load_max INTEGER NOT NULL,
+            lactate_range VARCHAR(50),
+            description TEXT,
+            calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE
         );
-        
+
+        -- Create adjusted_thresholds table
+        CREATE TABLE IF NOT EXISTS adjusted_thresholds (
+            id SERIAL PRIMARY KEY,
+            test_id VARCHAR(255) NOT NULL,
+            profile_id VARCHAR(255) NOT NULL,
+            lt1_load NUMERIC NOT NULL,
+            lt1_lactate DECIMAL(4,2) NOT NULL,
+            lt2_load NUMERIC NOT NULL,
+            lt2_lactate DECIMAL(4,2) NOT NULL,
+            adjusted_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
+            FOREIGN KEY (profile_id) REFERENCES patient_profiles(profile_id) ON DELETE CASCADE,
+            UNIQUE(test_id)
+        );
+
         -- Create indexes
-        CREATE INDEX IF NOT EXISTS idx_customers_customer_id ON customers(customer_id);
-        CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
-        CREATE INDEX IF NOT EXISTS idx_lactate_data_session_id ON lactate_data(session_id);
-        CREATE INDEX IF NOT EXISTS idx_lactate_data_timestamp ON lactate_data(timestamp);
-        CREATE INDEX IF NOT EXISTS idx_lactate_data_customer_id ON lactate_data(customer_id);
-        CREATE INDEX IF NOT EXISTS idx_lactate_data_sample_id ON lactate_data(sample_id);
-        CREATE INDEX IF NOT EXISTS idx_lactate_data_device_id ON lactate_data(device_id);
-        CREATE INDEX IF NOT EXISTS idx_sessions_customer_id ON sessions(customer_id);
-        CREATE INDEX IF NOT EXISTS idx_training_zones_customer_session ON training_zones(customer_id, session_id);
+        CREATE INDEX IF NOT EXISTS idx_patient_profiles_name ON patient_profiles(last_name, first_name);
+        CREATE INDEX IF NOT EXISTS idx_patient_profiles_email ON patient_profiles(email);
+        CREATE INDEX IF NOT EXISTS idx_test_infos_profile_id ON test_infos(profile_id);
+        CREATE INDEX IF NOT EXISTS idx_test_infos_test_date ON test_infos(test_date);
+        CREATE INDEX IF NOT EXISTS idx_test_infos_device ON test_infos(device);
+        CREATE INDEX IF NOT EXISTS idx_stages_test_id ON stages(test_id);
+        CREATE INDEX IF NOT EXISTS idx_stages_stage ON stages(stage);
+        CREATE INDEX IF NOT EXISTS idx_stages_load ON stages(load);
+        CREATE INDEX IF NOT EXISTS idx_threshold_results_test_id ON threshold_results(test_id);
+        CREATE INDEX IF NOT EXISTS idx_threshold_results_method ON threshold_results(method);
+        CREATE INDEX IF NOT EXISTS idx_training_zones_test_id ON training_zones(test_id);
+        CREATE INDEX IF NOT EXISTS idx_training_zones_method ON training_zones(method);
+        CREATE INDEX IF NOT EXISTS idx_adjusted_thresholds_test_id ON adjusted_thresholds(test_id);
+        CREATE INDEX IF NOT EXISTS idx_adjusted_thresholds_profile_id ON adjusted_thresholds(profile_id);
       `)
       
       console.log('✅ Tables created successfully')
