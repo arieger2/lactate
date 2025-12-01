@@ -9,12 +9,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { host, port, user, password, ssl, databaseToDelete } = body
     
-    // Use provided values or fallback to env
-    const finalHost = host || process.env.DB_HOST || 'localhost'
-    const finalPort = parseInt(port || process.env.DB_PORT || '5432')
-    const finalUser = user || process.env.DB_USER || 'postgres'
-    const finalPassword = password || process.env.DB_PASSWORD
-    const finalSsl = ssl !== undefined ? ssl : (process.env.DB_SSL === 'true')
+    // Use provided values or fallback to env or config
+    const config = await import('@/lib/configManager').then(m => m.default)
+    const savedConfig = config.getConfig().database
+    
+    const finalHost = host || savedConfig.host || process.env.DB_HOST || 'localhost'
+    const finalPort = parseInt(port || savedConfig.port?.toString() || process.env.DB_PORT || '5432')
+    const finalUser = user || savedConfig.user || process.env.DB_USER || 'postgres'
+    const finalPassword = password || savedConfig.password || process.env.DB_PASSWORD || ''
+    const finalSsl = ssl !== undefined ? ssl : (savedConfig.ssl || process.env.DB_SSL === 'true')
     
     if (!databaseToDelete) {
       return NextResponse.json({
