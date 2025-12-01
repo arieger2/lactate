@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
       // Database constraint violations
       if (error.message.includes('duplicate key value')) {
         if (error.message.includes('patient_profiles_pkey')) {
-          errorMessage = `Profile ID "${finalProfileId}" already exists. Please use a different ID.`
+          errorMessage = 'Profile ID already exists. Please use a different ID.'
         } else {
           errorMessage = 'A customer with this information already exists'
         }
@@ -214,15 +214,15 @@ export async function POST(request: NextRequest) {
       } else if (error.message.includes('violates check constraint')) {
         errorMessage = 'Invalid data format provided. Please check your input.'
       } else if (error.message.includes('violates not-null constraint')) {
-        const match = error.message.match(/column "([^"]+)"/)
+        const match = error.message.match(/column \"([^\"]+)\"/)
         const columnName = match ? match[1] : 'a required field'
         errorMessage = `Missing required field: ${columnName}`
       } else if (error.message.includes('relation') && error.message.includes('does not exist')) {
         errorMessage = 'Database table not found. Please run database initialization first.'
-        technicalDetails += ' - Run: PGPASSWORD=\'LisgumuM20251!\' psql -h localhost -U postgres -d laktat -f db/schema.sql'
+        technicalDetails += ' - Run schema.sql to create tables'
       } else if (error.message.includes('database') && error.message.includes('does not exist')) {
         errorMessage = 'Database "laktat" does not exist. Please create it first.'
-        technicalDetails += ' - Run: PGPASSWORD=\'LisgumuM20251!\' psql -h localhost -U postgres -c "CREATE DATABASE laktat;"'
+        technicalDetails += ' - Run: CREATE DATABASE laktat;'
       } else if (error.message.includes('connection')) {
         errorMessage = 'Cannot connect to database. Please check if PostgreSQL is running.'
       } else if (error.message.includes('timeout')) {
