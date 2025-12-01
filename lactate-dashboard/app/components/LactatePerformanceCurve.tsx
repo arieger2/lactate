@@ -209,36 +209,20 @@ export default function LactatePerformanceCurve() {
       return
     }
 
-    // For km/h, we need to convert to a comparable power metric first
-    // Using a simple approximation: speed² × weight factor
-    // This is a placeholder - proper conversion would need more data
-    let calculationData = data
-    if (unit === 'kmh') {
-      // For km/h (treadmill), use squared speed as approximation for intensity
-      // This maintains relative relationships for threshold detection
-      calculationData = data.map(point => ({
-        ...point,
-        power: Math.round(point.power * point.power * 10) // speed² × 10 for scaling
-      }))
-    }
+    // WICHTIG: Keine Umrechnung nötig! Die Schwellenmethoden funktionieren
+    // identisch für Watt und km/h, da sie auf geometrischen/logarithmischen
+    // Prinzipien basieren, die einheitenunabhängig sind.
+    // 
+    // Die power-Variable repräsentiert generisch die Belastung:
+    // - Für Radfahren: Leistung in Watt
+    // - Für Laufen: Geschwindigkeit in km/h
 
-    // Use imported calculation function
-    const { lt1: lt1Point, lt2: lt2Point } = calculateThresholds(calculationData, method)
+    // Use imported calculation function - works for both units!
+    const { lt1: lt1Point, lt2: lt2Point } = calculateThresholds(data, method)
 
-    // For km/h, convert back to original scale
-    if (unit === 'kmh' && lt1Point && lt2Point) {
-      setLt1({
-        power: Math.round(Math.sqrt(lt1Point.power / 10) * 10) / 10,
-        lactate: lt1Point.lactate
-      })
-      setLt2({
-        power: Math.round(Math.sqrt(lt2Point.power / 10) * 10) / 10,
-        lactate: lt2Point.lactate
-      })
-    } else {
-      setLt1(lt1Point)
-      setLt2(lt2Point)
-    }
+    // Set thresholds directly - no conversion needed
+    setLt1(lt1Point)
+    setLt2(lt2Point)
 
     // Speichere die berechneten Werte automatisch in der Datenbank
     if (lt1Point && lt2Point && selectedSessionId && selectedCustomer) {

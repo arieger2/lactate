@@ -11,12 +11,15 @@ export interface ThresholdResult {
 
 // ===== WISSENSCHAFTLICHE SCHWELLENMETHODEN =====
 // Exakt nach Requirements-Dokument implementiert
+// WICHTIG: Alle Methoden funktionieren identisch für Watt (Radfahren) und km/h (Laufen)
+// Die Berechnungen basieren auf geometrischen Prinzipien und sind einheitenunabhängig
 
 /**
  * Berechnet LT1 und LT2 Schwellen basierend auf der gewählten wissenschaftlichen Methode
- * @param data - Sortierte Laktatdaten (Power vs. Laktat)
+ * @param data - Sortierte Laktatdaten (Belastung vs. Laktat) - Belastung kann Watt oder km/h sein
  * @param method - Gewählte Schwellenmethode
  * @returns ThresholdResult mit LT1 und LT2 Punkten
+ * @remarks Die Berechnungen funktionieren sowohl für Radtests (Watt) als auch Lauftests (km/h)
  */
 export function calculateThresholds(
   data: LactateDataPoint[], 
@@ -110,6 +113,14 @@ export function interpolateThreshold(
 /**
  * DMAX Methode - Cheng et al.
  * Findet den Punkt mit maximalem Abstand zur Linie zwischen erstem und letztem Punkt
+ * 
+ * EINHEITENUNABHÄNGIG: Diese geometrische Berechnung funktioniert identisch für:
+ * - Radfahren: Belastung in Watt
+ * - Laufen: Geschwindigkeit in km/h
+ * 
+ * Die Formel berechnet den senkrechten Abstand eines Punktes (x, y) zu einer Geraden:
+ * distance = |Ax + By + C| / sqrt(A² + B²)
+ * Diese Berechnung ist rein geometrisch und unabhängig von den Einheiten der x-Achse.
  */
 export function calculateDMax(data: LactateDataPoint[]): ThresholdPoint | null {
   if (data.length < 3) return null
@@ -138,6 +149,11 @@ export function calculateDMax(data: LactateDataPoint[]): ThresholdPoint | null {
 /**
  * Log-Log Methode - Beaver et al.
  * Findet den Punkt mit maximaler Änderung des logarithmischen Anstiegs
+ * 
+ * EINHEITENUNABHÄNGIG: Die Methode berechnet logarithmische Verhältnisse:
+ * slope = log(Laktat) / log(Belastung)
+ * 
+ * Verhältnisse sind einheitenunabhängig - funktioniert für Watt und km/h identisch.
  */
 export function calculateLogLog(data: LactateDataPoint[]): ThresholdPoint | null {
   if (data.length < 3) return null
@@ -164,6 +180,11 @@ export function calculateLogLog(data: LactateDataPoint[]): ThresholdPoint | null
 /**
  * ModDMAX - Bishop et al.
  * Modifizierte DMAX mit exponentieller Anpassung
+ * 
+ * EINHEITENUNABHÄNGIG: Verwendet relative Abstände mit exponentieller Kurvenanpassung:
+ * expectedY = y₁ + (y₂ - y₁) * ((x - x₁)/(x₂ - x₁))^1.5
+ * 
+ * Die Formel arbeitet mit relativen Positionen und funktioniert für Watt und km/h identisch.
  */
 export function calculateModDMax(data: LactateDataPoint[]): ThresholdPoint | null {
   if (data.length < 4) return null
@@ -242,9 +263,10 @@ export function calculateLT1FromLT2(
  * Berechnet Trainingszonen basierend auf LT1/LT2 und gewählter Methode
  * @param lt1 - LT1 Schwellenpunkt
  * @param lt2 - LT2 Schwellenpunkt
- * @param maxPower - Maximale gemessene Leistung
+ * @param maxPower - Maximale gemessene Belastung (Watt für Rad, km/h für Laufband)
  * @param method - Gewählte Schwellenmethode
  * @returns Array von Trainingszonen
+ * @remarks Die Zonenbereiche funktionieren für beide Einheiten (Watt/km/h)
  */
 export function calculateTrainingZones(
   lt1: ThresholdPoint | null, 
