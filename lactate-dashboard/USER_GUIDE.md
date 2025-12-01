@@ -1,238 +1,306 @@
-# Lactate Dashboard - Setup Guide
+# Lactate Dashboard - User Guide
 
-## Prerequisites
-- **Node.js** 18+ 
-- **PostgreSQL** 12+
-- **Docker** (optional, for PostgreSQL)
+## Getting Started
 
-## Quick Start
-
-### 1. Install Dependencies
+### 1. Start the Application
 ```bash
-git clone <repository>
-cd lactate-dashboard
-npm install
-```
-
-### 2. Database Setup
-
-#### Option A: Docker (Recommended)
-```bash
-# Start PostgreSQL with TimescaleDB
-docker run -d --name timescaledb -p 5432:5432 \
-  -e POSTGRES_DB=laktat \
-  -e POSTGRES_USER=arieger \
-  -e POSTGRES_PASSWORD=LisgumuM20251! \
-  timescale/timescaledb:latest-pg16
-
-# Initialize database schema
-psql -h localhost -U arieger -d laktat -f db/schema.sql
-```
-
-#### Option B: Local PostgreSQL
-```bash
-# Create database and user
-createdb laktat
-psql laktat -f db/schema.sql
-```
-
-### 3. Configuration
-Create `config/app.config.json`:
-```json
-{
-  "database": {
-    "host": "localhost",
-    "port": 5432,
-    "database": "laktat", 
-    "user": "arieger",
-    "password": "LisgumuM20251!",
-    "ssl": false,
-    "pool": {
-      "min": 2,
-      "max": 10
-    }
-  },
-  "application": {
-    "name": "Lactate Dashboard",
-    "version": "0.6",
-    "environment": "development"
-  }
-}
-```
-
-### 4. Environment Variables
-Create `.env.local`:
-```bash
-NODE_ENV=development
-PORT=3000
-```
-
-### 5. Start Development Server
-```bash
-npm run dev
+npm run build  # Build production version
+npm start      # Start production server
 ```
 
 Visit: `http://localhost:3000`
 
-## Usage Guide
+## Database Setup
 
-### Customer Management
-1. **Navigate to "Lactate Input" tab**
-2. **Search or create customers**:
-   - Search by name, ID, or email
-   - Click "Create New Customer" for new entries
-   - Required: Name and Customer ID
-   - Optional: Email, phone, date of birth, notes
+### Creating Your Database (First Time Setup)
 
-### Measurement Entry
-1. **Select a customer first**
-2. **Add measurements**:
-   - Power (W) and Lactate (mmol/L) are required
-   - Heart Rate and VO₂ are optional
-   - Add notes for context
-3. **Send data**: Individual or batch submission
+The application automatically manages your database - no manual SQL scripts needed!
 
-### Scientific Analysis  
-1. **Switch to "Performance Curve" tab**
-2. **View real-time analysis**:
-   - 8 threshold calculation methods available
-   - Interactive charts with training zones
-   - Scientific methodology explanations
+1. **Open the Settings Tab** (⚙️ icon in top navigation)
+2. **Navigate to "Database" section**
+3. **Configure connection**:
+   - Host: `localhost` (or your PostgreSQL server)
+   - Port: `5432` (default PostgreSQL port)
+   - Database Name: `laktat` (recommended)
+   - Username: Your PostgreSQL username (e.g., `postgres`)
+   - Password: Your PostgreSQL password
+4. **Click "Test Connection"** to verify settings
+5. **Click "Create Database"** 
+
+The application will automatically:
+- Create the database if it doesn't exist
+- Create all required tables (`patient_profiles`, `test_infos`, `stages`, etc.)
+- Set up indexes for optimal performance
+- Configure proper foreign key relationships
+
+✅ **Success!** Your database is ready to use.
+
+### Managing Databases
+
+**To Delete a Database:**
+1. Open Settings → Database
+2. Click "Refresh List" to see all databases
+3. Select the database you want to delete
+4. Type the database name to confirm
+5. Click "Confirm Delete"
+
+⚠️ **Warning:** This permanently deletes all data. Cannot be undone!
+
+## Working with Customers
+
+### Creating a New Customer
+
+1. **Navigate to the "Lactate Input" tab** (first tab)
+2. **Click the search field** under "Customer / Patient"
+3. **Enter customer name** to search existing customers, OR
+4. **Scroll down** to "New Customer Information"
+5. **Fill in customer details**:
+   - **First Name*** (required)
+   - **Last Name*** (required)
+   - **Profile ID** (auto-generated if empty)
+   - **Birth Date** (optional)
+   - **Height (cm)** (optional)
+   - **Weight (kg)** (optional)
+   - **Email** (optional)
+   - **Phone** (optional)
+6. **Add Test Protocol** (optional but recommended):
+   - Date: Test date
+   - Time: Test time
+   - Device: `bike`, `treadmill`, or `other`
+   - Unit: `Watt (W)` or `km/h`
+   - Start Load: Initial intensity (e.g., 50)
+   - Increment: Load increase per stage (e.g., 50)
+   - Duration: Minutes per stage (e.g., 3)
+7. **Click "Create Customer"**
+
+✅ **Customer created!** You can now add lactate measurements.
+
+### Searching Existing Customers
+
+1. Type customer name in the search field
+2. Click on a customer from the dropdown to select them
+3. The customer's information appears in the blue info box
+
+## Adding Lactate Data
+
+### Manual Data Entry
+
+Once a customer is selected:
+
+1. **Enter Stage Information**:
+   - **Load** (required): Power in watts or speed in km/h
+   - **Lactate** (required): Lactate value in mmol/L
+   - **Duration**: Stage duration in minutes
+   - **Heart Rate**: Optional heart rate in bpm
+   - **Blood Pressure**: Optional systolic/diastolic values
+   - **Notes**: Any additional observations
+
+2. **Add More Stages**:
+   - Click "+ Add Stage" to add the next measurement stage
+   - Repeat for each stage of your lactate test
+   - Typical test: 5-8 stages with increasing load
+
+3. **Review Entered Stages**:
+   - All stages appear in the list below the input form
+   - You can remove stages using the "Remove" button
+
+4. **Save the Test**:
+   - Click "💾 Save Test Data" to store all stages
+   - Data is immediately available for analysis
+
+### Understanding Test Protocols
+
+A typical lactate test follows this pattern:
+
+| Stage | Load (W) | Duration (min) | Lactate (mmol/L) |
+|-------|----------|----------------|------------------|
+| 1     | 50       | 3              | 1.2              |
+| 2     | 100      | 3              | 1.5              |
+| 3     | 150      | 3              | 2.1              |
+| 4     | 200      | 3              | 3.2              |
+| 5     | 250      | 3              | 4.8              |
+| 6     | 300      | 3              | 7.2              |
+
+## Viewing Performance Analysis
+
+### Accessing the Dashboard
+
+1. **Navigate to "Performance Curve" tab** (third tab)
+2. **Select a customer** from the dropdown
+3. **View automatic analysis**:
+   - **Performance Curve**: Load vs. Lactate graph
+   - **Threshold Markers**: LT1 and LT2 automatically calculated
+   - **Training Zones**: Color-coded intensity zones
+   - **Multiple Methods**: Switch between 8 calculation methods
+
+### Understanding the Charts
+
+**Main Performance Curve:**
+- X-axis: Load (Watts or km/h)
+- Y-axis: Lactate concentration (mmol/L)
+- Blue line: Your lactate curve
+- Red markers: Calculated thresholds (LT1 and LT2)
+- Colored zones: Training intensity zones
+
+**Threshold Methods Available:**
+- **DMAX**: Maximum distance method (recommended)
+- **Mader**: Fixed 4.0 mmol/L threshold
+- **Modified DMAX**: Enhanced DMAX calculation
+- **LT2/IANS**: Individual anaerobic threshold
+- **Coggan**: Power-based training zones
+- **Seiler**: 3-zone polarized training model
+- **FES**: Fatigue equivalent state
+- **INSCYD**: Lactate steady-state analysis
+
+### Training Zones
+
+Each method calculates specific training zones:
+
+- **Zone 1 (Recovery)**: Below LT1 - Active recovery
+- **Zone 2 (Aerobic)**: LT1 to LT2 - Base training
+- **Zone 3 (Threshold)**: Around LT2 - Lactate threshold training
+- **Zone 4 (VO2max)**: Above LT2 - High-intensity intervals
+- **Zone 5 (Anaerobic)**: Maximum effort - Sprint training
+
+### Comparing Tests
+
+1. Select the same customer
+2. Different test dates show up as separate entries
+3. Compare threshold values over time
+4. Track training progress and adaptations
+
+## Advanced Features
 
 ### Device Integration
-External devices can automatically send data:
+
+External lactate analyzers can send data automatically via webhook:
+
 ```bash
-curl -X POST http://localhost:3000/api/device-interface \
+curl -X POST http://localhost:3000/api/lactate-webhook \
   -H "Content-Type: application/json" \
   -d '{
-    "deviceId": "lactate-analyzer-01",
-    "customerId": "CUSTOMER001", 
-    "measurementData": [
-      {"lactate": 2.5, "power": 200, "heartRate": 150}
-    ]
+    "profile_id": "CUSTOMER001",
+    "load": 200,
+    "lactate": 3.5,
+    "unit": "watt",
+    "device": "bike"
   }'
 ```
 
-## Configuration Management
+### Data Export and Analysis
 
-### Dynamic Database Updates (No Restart Required!)
-1. **Open Settings tab in application**
-2. **Update database configuration**
-3. **Click "Save Configuration"**
-4. **Connection pool recreates automatically**
+All data is stored in PostgreSQL and can be:
+- Exported via SQL queries
+- Analyzed with external tools
+- Backed up using PostgreSQL tools
+- Integrated with other systems via REST API
 
-### Manual Configuration Update
-Edit `config/app.config.json` and save. The application detects changes and updates connections automatically.
+### Settings Management
 
-## Production Deployment
+**Application Settings:**
+- Database connection (live updates, no restart needed)
+- Connection pool configuration
+- SSL/TLS settings
+- General preferences (coming soon)
 
-### 1. Build Application
-```bash
-npm run build
-npm run start
-```
-
-### 2. Production Database
-```bash
-# Production database setup
-psql -h production-host -U username -d laktat -f db/schema.sql
-```
-
-### 3. Production Configuration
-Update `config/app.config.json` with production database credentials:
-```json
-{
-  "database": {
-    "host": "production-db-host",
-    "port": 5432,
-    "database": "laktat_production",
-    "user": "production_user", 
-    "password": "secure_password",
-    "ssl": true
-  }
-}
-```
+**Configuration Updates:**
+- Changes take effect immediately
+- No need to restart the application
+- Automatic connection pool recreation
+- Config saved to `config/app.config.json`
 
 ## Troubleshooting
 
-### Database Connection Issues
-1. **Check PostgreSQL is running**: `docker ps` or `pg_isready`
-2. **Verify credentials in config/app.config.json**
-3. **Check console logs for connection errors**
+### "Database table not found" Error
 
-### Application Not Starting
-1. **Install dependencies**: `npm install`
-2. **Check Node.js version**: `node --version` (requires 18+)
-3. **Verify config file exists**: `config/app.config.json`
+**Solution:** Create the database through Settings tab:
+1. Go to Settings → Database
+2. Enter your connection details
+3. Click "Create Database"
+4. All tables will be created automatically
 
-### Data Not Appearing
-1. **Check customer is selected** in Lactate Input tab
-2. **Verify database connection** in Settings tab  
-3. **Check console for API errors**
+### "Connection refused" Error
 
-### Performance Issues
-1. **Database indexes**: Ensure `db/schema.sql` indexes are created
-2. **Connection pool**: Adjust min/max in config if needed
-3. **Browser performance**: Use Chrome/Firefox for best chart rendering
-
-## Features Overview
-
-### Scientific Methods
-- **DMAX**: Maximum deviation from baseline-peak line
-- **LT2/IANS**: Individual anaerobic threshold  
-- **Mader**: Fixed 4.0 mmol/L threshold
-- **Modified Dmax**: Refined DMAX calculation
-- **FES**: Fatigue equivalent state
-- **Coggan**: Power-based threshold zones
-- **Seiler**: 3-zone polarized model
-- **INSCYD**: Lactate steady state analysis
-
-### Data Export
-- Measurements automatically saved to PostgreSQL
-- Real-time synchronization between tabs
-- Session-based data organization
-- Customer relationship tracking
-
-### Device Compatibility  
-- REST API for external lactate analyzers
-- Flexible JSON format support
-- Automatic customer linking
-- Real-time data processing
-
-## Support
-
-### Console Logging
-Enable verbose logging by editing `lib/configManager.ts`:
-```typescript
-const DEBUG = true; // Set to true for detailed logs
-```
-
-### Database Inspection
+**Solution:** Check PostgreSQL is running:
 ```bash
-# Connect to database
-psql -h localhost -U arieger -d laktat
+# Check if PostgreSQL is running
+pg_isready
 
-# Check tables
-\dt
+# Start PostgreSQL (if using Docker)
+docker start timescaledb
 
-# View customers
-SELECT * FROM customers LIMIT 5;
-
-# View recent measurements  
-SELECT * FROM lactate_data ORDER BY created_at DESC LIMIT 10;
+# Or start local PostgreSQL
+brew services start postgresql@16  # macOS
+sudo systemctl start postgresql    # Linux
 ```
 
-### API Testing
-Test endpoints manually:
+### Customer Creation Fails
+
+**Common causes:**
+1. **Database not initialized**: Use Settings → Create Database
+2. **Duplicate Profile ID**: Use a different ID or leave empty for auto-generation
+3. **Missing required fields**: First Name and Last Name are required
+
+### No Data Showing in Performance Curve
+
+**Checklist:**
+1. ✓ Customer has been created
+2. ✓ At least 3 stages with lactate data have been saved
+3. ✓ Customer is selected in Performance Curve tab
+4. ✓ Test data was saved (click "💾 Save Test Data")
+
+### Error Messages
+
+The application provides detailed error messages:
+- **What went wrong**: Clear description of the problem
+- **Technical details**: Expandable section with full error information
+- **How to fix**: Actionable guidance on resolving the issue
+
+## Best Practices
+
+### Data Entry
+1. **Complete customer profile** before adding test data
+2. **Add test protocol** to document test conditions
+3. **Enter stages in order** from lowest to highest load
+4. **Include all measurements** even if lactate seems high
+5. **Add notes** for unusual circumstances or observations
+
+### Testing Protocol
+1. **Standardized conditions**: Same time of day, similar nutrition
+2. **Proper warmup**: 10-15 minutes before starting test
+3. **Consistent increments**: Use same load increases (e.g., 50W steps)
+4. **Stage duration**: 3 minutes minimum per stage
+5. **Blood samples**: End of each stage, from earlobe or fingertip
+
+### Analysis
+1. **Compare methods**: Check multiple threshold calculation methods
+2. **Track trends**: Regular testing every 4-8 weeks
+3. **Context matters**: Consider training phase, fatigue, nutrition
+4. **Zone assignment**: Use calculated zones as guidelines, adjust based on feel
+5. **Professional guidance**: Consult with coach or sports scientist for interpretation
+
+## Support and Documentation
+
+### Additional Resources
+- `ARCHITECTURE.md` - Technical architecture and system design
+- `SETUP.md` - Detailed setup instructions for developers
+- `THRESHOLD_METHODS.md` - Scientific explanation of calculation methods
+
+### Database Schema
+All tables and relationships are documented in `db/schema.sql`
+
+### API Endpoints
+Test API manually for integration:
 ```bash
-# Check database status
-curl http://localhost:3000/api/db-status
+# Check application status
+curl http://localhost:3000/api/status
 
-# Search customers
-curl "http://localhost:3000/api/customers?search=test"
+# List all customers
+curl http://localhost:3000/api/customers
 
-# Create customer
-curl -X POST http://localhost:3000/api/customers \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Test User", "customerId": "TEST001"}'
+# Get customer details
+curl http://localhost:3000/api/customers/CUSTOMER001
 ```
+
+### Console Logs
+Check browser console (F12) for detailed debugging information during operation.
