@@ -280,10 +280,20 @@ export default function LactateInput() {
         await fetchTestInfos(finalProfileId)
       } else {
         const error = await response.json()
-        setNewCustomerError(error.error || 'Failed to create customer')
+        const errorMsg = error.error || 'Failed to create customer'
+        const technicalDetails = error.technicalDetails ? `\n\nTechnical details: ${error.technicalDetails}` : ''
+        setNewCustomerError(errorMsg + technicalDetails)
       }
     } catch (error) {
-      setNewCustomerError('Network error. Please try again.')
+      if (error instanceof Error) {
+        if (error.message.includes('fetch')) {
+          setNewCustomerError('Cannot connect to server. Please check if the application is running.')
+        } else {
+          setNewCustomerError(`Network error: ${error.message}`)
+        }
+      } else {
+        setNewCustomerError('Network error. Please try again.')
+      }
     }
   }
 

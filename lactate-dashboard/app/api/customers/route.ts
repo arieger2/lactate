@@ -197,33 +197,49 @@ export async function POST(request: NextRequest) {
     
     // Provide specific error messages based on the error type
     let errorMessage = 'Failed to create customer'
+    let technicalDetails = ''
     
     if (error instanceof Error) {
+      technicalDetails = error.message
+      
       // Database constraint violations
       if (error.message.includes('duplicate key value')) {
-        errorMessage = 'Customer ID already exists in database'
+        if (error.message.includes('patient_profiles_pkey')) {
+          errorMessage = `Profile ID "${finalProfileId}" already exists. Please use a different ID.`
+        } else {
+          errorMessage = 'A customer with this information already exists'
+        }
+      } else if (error.message.includes('violates foreign key constraint')) {
+        errorMessage = 'Invalid reference to related data'
       } else if (error.message.includes('violates check constraint')) {
-        errorMessage = 'Invalid data format provided'
+        errorMessage = 'Invalid data format provided. Please check your input.'
+      } else if (error.message.includes('violates not-null constraint')) {
+        const match = error.message.match(/column "([^"]+)"/)
+        const columnName = match ? match[1] : 'a required field'
+        errorMessage = `Missing required field: ${columnName}`
+      } else if (error.message.includes('relation') && error.message.includes('does not exist')) {
+        errorMessage = 'Database table not found. Please run database initialization first.'
+        technicalDetails += ' - Run: PGPASSWORD=\'LisgumuM20251!\' psql -h localhost -U postgres -d laktat -f db/schema.sql'
+      } else if (error.message.includes('database') && error.message.includes('does not exist')) {
+        errorMessage = 'Database "laktat" does not exist. Please create it first.'
+        technicalDetails += ' - Run: PGPASSWORD=\'LisgumuM20251!\' psql -h localhost -U postgres -c "CREATE DATABASE laktat;"'
       } else if (error.message.includes('connection')) {
-        errorMessage = 'Database connection error - please try again'
+        errorMessage = 'Cannot connect to database. Please check if PostgreSQL is running.'
       } else if (error.message.includes('timeout')) {
-        errorMessage = 'Database timeout - please try again'
-      } else if (error.message.includes('syntax error')) {
-        errorMessage = 'Database query error - contact support'
+        errorMessage = 'Database operation timed out - please try again'
+      } else if (error.message.includes('ECONNREFUSED')) {
+        errorMessage = 'Database connection refused. Please check your database configuration.'
       } else {
-        // Include the actual error message for debugging (in development)
-        const isDevelopment = process.env.NODE_ENV === 'development'
-        errorMessage = isDevelopment ? 
-          `Database error: ${error.message}` : 
-          'Database error occurred - please contact support'
+        // Generic error with technical details
+        errorMessage = 'Database error occurred'
       }
     }
     
     return NextResponse.json({
       success: false,
       error: errorMessage,
-      details: error instanceof Error ? error.message : String(error), // Always show details for debugging
-      isDevelopment: process.env.NODE_ENV === 'development'
+      technicalDetails: technicalDetails,
+      timestamp: new Date().toISOString()
     }, { status: 500 })
   } finally {
     if (client) {

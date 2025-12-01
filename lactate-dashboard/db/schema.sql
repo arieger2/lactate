@@ -93,16 +93,16 @@ CREATE TABLE adjusted_thresholds (
     id SERIAL PRIMARY KEY,
     test_id VARCHAR(255) NOT NULL,
     profile_id VARCHAR(255) NOT NULL,
-    lt1_load INTEGER NOT NULL,
+    lt1_load NUMERIC NOT NULL,
     lt1_lactate DECIMAL(4,2) NOT NULL,
-    lt2_load INTEGER NOT NULL,
+    lt2_load NUMERIC NOT NULL,
     lt2_lactate DECIMAL(4,2) NOT NULL,
     adjusted_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
     FOREIGN KEY (profile_id) REFERENCES patient_profiles(profile_id) ON DELETE CASCADE,
-    UNIQUE(test_id, profile_id)
+    UNIQUE(test_id)
 );
 
 -- Create indexes for better performance
