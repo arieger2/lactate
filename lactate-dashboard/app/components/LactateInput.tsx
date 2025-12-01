@@ -826,7 +826,18 @@ export default function LactateInput() {
                       <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Device</label>
                       <select
                         value={currentTestInfo.device}
-                        onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, device: e.target.value }))}
+                        onChange={(e) => {
+                          const device = e.target.value
+                          setCurrentTestInfo(prev => {
+                            // Auto-adjust defaults based on device
+                            if (device === 'treadmill') {
+                              return { ...prev, device, unit: 'kmh', startLoad: '8', increment: '1' }
+                            } else if (device === 'bike') {
+                              return { ...prev, device, unit: 'watt', startLoad: '50', increment: '50' }
+                            }
+                            return { ...prev, device }
+                          })
+                        }}
                         className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
                       >
                         <option value="bike">Bike</option>
@@ -1175,7 +1186,18 @@ export default function LactateInput() {
                         <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Device</label>
                         <select
                           value={currentTestInfo.device}
-                          onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, device: e.target.value }))}
+                          onChange={(e) => {
+                            const device = e.target.value
+                            setCurrentTestInfo(prev => {
+                              // Auto-adjust defaults based on device
+                              if (device === 'treadmill') {
+                                return { ...prev, device, unit: 'kmh', startLoad: '8', increment: '1' }
+                              } else if (device === 'bike') {
+                                return { ...prev, device, unit: 'watt', startLoad: '50', increment: '50' }
+                              }
+                              return { ...prev, device }
+                            })
+                          }}
                           className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
                         >
                           <option value="bike">Bike</option>
