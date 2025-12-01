@@ -17,6 +17,7 @@ Ein wissenschaftliches Dashboard zur Laktatdiagnostik und Trainingszonenberechnu
 - **[USER_GUIDE.md](./USER_GUIDE.md)** - Complete setup and usage instructions
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Technical architecture and system design  
 - **[Wissenschaftliche Schwellenmethoden](./docs/THRESHOLD_METHODS.md)** - Scientific threshold methods with physiological explanations
+- **[API & Webhooks](./docs/API_WEBHOOKS.md)** - API endpoints and webhook integration (KI-Analyse)
 
 ## Tech Stack
 
