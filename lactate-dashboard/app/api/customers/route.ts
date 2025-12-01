@@ -230,8 +230,8 @@ export async function POST(request: NextRequest) {
       } else if (error.message.includes('ECONNREFUSED')) {
         errorMessage = 'Database connection refused. Please check your database configuration.'
       } else {
-        // Generic error with technical details
-        errorMessage = 'Database error occurred'
+        // Show actual error message if no specific case matched
+        errorMessage = `Database error: ${error.message}`
       }
     }
     
