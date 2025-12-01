@@ -934,9 +934,10 @@ export default function LactateInput() {
                     Cancel
                   </button>
                   {newCustomerError && (
-                    <span className="text-red-600 dark:text-red-400 text-sm font-medium ml-2 flex items-center gap-1">
-                      ⚠️ {newCustomerError}
-                    </span>
+                    <div className="text-red-600 dark:text-red-400 text-sm ml-2 mt-2 p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800">
+                      <div className="font-medium mb-1">⚠️ Error</div>
+                      <div className="whitespace-pre-line">{newCustomerError}</div>
+                    </div>
                   )}
                 </div>
               </div>
