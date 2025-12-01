@@ -18,6 +18,8 @@ interface LactateWebhookPayload {
   rrDiastolic?: number // Blood pressure diastolic
   isFinalApproximation?: boolean
   notes?: string
+  unit?: string       // Unit type (watt, kmh, other)
+  device?: string     // Device type (bike, treadmill, other)
   // Device metadata (optional - legacy support)
   sampleId?: string
   glucose?: number
