@@ -119,7 +119,7 @@ export default function LactateInput() {
   // Search customers
   useEffect(() => {
     const searchCustomers = async () => {
-      if (customerSearch.length < 2) {
+      if (customerSearch.length < 1) {
         setCustomerResults([])
         return
       }
