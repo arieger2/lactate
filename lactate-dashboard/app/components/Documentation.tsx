@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useCustomer } from '@/lib/CustomerContext'
 
-type DocSection = 'overview' | 'threshold-methods' | 'training-zones' | 'api-device' | 'api-webhook' | 'api-sessions' | 'api-customers' | 'errors'
+type DocSection = 'overview' | 'quick-start' | 'threshold-methods' | 'training-zones' | 'api-device' | 'api-webhook' | 'api-sessions' | 'api-customers' | 'errors'
 
 export default function Documentation() {
   const { selectedCustomer } = useCustomer()
@@ -11,6 +11,7 @@ export default function Documentation() {
 
   const sections: { id: DocSection; title: string; icon: string }[] = [
     { id: 'overview', title: 'Übersicht', icon: '🏠' },
+    { id: 'quick-start', title: 'Schnellstart', icon: '🚀' },
     { id: 'threshold-methods', title: 'Schwellenmethoden', icon: '📊' },
     { id: 'training-zones', title: 'Trainingszonen', icon: '🎯' },
     { id: 'api-device', title: 'Device API', icon: '🔗' },
@@ -49,7 +50,8 @@ export default function Documentation() {
 
       {/* Main Content */}
       <div className="flex-1 space-y-6">
-        {activeSection === 'overview' && <OverviewSection />}
+        {activeSection === 'overview' && <OverviewSection setActiveSection={setActiveSection} />}
+        {activeSection === 'quick-start' && <QuickStartSection />}
         {activeSection === 'threshold-methods' && <ThresholdMethodsSection />}
         {activeSection === 'training-zones' && <TrainingZonesSection />}
         {activeSection === 'api-device' && <DeviceApiSection selectedCustomer={selectedCustomer} />}
@@ -65,7 +67,7 @@ export default function Documentation() {
 // ============================================================================
 // OVERVIEW SECTION
 // ============================================================================
-function OverviewSection() {
+function OverviewSection({ setActiveSection }: { setActiveSection: (section: DocSection) => void }) {
   return (
     <div className="space-y-6">
       <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
@@ -79,53 +81,279 @@ function OverviewSection() {
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FeatureCard
-            icon="📊"
-            title="8 Schwellenmethoden"
-            description="DMAX, Dickhuth, Mader 4mmol, Log-Log, +1.0 mmol/L, ModDMAX, Seiler, FatMax/LT"
-          />
-          <FeatureCard
-            icon="🎯"
-            title="5-Zonen Trainingsmodell"
-            description="Automatische Berechnung nahtloser Trainingszonen basierend auf LT1 und LT2"
-          />
-          <FeatureCard
-            icon="🖱️"
-            title="Interaktive Anpassung"
-            description="Zonengrenzen per Drag & Drop verschieben mit automatischer Speicherung"
-          />
-          <FeatureCard
-            icon="🔗"
-            title="Geräteintegration"
-            description="REST API für automatische Datenübertragung von Laktatmessgeräten"
-          />
+          <button
+            onClick={() => setActiveSection('quick-start')}
+            className="text-left hover:shadow-lg transition-shadow"
+          >
+            <InteractiveFeatureCard
+              icon="🚀"
+              title="Schritt-für-Schritt Anleitung"
+              description="Komplette Anleitung: Datenbank anlegen, Kunden erstellen, Daten eingeben und Dashboard nutzen"
+            />
+          </button>
+          <button
+            onClick={() => setActiveSection('threshold-methods')}
+            className="text-left hover:shadow-lg transition-shadow"
+          >
+            <InteractiveFeatureCard
+              icon="📊"
+              title="8 Schwellenmethoden"
+              description="DMAX, Dickhuth, Mader 4mmol, Log-Log, +1.0 mmol/L, ModDMAX, Seiler, FatMax/LT"
+            />
+          </button>
+          <button
+            onClick={() => setActiveSection('training-zones')}
+            className="text-left hover:shadow-lg transition-shadow"
+          >
+            <InteractiveFeatureCard
+              icon="🎯"
+              title="5-Zonen Trainingsmodell"
+              description="Automatische Berechnung nahtloser Trainingszonen basierend auf LT1 und LT2"
+            />
+          </button>
+          <button
+            onClick={() => setActiveSection('api-device')}
+            className="text-left hover:shadow-lg transition-shadow"
+          >
+            <InteractiveFeatureCard
+              icon="🔗"
+              title="Geräteintegration"
+              description="REST API für automatische Datenübertragung von Laktatmessgeräten"
+            />
+          </button>
         </div>
-      </div>
-
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
-        <h3 className="text-lg font-semibold mb-3 text-blue-800 dark:text-blue-200">
-          🚀 Schnellstart
-        </h3>
-        <ol className="list-decimal list-inside space-y-2 text-sm text-blue-700 dark:text-blue-300">
-          <li>Wählen Sie einen Kunden im &quot;Lactate Input&quot; Tab aus</li>
-          <li>Geben Sie Laktatmesswerte manuell ein oder importieren Sie via API</li>
-          <li>Wechseln Sie zum &quot;Performance Kurve&quot; Tab</li>
-          <li>Wählen Sie eine Schwellenmethode aus</li>
-          <li>Passen Sie Zonengrenzen bei Bedarf manuell an (Drag &amp; Drop auf blauen Linien)</li>
-        </ol>
       </div>
     </div>
   )
 }
 
-function FeatureCard({ icon, title, description }: { icon: string; title: string; description: string }) {
+function InteractiveFeatureCard({ icon, title, description }: { icon: string; title: string; description: string }) {
   return (
-    <div className="bg-zinc-50 dark:bg-zinc-800 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700">
+    <div className="bg-zinc-50 dark:bg-zinc-800 p-4 rounded-lg border-2 border-zinc-200 dark:border-zinc-700 hover:border-blue-500 dark:hover:border-blue-500 cursor-pointer transition-colors">
       <div className="flex items-start gap-3">
         <span className="text-2xl">{icon}</span>
         <div>
           <h4 className="font-medium text-zinc-900 dark:text-zinc-100">{title}</h4>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">{description}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// QUICK START SECTION
+// ============================================================================
+function QuickStartSection() {
+  return (
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
+        <h2 className="text-2xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
+          🚀 Schritt-für-Schritt Anleitung
+        </h2>
+        <p className="text-zinc-600 dark:text-zinc-400 mb-6">
+          Komplette Anleitung zum Einrichten und Verwenden des Lactate Dashboards - 
+          von der Datenbankerstellung bis zur Performance-Analyse.
+        </p>
+
+        {/* Step 1: Database Setup */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-500 text-white font-bold text-lg">1</span>
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Datenbank einrichten</h3>
+          </div>
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-5 ml-13">
+            <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-3">Automatische Datenbankerstellung (empfohlen)</h4>
+            <ol className="list-decimal list-inside space-y-2 text-sm text-blue-700 dark:text-blue-300 mb-4">
+              <li>Öffnen Sie die <strong>Settings</strong> (⚙️ oben rechts)</li>
+              <li>Wählen Sie den Tab <strong>&quot;Database&quot;</strong></li>
+              <li>Geben Sie Ihre PostgreSQL-Verbindungsdaten ein:
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Host: z.B. <code className="bg-blue-100 dark:bg-blue-900 px-1">localhost</code></li>
+                  <li>Port: Standard <code className="bg-blue-100 dark:bg-blue-900 px-1">5432</code></li>
+                  <li>Database Name: z.B. <code className="bg-blue-100 dark:bg-blue-900 px-1">laktat</code></li>
+                  <li>Username: Ihr PostgreSQL-User (z.B. <code className="bg-blue-100 dark:bg-blue-900 px-1">postgres</code>)</li>
+                  <li>Password: Ihr PostgreSQL-Passwort</li>
+                </ul>
+              </li>
+              <li>Klicken Sie auf <strong>&quot;Test Connection&quot;</strong> zur Überprüfung</li>
+              <li>Klicken Sie auf <strong>&quot;Create Database&quot;</strong></li>
+              <li>✅ Alle Tabellen werden automatisch angelegt!</li>
+            </ol>
+            <div className="bg-blue-100 dark:bg-blue-900 p-3 rounded text-xs text-blue-900 dark:text-blue-100">
+              <strong>💡 Hinweis:</strong> Keine manuelle SQL-Ausführung nötig! Die Anwendung erstellt automatisch:
+              patient_profiles, test_infos, stages, threshold_results, training_zones, adjusted_thresholds
+            </div>
+          </div>
+        </div>
+
+        {/* Step 2: Create Customer */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-green-500 text-white font-bold text-lg">2</span>
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Kunden/Athleten anlegen</h3>
+          </div>
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-5 ml-13">
+            <ol className="list-decimal list-inside space-y-2 text-sm text-green-700 dark:text-green-300 mb-4">
+              <li>Gehen Sie zum Tab <strong>&quot;Lactate Input&quot;</strong></li>
+              <li>Scrollen Sie zu <strong>&quot;New Customer Information&quot;</strong></li>
+              <li>Füllen Sie die Pflichtfelder aus:
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li><strong>First Name</strong> (erforderlich)</li>
+                  <li><strong>Last Name</strong> (erforderlich)</li>
+                  <li>Profile ID (wird automatisch generiert, wenn leer)</li>
+                </ul>
+              </li>
+              <li>Optional: Ergänzen Sie weitere Daten:
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Birth Date, Height (cm), Weight (kg)</li>
+                  <li>Email, Phone</li>
+                  <li>Additional Notes</li>
+                </ul>
+              </li>
+              <li>Optional aber empfohlen: <strong>Test Protocol</strong> hinzufügen:
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Date & Time: Testdatum und -zeit</li>
+                  <li>Device: <code className="bg-green-100 dark:bg-green-900 px-1">bike</code> oder <code className="bg-green-100 dark:bg-green-900 px-1">treadmill</code></li>
+                  <li>Unit: <code className="bg-green-100 dark:bg-green-900 px-1">Watt (W)</code> oder <code className="bg-green-100 dark:bg-green-900 px-1">km/h</code></li>
+                  <li>Start Load: Anfangsbelastung (z.B. 50)</li>
+                  <li>Increment: Steigerung pro Stufe (z.B. 50)</li>
+                  <li>Duration: Stufendauer in Minuten (z.B. 3)</li>
+                </ul>
+              </li>
+              <li>Klicken Sie auf <strong>&quot;Create Customer&quot;</strong></li>
+            </ol>
+            <div className="bg-green-100 dark:bg-green-900 p-3 rounded text-xs text-green-900 dark:text-green-100">
+              <strong>✅ Erfolgreich:</strong> Kunde ist angelegt und kann ausgewählt werden
+            </div>
+          </div>
+        </div>
+
+        {/* Step 3: Enter Data */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500 text-white font-bold text-lg">3</span>
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Laktatdaten eingeben</h3>
+          </div>
+          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-5 ml-13">
+            <ol className="list-decimal list-inside space-y-2 text-sm text-purple-700 dark:text-purple-300 mb-4">
+              <li>Stellen Sie sicher, dass ein Kunde ausgewählt ist (blaue Info-Box oben)</li>
+              <li>Geben Sie für jede Stufe ein:
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li><strong>Load</strong> (erforderlich): Leistung in Watt oder km/h</li>
+                  <li><strong>Lactate</strong> (erforderlich): Laktatwert in mmol/L</li>
+                  <li><strong>Duration</strong>: Stufendauer in Minuten</li>
+                  <li>Optional: Heart Rate, Blood Pressure, Notes</li>
+                </ul>
+              </li>
+              <li>Klicken Sie <strong>&quot;+ Add Stage&quot;</strong> nach jeder Stufe</li>
+              <li>Wiederholen Sie für alle Teststufen (typisch: 5-8 Stufen)</li>
+              <li>Klicken Sie <strong>&quot;💾 Save Test Data&quot;</strong></li>
+            </ol>
+            
+            <div className="bg-purple-100 dark:bg-purple-900 p-3 rounded text-xs text-purple-900 dark:text-purple-100 mb-3">
+              <strong>📊 Beispiel-Test:</strong>
+              <table className="mt-2 text-xs w-full">
+                <thead>
+                  <tr className="border-b border-purple-200 dark:border-purple-700">
+                    <th className="text-left py-1">Stufe</th>
+                    <th className="text-left py-1">Load (W)</th>
+                    <th className="text-left py-1">Lactate</th>
+                    <th className="text-left py-1">HR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>1</td><td>50</td><td>1.2</td><td>120</td></tr>
+                  <tr><td>2</td><td>100</td><td>1.5</td><td>135</td></tr>
+                  <tr><td>3</td><td>150</td><td>2.1</td><td>150</td></tr>
+                  <tr><td>4</td><td>200</td><td>3.2</td><td>165</td></tr>
+                  <tr><td>5</td><td>250</td><td>4.8</td><td>178</td></tr>
+                  <tr><td>6</td><td>300</td><td>7.2</td><td>190</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Step 4: View Dashboard */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-orange-500 text-white font-bold text-lg">4</span>
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Performance-Dashboard ansehen</h3>
+          </div>
+          <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-5 ml-13">
+            <ol className="list-decimal list-inside space-y-2 text-sm text-orange-700 dark:text-orange-300 mb-4">
+              <li>Wechseln Sie zum Tab <strong>&quot;Performance Curve&quot;</strong></li>
+              <li>Wählen Sie Ihren Kunden aus dem Dropdown</li>
+              <li>Die Leistungskurve wird automatisch angezeigt mit:
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>📈 Laktat-Leistungskurve</li>
+                  <li>🎯 Berechnete Schwellen (LT1 und LT2)</li>
+                  <li>🌈 5 farbige Trainingszonen</li>
+                </ul>
+              </li>
+              <li>Wählen Sie eine Schwellenmethode aus dem Dropdown:
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li><strong>DMAX</strong> - Empfohlen für gut trainierte Athleten</li>
+                  <li><strong>Mader 4mmol</strong> - Klassische 4mmol/L Schwelle</li>
+                  <li><strong>Dickhuth</strong> - Individuelle Baseline-basierte Methode</li>
+                  <li>... und 5 weitere Methoden</li>
+                </ul>
+              </li>
+              <li>Optional: Passen Sie Zonengrenzen per <strong>Drag & Drop</strong> an:
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Fahren Sie über eine blaue Zonenlinie</li>
+                  <li>Cursor wird zum ↔ Symbol</li>
+                  <li>Ziehen Sie die Linie nach links/rechts</li>
+                  <li>Änderungen werden automatisch gespeichert</li>
+                </ul>
+              </li>
+            </ol>
+            
+            <div className="bg-orange-100 dark:bg-orange-900 p-3 rounded text-xs text-orange-900 dark:text-orange-100">
+              <strong>🎨 Trainingszonenfarben:</strong><br/>
+              <div className="mt-2 flex gap-2 flex-wrap">
+                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(144, 238, 144)'}}>Zone 1: Regeneration</span>
+                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(0, 200, 83)', color: 'white'}}>Zone 2: Aerobe Basis</span>
+                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(255, 235, 59)'}}>Zone 3: Aerobe Schwelle</span>
+                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(255, 152, 0)'}}>Zone 4: Laktatschwelle</span>
+                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(244, 67, 54)', color: 'white'}}>Zone 5: VO₂max</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Troubleshooting */}
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-5">
+          <h3 className="text-lg font-semibold mb-3 text-amber-800 dark:text-amber-200">
+            ⚠️ Häufige Probleme & Lösungen
+          </h3>
+          <div className="space-y-3 text-sm">
+            <div>
+              <strong className="text-amber-900 dark:text-amber-100">Fehler: &quot;Database table not found&quot;</strong><br/>
+              <span className="text-amber-700 dark:text-amber-300">
+                → Gehen Sie zu Settings → Database → Klicken Sie &quot;Create Database&quot;
+              </span>
+            </div>
+            <div>
+              <strong className="text-amber-900 dark:text-amber-100">Kunde erscheint nicht in Performance Curve</strong><br/>
+              <span className="text-amber-700 dark:text-amber-300">
+                → Stellen Sie sicher, dass Sie Test-Daten gespeichert haben (💾 Save Test Data)
+              </span>
+            </div>
+            <div>
+              <strong className="text-amber-900 dark:text-amber-100">Keine Kurve sichtbar</strong><br/>
+              <span className="text-amber-700 dark:text-amber-300">
+                → Mindestens 3 Stufen mit unterschiedlichen Laktatwerten erforderlich
+              </span>
+            </div>
+            <div>
+              <strong className="text-amber-900 dark:text-amber-100">Verbindungsfehler zu PostgreSQL</strong><br/>
+              <span className="text-amber-700 dark:text-amber-300">
+                → Prüfen Sie, ob PostgreSQL läuft: <code className="bg-amber-100 dark:bg-amber-900 px-1">pg_isready</code>
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
