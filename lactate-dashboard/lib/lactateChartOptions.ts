@@ -24,6 +24,17 @@ export function createLactateChartOptions(
   const tooltipLabel = unit === 'kmh' ? 'Geschwindigkeit' : 'Leistung'
   const tooltipUnit = unit === 'kmh' ? 'km/h' : 'W'
   
+  // Calculate xAxis min value: for km/h start 2 km/h before, for watt start 30W before first data point
+  let xAxisMin: number | undefined = undefined
+  if (webhookData.length > 0) {
+    const minPower = Math.min(...webhookData.map(d => d.power))
+    if (unit === 'kmh') {
+      xAxisMin = Math.max(0, minPower - 2)
+    } else if (unit === 'watt') {
+      xAxisMin = Math.max(0, minPower - 30)
+    }
+  }
+  
   return {
     animation: false,
     title: {
@@ -57,7 +68,8 @@ export function createLactateChartOptions(
       type: 'value',
       name: xAxisLabel,
       nameLocation: 'middle',
-      nameGap: 30
+      nameGap: 30,
+      ...(xAxisMin !== undefined && { min: xAxisMin })
     },
     yAxis: [
       {

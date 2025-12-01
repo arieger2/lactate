@@ -552,7 +552,7 @@ export default function LactatePerformanceCurve() {
               Kunde: {selectedCustomer?.name || 'Unbekannt'} | Methode: {getMethodDisplayName(selectedMethod)}
               {currentUnit && (
                 <span className="ml-2 px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-sm">
-                  {currentUnit === 'watt' ? '⚡ Power (W)' : currentUnit === 'kmh' ? '🏃 Speed (km/h)' : currentUnit}
+                  {currentUnit === 'watt' ? '🚴 Power (W)' : currentUnit === 'kmh' ? '🏃 Speed (km/h)' : currentUnit}
                 </span>
               )}
             </p>
@@ -926,13 +926,6 @@ export default function LactatePerformanceCurve() {
       {/* Chart */}
       {webhookData.length > 0 ? (
         <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
-          {isAdjusted && (
-            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border-l-4 border-red-500">
-              <p className="text-sm text-red-800 dark:text-red-200 font-medium">
-                ⚠️ Manuelle Anpassung: Die LT1/LT2 Schwellen wurden manuell verändert
-              </p>
-            </div>
-          )}
           <div 
             ref={chartRef} 
             style={{ 

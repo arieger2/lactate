@@ -333,28 +333,36 @@ export default function LactateInput() {
 
   // Create new test protocol for existing customer
   const createNewTestProtocol = async () => {
-    if (!selectedCustomer) return
+    if (!selectedCustomer) {
+      console.error('No customer selected')
+      return
+    }
     
     const testId = `TEST-${Date.now()}`
     
     try {
+      const payload = {
+        test_id: testId,
+        profile_id: selectedCustomer.customer_id,
+        test_date: currentTestInfo.testDate || new Date().toISOString().split('T')[0],
+        test_time: currentTestInfo.testTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
+        device: currentTestInfo.device || 'bike',
+        unit: currentTestInfo.unit || 'watt',
+        start_load: parseFloat(currentTestInfo.startLoad || '50'),
+        increment: parseFloat(currentTestInfo.increment || '50'),
+        stage_duration_min: parseInt(currentTestInfo.stageDuration_min || '3')
+      }
+      
+      console.log('Creating test protocol:', payload)
+      
       const response = await fetch('/api/test-infos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          test_id: testId,
-          profile_id: selectedCustomer.customer_id,
-          test_date: currentTestInfo.testDate || new Date().toISOString().split('T')[0],
-          test_time: currentTestInfo.testTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
-          device: currentTestInfo.device || 'bike',
-          unit: currentTestInfo.unit || 'watt',
-          start_load: parseFloat(currentTestInfo.startLoad || '50'),
-          increment: parseFloat(currentTestInfo.increment || '50'),
-          stage_duration_min: parseInt(currentTestInfo.stageDuration_min || '3')
-        })
+        body: JSON.stringify(payload)
       })
       
       if (response.ok) {
+        console.log('Test protocol created successfully')
         setShowNewTestProtocolForm(false)
         setCurrentTestInfo({
           testId: '',
@@ -379,10 +387,13 @@ export default function LactateInput() {
         }
         setTestInfos(prev => [...prev, newTest])
       } else {
-        const error = await response.json()
+        const errorData: any = await response.json()
+        console.error('Failed to create test protocol:', errorData)
+        alert(`Error creating protocol: ${errorData.error || 'Unknown error'}`)
       }
-    } catch (error) {
-      // Silent error handling
+    } catch (error: any) {
+      console.error('Error creating test protocol:', error)
+      alert(`Error creating protocol: ${error?.message || error}`)
     }
   }
 
@@ -840,6 +851,7 @@ export default function LactateInput() {
                       <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Start Load</label>
                       <input
                         type="number"
+                        step="0.1"
                         value={currentTestInfo.startLoad}
                         onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, startLoad: e.target.value }))}
                         className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
@@ -851,6 +863,7 @@ export default function LactateInput() {
                       <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Increment</label>
                       <input
                         type="number"
+                        step="0.1"
                         value={currentTestInfo.increment}
                         onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, increment: e.target.value }))}
                         className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
@@ -1187,6 +1200,7 @@ export default function LactateInput() {
                         <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Start Load</label>
                         <input
                           type="number"
+                          step="0.1"
                           value={currentTestInfo.startLoad}
                           onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, startLoad: e.target.value }))}
                           className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
@@ -1197,6 +1211,7 @@ export default function LactateInput() {
                         <label className="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Increment</label>
                         <input
                           type="number"
+                          step="0.1"
                           value={currentTestInfo.increment}
                           onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, increment: e.target.value }))}
                           className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
@@ -1286,7 +1301,7 @@ export default function LactateInput() {
                     </label>
                     <input
                       type="number"
-                      step={selectedTestInfo.unit === 'watt' ? '5' : '0.5'}
+                      step="0.1"
                       value={currentStage.load || ''}
                       onBlur={(e) => {
                         if (e.target.value && currentStage.lactate) {
