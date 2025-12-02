@@ -47,6 +47,7 @@ export default function Settings() {
   const [backupType, setBackupType] = useState<'full' | 'compressed' | 'data-only' | 'table'>('compressed')
   const [selectedTable, setSelectedTable] = useState('')
   const [backupDir, setBackupDir] = useState('/tmp/lactate_backups')
+  const [isDragging, setIsDragging] = useState(false)
   const [isCreatingBackup, setIsCreatingBackup] = useState(false)
   const [backupResult, setBackupResult] = useState<TestResult | null>(null)
   const [backupFiles, setBackupFiles] = useState<BackupFile[]>([])
@@ -209,6 +210,98 @@ export default function Settings() {
       }
     } catch (error) {
       setRestoreResult({ success: false, message: 'Failed to restore backup' })
+    } finally {
+      setIsRestoring(false)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+
+    const files = Array.from(e.dataTransfer.files)
+    const sqlFile = files.find(f => f.name.endsWith('.sql') || f.name.endsWith('.sql.gz'))
+
+    if (!sqlFile) {
+      setRestoreResult({ success: false, message: 'Please drop a .sql or .sql.gz file' })
+      return
+    }
+
+    // Copy file to backup directory
+    setIsRestoring(true)
+    setRestoreResult(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', sqlFile)
+      formData.append('backupDir', backupDir)
+
+      const response = await fetch('/api/settings/database/backup/upload', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setRestoreResult({ success: true, message: `File uploaded: ${sqlFile.name}` })
+        // Reload backup list
+        setTimeout(() => loadBackupFiles(), 1000)
+      } else {
+        setRestoreResult({ success: false, message: result.message })
+      }
+    } catch (error: any) {
+      setRestoreResult({ success: false, message: `Upload failed: ${error.message}` })
+    } finally {
+      setIsRestoring(false)
+    }
+  }
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.name.endsWith('.sql') && !file.name.endsWith('.sql.gz')) {
+      setRestoreResult({ success: false, message: 'Please select a .sql or .sql.gz file' })
+      return
+    }
+
+    setIsRestoring(true)
+    setRestoreResult(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('backupDir', backupDir)
+
+      const response = await fetch('/api/settings/database/backup/upload', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setRestoreResult({ success: true, message: `File uploaded: ${file.name}` })
+        setTimeout(() => loadBackupFiles(), 1000)
+      } else {
+        setRestoreResult({ success: false, message: result.message })
+      }
+    } catch (error: any) {
+      setRestoreResult({ success: false, message: `Upload failed: ${error.message}` })
     } finally {
       setIsRestoring(false)
     }
@@ -380,6 +473,43 @@ export default function Settings() {
                 <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4 flex items-center gap-2">
                   🔄 Restore From Backup
                 </h3>
+
+                {/* Drag & Drop Upload Area */}
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`mb-4 border-2 border-dashed rounded-lg p-8 text-center transition-all ${
+                    isDragging
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                      : 'border-zinc-300 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-600'
+                  }`}
+                >
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="text-5xl">📁</div>
+                    <div>
+                      <p className="text-lg font-medium text-zinc-800 dark:text-zinc-200 mb-1">
+                        {isDragging ? 'Drop backup file here' : 'Drag & Drop backup file'}
+                      </p>
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                        or click to browse (.sql or .sql.gz files)
+                      </p>
+                    </div>
+                    <input
+                      type="file"
+                      accept=".sql,.gz"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      id="backup-file-input"
+                    />
+                    <label
+                      htmlFor="backup-file-input"
+                      className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md font-medium cursor-pointer"
+                    >
+                      Browse Files
+                    </label>
+                  </div>
+                </div>
 
                 <div className="flex items-center gap-3 mb-4">
                   <button
