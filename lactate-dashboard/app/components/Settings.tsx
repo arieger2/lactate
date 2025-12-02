@@ -1,18 +1,222 @@
 'use client'
 
-import { useState } from 'react'
-import DatabaseSettings from './settings/DatabaseSettings'
-import GeneralSettings from './settings/GeneralSettings'
-import AppearanceSettings from './settings/AppearanceSettings'
-import IntegrationsSettings from './settings/IntegrationsSettings'
+import { useState, useEffect } from 'react'
 
-type SettingsTab = 'database' | 'general' | 'appearance' | 'integrations'
+type SettingsTab = 'database' | 'backup' | 'general' | 'appearance' | 'integrations'
+
+interface DbConfig {
+  host: string
+  port: string
+  database: string
+  user: string
+  password: string
+  ssl: boolean
+}
+
+interface TestResult {
+  success: boolean
+  message: string
+}
+
+interface BackupFile {
+  filename: string
+  size: string
+  modified: string
+  type: 'full' | 'compressed' | 'data-only' | 'table'
+}
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('database')
+  const [activeTab, setActiveTab] = useState<SettingsTab>('backup')
+  const [dbConfig, setDbConfig] = useState<DbConfig>({
+    host: 'localhost',
+    port: '5432',
+    database: 'laktat',
+    user: 'postgres',
+    password: '',
+    ssl: false
+  })
+  
+  // Database Settings State
+  const [isLoadingConfig, setIsLoadingConfig] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
+  const [testResult, setTestResult] = useState<TestResult | null>(null)
+  const [passwordPlaceholder, setPasswordPlaceholder] = useState('')
+
+  // Backup/Restore State
+  const [backupType, setBackupType] = useState<'full' | 'compressed' | 'data-only' | 'table'>('compressed')
+  const [selectedTable, setSelectedTable] = useState('')
+  const [backupDir, setBackupDir] = useState('/tmp/lactate_backups')
+  const [isCreatingBackup, setIsCreatingBackup] = useState(false)
+  const [backupResult, setBackupResult] = useState<TestResult | null>(null)
+  const [backupFiles, setBackupFiles] = useState<BackupFile[]>([])
+  const [isLoadingBackups, setIsLoadingBackups] = useState(false)
+  const [selectedBackupFile, setSelectedBackupFile] = useState('')
+  const [isRestoring, setIsRestoring] = useState(false)
+  const [restoreResult, setRestoreResult] = useState<TestResult | null>(null)
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false)
+  const [restoreConfirmText, setRestoreConfirmText] = useState('')
+
+  useEffect(() => {
+    loadDatabaseConfig()
+  }, [])
+
+  const loadDatabaseConfig = async () => {
+    setIsLoadingConfig(true)
+    try {
+      const response = await fetch('/api/settings/database')
+      if (response.ok) {
+        const data = await response.json()
+        setDbConfig(prevConfig => ({
+          host: data.host || 'localhost',
+          port: String(data.port || 5432),
+          database: data.database || 'laktat',
+          user: data.user || 'postgres',
+          password: '',
+          ssl: data.ssl || false
+        }))
+        if (data.hasPassword) {
+          setPasswordPlaceholder('••••••••••••')
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load database config:', error)
+    } finally {
+      setIsLoadingConfig(false)
+    }
+  }
+
+  const handleTestConnection = async () => {
+    setIsTesting(true)
+    setTestResult(null)
+    try {
+      const response = await fetch('/api/settings/database/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbConfig)
+      })
+      const result = await response.json()
+      setTestResult({
+        success: result.success,
+        message: result.success ? 'Connection successful!' : result.message || 'Connection failed'
+      })
+    } catch (error) {
+      setTestResult({ success: false, message: 'Failed to test connection' })
+    } finally {
+      setIsTesting(false)
+    }
+  }
+
+  const handleSaveConfig = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch('/api/settings/database', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbConfig)
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setTestResult({ success: true, message: data.message || 'Configuration saved successfully!' })
+      } else {
+        const error = await response.json()
+        setTestResult({ success: false, message: error.message || 'Failed to save configuration' })
+      }
+    } catch (error) {
+      setTestResult({ success: false, message: 'Failed to save configuration' })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleCreateBackup = async () => {
+    setIsCreatingBackup(true)
+    setBackupResult(null)
+    try {
+      const response = await fetch('/api/settings/database/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          database: dbConfig.database,
+          type: backupType,
+          table: backupType === 'table' ? selectedTable : undefined,
+          backupDir
+        })
+      })
+      
+      const result = await response.json()
+      setBackupResult({
+        success: result.success,
+        message: result.message
+      })
+      
+      if (result.success) {
+        // Reload backup list
+        setTimeout(() => loadBackupFiles(), 1000)
+      }
+    } catch (error) {
+      setBackupResult({ success: false, message: 'Failed to create backup' })
+    } finally {
+      setIsCreatingBackup(false)
+    }
+  }
+
+  const loadBackupFiles = async () => {
+    setIsLoadingBackups(true)
+    try {
+      const response = await fetch(`/api/settings/database/backup/list?backupDir=${encodeURIComponent(backupDir)}`)
+      if (response.ok) {
+        const data = await response.json()
+        setBackupFiles(data.backups || [])
+      }
+    } catch (error) {
+      console.error('Failed to load backup files:', error)
+    } finally {
+      setIsLoadingBackups(false)
+    }
+  }
+
+  const handleRestoreBackup = async () => {
+    if (!selectedBackupFile || restoreConfirmText !== 'RESTORE') {
+      return
+    }
+    
+    setIsRestoring(true)
+    setRestoreResult(null)
+    
+    try {
+      const response = await fetch('/api/settings/database/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          database: dbConfig.database,
+          backupFile: selectedBackupFile,
+          backupDir
+        })
+      })
+      
+      const result = await response.json()
+      setRestoreResult({
+        success: result.success,
+        message: result.message
+      })
+      
+      if (result.success) {
+        setShowRestoreConfirm(false)
+        setRestoreConfirmText('')
+        setSelectedBackupFile('')
+      }
+    } catch (error) {
+      setRestoreResult({ success: false, message: 'Failed to restore backup' })
+    } finally {
+      setIsRestoring(false)
+    }
+  }
 
   const settingsTabs = [
-    { id: 'database' as SettingsTab, label: '🗄️ Database', icon: '🗄️' },
+    { id: 'backup' as SettingsTab, label: '💾 Backup & Restore', icon: '💾' },
+    { id: 'database' as SettingsTab, label: '🗄️ Database Connection', icon: '🗄️' },
     { id: 'general' as SettingsTab, label: '⚙️ General', icon: '⚙️' },
     { id: 'appearance' as SettingsTab, label: '🎨 Appearance', icon: '🎨' },
     { id: 'integrations' as SettingsTab, label: '🔗 Integrations', icon: '🔗' }
@@ -30,7 +234,7 @@ export default function Settings() {
 
       <div className="flex">
         {/* Settings Sidebar */}
-        <div className="w-56 bg-zinc-50 dark:bg-zinc-800/50 border-r border-zinc-200 dark:border-zinc-700 min-h-[500px]">
+        <div className="w-64 bg-zinc-50 dark:bg-zinc-800/50 border-r border-zinc-200 dark:border-zinc-700 min-h-[600px]">
           <nav className="p-4 space-y-1">
             {settingsTabs.map(tab => (
               <button
@@ -49,11 +253,443 @@ export default function Settings() {
         </div>
 
         {/* Settings Content */}
-        <div className="flex-1 p-6">
-          {activeTab === 'database' && <DatabaseSettings />}
-          {activeTab === 'general' && <GeneralSettings />}
-          {activeTab === 'appearance' && <AppearanceSettings />}
-          {activeTab === 'integrations' && <IntegrationsSettings />}
+        <div className="flex-1 p-6 max-h-[700px] overflow-y-auto">
+          {/* Backup & Restore Settings */}
+          {activeTab === 'backup' && (
+            <div className="space-y-6">
+              {/* Create Backup Section */}
+              <div>
+                <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">
+                  📦 Create Backup
+                </h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                      Backup Directory
+                    </label>
+                    <input
+                      type="text"
+                      value={backupDir}
+                      onChange={(e) => setBackupDir(e.target.value)}
+                      placeholder="/tmp/lactate_backups"
+                      className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                      Directory where backups will be stored
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                      Backup Type
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { value: 'compressed', label: '🗜️ Compressed (Recommended)', desc: 'Full backup with compression' },
+                        { value: 'full', label: '📄 Full Backup', desc: 'Complete database backup' },
+                        { value: 'data-only', label: '📊 Data Only', desc: 'Without schema' },
+                        { value: 'table', label: '🗂️ Single Table', desc: 'Backup specific table' }
+                      ].map(option => (
+                        <label
+                          key={option.value}
+                          className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                            backupType === option.value
+                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                              : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-400'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="backupType"
+                            value={option.value}
+                            checked={backupType === option.value}
+                            onChange={(e) => setBackupType(e.target.value as any)}
+                            className="mt-1 w-4 h-4 text-blue-500 border-zinc-300 focus:ring-blue-500"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium text-zinc-800 dark:text-zinc-200">
+                              {option.label}
+                            </div>
+                            <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                              {option.desc}
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {backupType === 'table' && (
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                        Table Name
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedTable}
+                        onChange={(e) => setSelectedTable(e.target.value)}
+                        placeholder="e.g., sessions, lactate_data"
+                        className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleCreateBackup}
+                    disabled={isCreatingBackup || (backupType === 'table' && !selectedTable)}
+                    className="w-full px-4 py-3 bg-green-500 hover:bg-green-600 disabled:bg-green-400 disabled:cursor-not-allowed text-white rounded-md font-medium flex items-center justify-center gap-2"
+                  >
+                    {isCreatingBackup ? (
+                      <>
+                        <span className="animate-spin">⏳</span> Creating Backup...
+                      </>
+                    ) : (
+                      <>📦 Create Backup</>
+                    )}
+                  </button>
+
+                  {backupResult && (
+                    <div className={`p-3 rounded-md ${
+                      backupResult.success 
+                        ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800'
+                        : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+                    }`}>
+                      {backupResult.success ? '✅' : '❌'} {backupResult.message}
+                    </div>
+                  )}
+
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                    <div className="flex gap-2">
+                      <span className="text-blue-600 dark:text-blue-400 text-lg">ℹ️</span>
+                      <div className="flex-1 text-sm text-blue-700 dark:text-blue-400">
+                        <p className="font-medium mb-1">Backup Location</p>
+                        <p className="text-xs">Backups are stored in: <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">{backupDir}</code></p>
+                        <p className="text-xs mt-1">Filename format: <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">laktat_[type]_YYYYMMDD_HHMMSS.sql</code></p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <hr className="border-zinc-200 dark:border-zinc-700" />
+
+              {/* Restore Backup Section */}
+              <div>
+                <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4 flex items-center gap-2">
+                  🔄 Restore From Backup
+                </h3>
+
+                <div className="flex items-center gap-3 mb-4">
+                  <button
+                    onClick={loadBackupFiles}
+                    disabled={isLoadingBackups}
+                    className="px-3 py-2 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-md text-sm flex items-center gap-2"
+                  >
+                    {isLoadingBackups ? (
+                      <>
+                        <span className="animate-spin">⏳</span> Loading...
+                      </>
+                    ) : (
+                      <>🔄 Load Backup Files</>
+                    )}
+                  </button>
+                </div>
+
+                {backupFiles.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-2 max-h-60 overflow-y-auto">
+                      {backupFiles.map(backup => (
+                        <label
+                          key={backup.filename}
+                          className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${
+                            selectedBackupFile === backup.filename
+                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                              : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="radio"
+                              name="backupFile"
+                              value={backup.filename}
+                              checked={selectedBackupFile === backup.filename}
+                              onChange={(e) => {
+                                setSelectedBackupFile(e.target.value)
+                                setShowRestoreConfirm(false)
+                                setRestoreConfirmText('')
+                                setRestoreResult(null)
+                              }}
+                              className="w-4 h-4 text-blue-500 border-zinc-300 focus:ring-blue-500"
+                            />
+                            <div>
+                              <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                                📄 {backup.filename}
+                              </span>
+                              <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                {backup.size} • {backup.modified}
+                              </div>
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+
+                    {selectedBackupFile && !showRestoreConfirm && (
+                      <button
+                        onClick={() => setShowRestoreConfirm(true)}
+                        className="mt-4 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-md font-medium flex items-center gap-2"
+                      >
+                        🔄 Restore from &quot;{selectedBackupFile}&quot;
+                      </button>
+                    )}
+
+                    {showRestoreConfirm && selectedBackupFile && (
+                      <div className="mt-4 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                        <p className="text-orange-700 dark:text-orange-400 font-medium mb-3">
+                          ⚠️ Are you sure you want to restore from this backup?
+                        </p>
+                        <p className="text-sm text-orange-600 dark:text-orange-400 mb-3">
+                          This will overwrite all current data in the database. Type <strong>RESTORE</strong> to confirm:
+                        </p>
+                        <input
+                          type="text"
+                          value={restoreConfirmText}
+                          onChange={(e) => setRestoreConfirmText(e.target.value)}
+                          placeholder='Type "RESTORE" to confirm'
+                          className="w-full px-3 py-2 border border-orange-300 dark:border-orange-700 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-orange-500 dark:bg-zinc-800 dark:text-zinc-100 mb-3"
+                        />
+                        <div className="flex gap-3">
+                          <button
+                            onClick={handleRestoreBackup}
+                            disabled={isRestoring || restoreConfirmText !== 'RESTORE'}
+                            className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 disabled:cursor-not-allowed text-white rounded-md font-medium flex items-center gap-2"
+                          >
+                            {isRestoring ? (
+                              <>
+                                <span className="animate-spin">⏳</span> Restoring...
+                              </>
+                            ) : (
+                              <>🔄 Confirm Restore</>
+                            )}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowRestoreConfirm(false)
+                              setRestoreConfirmText('')
+                            }}
+                            className="px-4 py-2 bg-zinc-300 hover:bg-zinc-400 dark:bg-zinc-600 dark:hover:bg-zinc-500 text-zinc-700 dark:text-zinc-200 rounded-md font-medium"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {restoreResult && (
+                      <div className={`mt-4 p-3 rounded-md ${
+                        restoreResult.success 
+                          ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800'
+                          : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+                      }`}>
+                        {restoreResult.success ? '✅' : '❌'} {restoreResult.message}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-zinc-500 dark:text-zinc-400 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg">
+                    {isLoadingBackups ? (
+                      <span>Loading backup files...</span>
+                    ) : (
+                      <div>
+                        <p className="mb-2">📦 No backup files found</p>
+                        <p className="text-sm">Click &quot;Load Backup Files&quot; to refresh or create a new backup first</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Database Connection Settings */}
+          {activeTab === 'database' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">
+                  Database Connection
+                </h3>
+                
+                {isLoadingConfig ? (
+                  <div className="flex items-center justify-center py-8">
+                    <span className="animate-spin text-2xl mr-2">⏳</span>
+                    <span className="text-zinc-600 dark:text-zinc-400">Loading configuration...</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                        Host
+                      </label>
+                      <input
+                        type="text"
+                        value={dbConfig.host}
+                        onChange={(e) => setDbConfig(prev => ({ ...prev, host: e.target.value }))}
+                        placeholder="localhost"
+                        className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                        Port
+                      </label>
+                      <input
+                        type="text"
+                        value={dbConfig.port}
+                        onChange={(e) => setDbConfig(prev => ({ ...prev, port: e.target.value }))}
+                        placeholder="5432"
+                        className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                        Database Name
+                      </label>
+                      <input
+                        type="text"
+                        value={dbConfig.database}
+                        onChange={(e) => setDbConfig(prev => ({ ...prev, database: e.target.value }))}
+                        placeholder="laktat"
+                        className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                        Username
+                      </label>
+                      <input
+                        type="text"
+                        value={dbConfig.user}
+                        onChange={(e) => setDbConfig(prev => ({ ...prev, user: e.target.value }))}
+                        placeholder="postgres"
+                        className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                    </div>
+                    
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                        Password
+                        {passwordPlaceholder && (
+                          <span className="text-xs text-zinc-500 ml-2">(leave empty to keep current)</span>
+                        )}
+                      </label>
+                      <input
+                        type="password"
+                        value={dbConfig.password}
+                        onChange={(e) => setDbConfig(prev => ({ ...prev, password: e.target.value }))}
+                        placeholder={passwordPlaceholder || "Enter password"}
+                        className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                    </div>
+                    
+                    <div className="flex items-center">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={dbConfig.ssl}
+                          onChange={(e) => setDbConfig(prev => ({ ...prev, ssl: e.target.checked }))}
+                          className="w-4 h-4 text-blue-500 border-zinc-300 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                          Use SSL
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {testResult && (
+                  <div className={`mt-4 p-3 rounded-md ${
+                    testResult.success 
+                      ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800'
+                      : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+                  }`}>
+                    {testResult.success ? '✅' : '❌'} {testResult.message}
+                  </div>
+                )}
+
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={handleTestConnection}
+                    disabled={isTesting}
+                    className="px-4 py-2 bg-zinc-500 hover:bg-zinc-600 disabled:bg-zinc-400 text-white rounded-md font-medium flex items-center gap-2"
+                  >
+                    {isTesting ? (
+                      <>
+                        <span className="animate-spin">⏳</span> Testing...
+                      </>
+                    ) : (
+                      <>🔌 Test Connection</>
+                    )}
+                  </button>
+                  
+                  <button
+                    onClick={handleSaveConfig}
+                    disabled={isLoading}
+                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-400 text-white rounded-md font-medium flex items-center gap-2"
+                  >
+                    {isLoading ? (
+                      <>
+                        <span className="animate-spin">⏳</span> Saving...
+                      </>
+                    ) : (
+                      <>💾 Save Configuration</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* General Settings - Placeholder */}
+          {activeTab === 'general' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">
+                General Settings
+              </h3>
+              <div className="p-8 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg text-center text-zinc-500 dark:text-zinc-500">
+                🚧 Coming Soon
+              </div>
+            </div>
+          )}
+
+          {/* Appearance Settings - Placeholder */}
+          {activeTab === 'appearance' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">
+                Appearance Settings
+              </h3>
+              <div className="p-8 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg text-center text-zinc-500 dark:text-zinc-500">
+                🚧 Coming Soon
+              </div>
+            </div>
+          )}
+
+          {/* Integrations Settings - Placeholder */}
+          {activeTab === 'integrations' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">
+                Integrations
+              </h3>
+              <div className="p-8 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg text-center text-zinc-500 dark:text-zinc-500">
+                🚧 Coming Soon
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

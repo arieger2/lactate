@@ -10,6 +10,9 @@
 -- Create the schema
 \i schema.sql
 
+-- Import backup and restore functions
+\i backup_restore.sql
+
 -- Verify tables were created
 SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 
