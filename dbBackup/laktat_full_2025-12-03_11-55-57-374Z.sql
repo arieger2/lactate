@@ -2,10 +2,36 @@
 -- PostgreSQL database dump
 --
 
-\restrict NovFTkR1Rk1J4MddnlRqz79zHsQ5ScsbFAUddMv7Ebe50nypQf7CvVh8ZUd3LlB
+\restrict PHiyWWGahcsCoJQJgxAk80jcMjAE3fzVSEfPnCNqjNSe5dt8BUz51hk3Mp1OOtT
 
 -- Dumped from database version 17.7 (Ubuntu 17.7-3.pgdg22.04+1)
 -- Dumped by pg_dump version 18.1
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+DROP DATABASE IF EXISTS laktat;
+--
+-- Name: laktat; Type: DATABASE; Schema: -; Owner: postgres
+--
+
+CREATE DATABASE laktat WITH TEMPLATE = template0 ENCODING = 'UTF8' LOCALE_PROVIDER = libc LOCALE = 'C.UTF-8';
+
+
+ALTER DATABASE laktat OWNER TO postgres;
+
+\unrestrict PHiyWWGahcsCoJQJgxAk80jcMjAE3fzVSEfPnCNqjNSe5dt8BUz51hk3Mp1OOtT
+\connect laktat
+\restrict PHiyWWGahcsCoJQJgxAk80jcMjAE3fzVSEfPnCNqjNSe5dt8BUz51hk3Mp1OOtT
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -864,5 +890,5 @@ ALTER TABLE ONLY public.training_zones
 -- PostgreSQL database dump complete
 --
 
-\unrestrict NovFTkR1Rk1J4MddnlRqz79zHsQ5ScsbFAUddMv7Ebe50nypQf7CvVh8ZUd3LlB
+\unrestrict PHiyWWGahcsCoJQJgxAk80jcMjAE3fzVSEfPnCNqjNSe5dt8BUz51hk3Mp1OOtT
 
