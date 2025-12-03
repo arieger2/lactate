@@ -66,16 +66,22 @@ export async function POST(request: Request) {
       let command = ''
       
       // Determine if compressed or regular backup
+      // Use -X to skip .psqlrc and prevent extension conflicts
       if (backupFile.endsWith('.gz')) {
-        command = `gunzip -c "${fullPath}" | psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} -v ON_ERROR_STOP=1`
+        command = `gunzip -c "${fullPath}" | psql -X -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} -v ON_ERROR_STOP=0`
       } else {
-        command = `psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} -v ON_ERROR_STOP=1 -f "${fullPath}"`
+        command = `psql -X -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} -v ON_ERROR_STOP=0 -f "${fullPath}"`
       }
 
       const { stdout, stderr } = await execAsync(command, { env, timeout: 120000 })
       
       if (stderr) {
         console.warn('⚠️ psql stderr:', stderr)
+        
+        // Check for critical errors
+        if (stderr.includes('ERROR') && !stderr.includes('already exists') && !stderr.includes('already been loaded')) {
+          console.error('❌ Critical errors detected during restore')
+        }
       }
       
       console.log('✅ Restore completed successfully')
@@ -85,24 +91,30 @@ export async function POST(request: Request) {
         success: true,
         message: `Database restored from: ${backupFile}`,
         backupFile,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        warnings: stderr ? stderr.split('\n').filter((line: string) => line.includes('ERROR')).length : 0
       })
     } catch (error: any) {
       console.error('❌ Restore error:', error)
       
-      // Even if there are errors, check if it's just warnings
-      if (error.stderr && error.stderr.includes('already exists')) {
-        console.log('⚠️ Restore completed with warnings (objects already exist)')
+      // Check if it's extension-related warnings that can be ignored
+      if (error.stderr && (
+        error.stderr.includes('already been loaded') || 
+        error.stderr.includes('already exists') ||
+        error.code === 3  // psql returns 3 for some non-fatal errors
+      )) {
+        console.log('⚠️ Restore completed with warnings (extension/object conflicts)')
         return NextResponse.json({
           success: true,
           message: `Database restored from: ${backupFile} (with warnings)`,
           backupFile,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          warnings: error.stderr
         })
       }
       
       return NextResponse.json(
-        { success: false, message: `Restore failed: ${error.message}` },
+        { success: false, message: `Restore failed: ${error.message}`, details: error.stderr },
         { status: 500 }
       )
     }

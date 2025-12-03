@@ -76,15 +76,16 @@ export async function POST(request: Request) {
       case 'full':
         filename = `${targetDir}/laktat_full_${timestamp}.sql`
         // Use --clean --if-exists for existing database restore (no --create)
-        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --no-owner --no-acl -F p -f "${filename}"`
+        // Exclude TimescaleDB internal schemas to avoid extension conflicts
+        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --no-owner --no-acl --exclude-schema='_timescaledb*' --exclude-schema='timescaledb_*' -F p -f "${filename}"`
         break
       case 'compressed':
         filename = `${targetDir}/laktat_compressed_${timestamp}.sql.gz`
-        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --no-owner --no-acl -F p | gzip > "${filename}"`
+        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --no-owner --no-acl --exclude-schema='_timescaledb*' --exclude-schema='timescaledb_*' -F p | gzip > "${filename}"`
         break
       case 'data-only':
         filename = `${targetDir}/laktat_data_only_${timestamp}.sql`
-        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --no-owner --no-acl -a -F p -f "${filename}"`
+        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --no-owner --no-acl --exclude-schema='_timescaledb*' --exclude-schema='timescaledb_*' -a -F p -f "${filename}"`
         break
       case 'table':
         filename = `${targetDir}/laktat_${table}_${timestamp}.sql`
