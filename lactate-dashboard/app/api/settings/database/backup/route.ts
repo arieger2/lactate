@@ -75,19 +75,20 @@ export async function POST(request: Request) {
     switch (type) {
       case 'full':
         filename = `${targetDir}/laktat_full_${timestamp}.sql`
-        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --create -F p -f "${filename}"`
+        // Use --clean --if-exists for existing database restore (no --create)
+        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --no-owner --no-acl -F p -f "${filename}"`
         break
       case 'compressed':
         filename = `${targetDir}/laktat_compressed_${timestamp}.sql.gz`
-        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --create -F p | gzip > "${filename}"`
+        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --no-owner --no-acl -F p | gzip > "${filename}"`
         break
       case 'data-only':
         filename = `${targetDir}/laktat_data_only_${timestamp}.sql`
-        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists -a -F p -f "${filename}"`
+        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --no-owner --no-acl -a -F p -f "${filename}"`
         break
       case 'table':
         filename = `${targetDir}/laktat_${table}_${timestamp}.sql`
-        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists -t ${table} -F p -f "${filename}"`
+        command = `pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} --clean --if-exists --no-owner --no-acl -t ${table} -F p -f "${filename}"`
         break
     }
 

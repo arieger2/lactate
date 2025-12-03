@@ -67,14 +67,14 @@ export async function POST(request: Request) {
       
       // Determine if compressed or regular backup
       if (backupFile.endsWith('.gz')) {
-        command = `gunzip -c "${fullPath}" | psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} -v ON_ERROR_STOP=0`
+        command = `gunzip -c "${fullPath}" | psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} -v ON_ERROR_STOP=1`
       } else {
-        command = `psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} -v ON_ERROR_STOP=0 -f "${fullPath}"`
+        command = `psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${database} -v ON_ERROR_STOP=1 -f "${fullPath}"`
       }
 
       const { stdout, stderr } = await execAsync(command, { env, timeout: 120000 })
       
-      if (stderr && !stderr.includes('NOTICE') && !stderr.includes('already exists')) {
+      if (stderr) {
         console.warn('⚠️ psql stderr:', stderr)
       }
       

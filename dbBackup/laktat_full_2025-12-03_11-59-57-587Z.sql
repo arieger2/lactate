@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict PHiyWWGahcsCoJQJgxAk80jcMjAE3fzVSEfPnCNqjNSe5dt8BUz51hk3Mp1OOtT
+\restrict UqpTFvP5jmY46gETlpJOl7JGNMh9H47ebkc3d5n75zj8iFE1cXz8ucr01qtdYNB
 
 -- Dumped from database version 17.7 (Ubuntu 17.7-3.pgdg22.04+1)
 -- Dumped by pg_dump version 18.1
@@ -29,9 +29,9 @@ CREATE DATABASE laktat WITH TEMPLATE = template0 ENCODING = 'UTF8' LOCALE_PROVID
 
 ALTER DATABASE laktat OWNER TO postgres;
 
-\unrestrict PHiyWWGahcsCoJQJgxAk80jcMjAE3fzVSEfPnCNqjNSe5dt8BUz51hk3Mp1OOtT
+\unrestrict UqpTFvP5jmY46gETlpJOl7JGNMh9H47ebkc3d5n75zj8iFE1cXz8ucr01qtdYNB
 \connect laktat
-\restrict PHiyWWGahcsCoJQJgxAk80jcMjAE3fzVSEfPnCNqjNSe5dt8BUz51hk3Mp1OOtT
+\restrict UqpTFvP5jmY46gETlpJOl7JGNMh9H47ebkc3d5n75zj8iFE1cXz8ucr01qtdYNB
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -890,5 +890,5 @@ ALTER TABLE ONLY public.training_zones
 -- PostgreSQL database dump complete
 --
 
-\unrestrict PHiyWWGahcsCoJQJgxAk80jcMjAE3fzVSEfPnCNqjNSe5dt8BUz51hk3Mp1OOtT
+\unrestrict UqpTFvP5jmY46gETlpJOl7JGNMh9H47ebkc3d5n75zj8iFE1cXz8ucr01qtdYNB
 
