@@ -190,12 +190,8 @@ export function useThresholdPersistence({
     checkAdjustedThresholds()
   }, [selectedSessionId, selectedCustomer, isManuallyLoading])
 
-  // Auto-load adjusted thresholds when switching to adjusted method
-  useEffect(() => {
-    if (selectedMethod === 'adjusted' && selectedSessionId && selectedCustomer && webhookData.length > 0 && !isManuallyLoading) {
-      loadAdjustedThresholds()
-    }
-  }, [selectedMethod, selectedSessionId, selectedCustomer, webhookData.length, isManuallyLoading, loadAdjustedThresholds])
+  // DB-Werte werden NUR über den manuellen Button geladen (handleManualLoad in Orchestrator)
+  // Kein automatisches Laden beim Methodenwechsel!
 
   return {
     isAdjusted,
