@@ -6,7 +6,7 @@ Das Lactate Dashboard bietet verschiedene API-Endpoints für die Integration mit
 
 ---
 
-## KI-Analyse Webhook
+## AI-Analyse Webhook
 
 ### Endpoint: `/api/ai-analysis`
 
@@ -90,7 +90,7 @@ Der Webhook wird automatisch aufgerufen, wenn:
 
 1. Eine wissenschaftliche Schwellenmethode verwendet wird (z.B. Dickhuth, DMAX, Mader)
 2. Die Methode keine LT1 und/oder LT2 berechnen kann
-3. Der Benutzer auf den Button **"KI-Analyse anfordern"** klickt
+3. Der Benutzer auf den Button **"AI-Analyse anfordern"** klickt
 
 **Beispiel-Szenario:**
 ```
@@ -99,7 +99,7 @@ Dickhuth-Methode: Baseline = 1.3 mmol/L
 → Maximaler Messwert: 2.5 mmol/L
 → ❌ LT2 kann nicht berechnet werden
 → ⚠️ Warnung im Dashboard angezeigt
-→ 🤖 "KI-Analyse anfordern" Button verfügbar
+→ 🤖 "AI-Analyse anfordern" Button verfügbar
 ```
 
 #### GET Request (Status-Abfrage)
@@ -204,7 +204,7 @@ AI_ANALYSIS_WEBHOOK_SECRET=your-secret-key-here
        │
        ↓
 ┌──────────────┐
-│  OpenAI /    │ KI-Analyse durchführen
+│  OpenAI /    │ AI-Analyse durchführen
 │  Claude API  │
 └──────┬───────┘
        │
@@ -297,7 +297,7 @@ Das Dashboard unterstützt 8 wissenschaftliche Methoden:
 7. **Seiler 3-Zone** - Seiler (2006)
 8. **FatMax/LT** - San-Millán (2018)
 
-Jede Methode kann unterschiedliche Anforderungen an die Messdaten haben. Wenn eine Methode keine Schwellen berechnen kann, wird dies im Dashboard angezeigt und die KI-Analyse kann angefordert werden.
+Jede Methode kann unterschiedliche Anforderungen an die Messdaten haben. Wenn eine Methode keine Schwellen berechnen kann, wird dies im Dashboard angezeigt und die AI-Analyse kann angefordert werden.
 
 ---
 
@@ -307,7 +307,7 @@ Jede Methode kann unterschiedliche Anforderungen an die Messdaten haben. Wenn ei
 
 1. **"Methode konnte keine Schwellen berechnen"**
    - **Ursache:** Messwerte liegen außerhalb des erforderlichen Bereichs
-   - **Lösung:** KI-Analyse anfordern oder andere Methode wählen
+   - **Lösung:** AI-Analyse anfordern oder andere Methode wählen
 
 2. **"Ungültige Anfrage: Methode und Testdaten erforderlich"**
    - **Ursache:** Fehlende oder ungültige Daten im Request
@@ -355,7 +355,7 @@ Alle API-Aufrufe werden in der Console geloggt:
 
 - [ ] **Webhook Retry Logic:** Automatische Wiederholung bei Fehlern
 - [ ] **Batch Processing:** Mehrere Analysen gleichzeitig
-- [ ] **Result Caching:** Gespeicherte KI-Analysen wiederverwenden
+- [ ] **Result Caching:** Gespeicherte AI-Analysen wiederverwenden
 - [ ] **Notification System:** Email/Push bei abgeschlossener Analyse
 - [ ] **Analytics Dashboard:** Webhook-Statistiken und Erfolgsraten
 
