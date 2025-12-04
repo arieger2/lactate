@@ -79,7 +79,8 @@ export default function PerformanceCurveOrchestrator() {
     setTrainingZones,
     setSelectedMethod,
     setIsAdjusted,
-    onSaveAdjustedThresholds: saveAdjustedThresholds
+    onSaveAdjustedThresholds: saveAdjustedThresholds,
+    onSaveAdjustedThresholdsWithValues: saveAdjustedThresholdsWithValues
   })
 
   // Calculate thresholds when data loads

@@ -17,6 +17,7 @@ interface UseChartInteractionProps {
   setSelectedMethod: (method: ThresholdMethod) => void
   setIsAdjusted: (adjusted: boolean) => void
   onSaveAdjustedThresholds: () => Promise<void>
+  onSaveAdjustedThresholdsWithValues: (lt1: ThresholdPoint, lt2: ThresholdPoint) => Promise<void>
 }
 
 interface UseChartInteractionReturn {
@@ -36,13 +37,15 @@ export function useChartInteraction({
   setTrainingZones,
   setSelectedMethod,
   setIsAdjusted,
-  onSaveAdjustedThresholds
+  onSaveAdjustedThresholds,
+  onSaveAdjustedThresholdsWithValues
 }: UseChartInteractionProps): UseChartInteractionReturn {
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstanceRef = useRef<echarts.ECharts | null>(null)
   const [isDragging, setIsDragging] = useState<{ type: 'LT1' | 'LT2' | null }>({ type: null })
   const currentLt1Ref = useRef<ThresholdPoint | null>(null)
   const currentLt2Ref = useRef<ThresholdPoint | null>(null)
+  const selectedMethodRef = useRef<ThresholdMethod>(selectedMethod)
   const lastMouseMoveTime = useRef<number>(0)
   const smoothingBuffer = useRef<{power: number, lactate: number}[]>([])
 
@@ -50,7 +53,8 @@ export function useChartInteraction({
   useEffect(() => {
     currentLt1Ref.current = lt1
     currentLt2Ref.current = lt2
-  }, [lt1, lt2])
+    selectedMethodRef.current = selectedMethod
+  }, [lt1, lt2, selectedMethod])
 
   // Chart initialization
   useEffect(() => {
@@ -101,6 +105,23 @@ export function useChartInteraction({
       // Enable brush for dragging thresholds
       chart.on('mousedown', (params: any) => {
         if (params.seriesName === 'LT1' || params.seriesName === 'LT2') {
+          console.log('🖱️ Mousedown on', params.seriesName, '- Current values:', { lt1, lt2 })
+          
+          // Initialize refs with current values at drag start
+          if (lt1) {
+            currentLt1Ref.current = lt1
+            console.log('✅ Initialized currentLt1Ref:', currentLt1Ref.current)
+          } else {
+            console.warn('⚠️ lt1 is null/undefined at drag start')
+          }
+          
+          if (lt2) {
+            currentLt2Ref.current = lt2
+            console.log('✅ Initialized currentLt2Ref:', currentLt2Ref.current)
+          } else {
+            console.warn('⚠️ lt2 is null/undefined at drag start')
+          }
+          
           setIsDragging({ type: params.seriesName as 'LT1' | 'LT2' })
           
           // Clear smoothing buffer for fresh tracking
@@ -174,11 +195,14 @@ export function useChartInteraction({
           // Validate ranges
           if (power > 1000 || lactate > 20) return // Reasonable limits
           
-          // Update threshold
+          // Update threshold state AND refs immediately
+          const newThreshold = { power, lactate }
           if (isDragging.type === 'LT1') {
-            setLt1({ power, lactate })
+            setLt1(newThreshold)
+            currentLt1Ref.current = newThreshold  // Update ref immediately
           } else if (isDragging.type === 'LT2') {
-            setLt2({ power, lactate })
+            setLt2(newThreshold)
+            currentLt2Ref.current = newThreshold  // Update ref immediately
           }
           
           // Recalculate training zones using current refs
@@ -190,7 +214,7 @@ export function useChartInteraction({
             const newLt2 = isDragging.type === 'LT2' ? { power, lactate } : currentLt2
             
             if (newLt1 && newLt2 && newLt1.power && newLt1.lactate && newLt2.power && newLt2.lactate) {
-              const zones = calculateTrainingZones(newLt1, newLt2, maxPower, selectedMethod)
+              const zones = calculateTrainingZones(newLt1, newLt2, maxPower, selectedMethodRef.current)
               if (zones) {
                 setTrainingZones(zones)
               }
@@ -218,13 +242,34 @@ export function useChartInteraction({
           const currentLt1 = currentLt1Ref.current
           const currentLt2 = currentLt2Ref.current
           
-          if (currentLt1 && currentLt2 && 
-              currentLt1.power && currentLt1.lactate && currentLt2.power && currentLt2.lactate) {
-            try {
-              await onSaveAdjustedThresholds()
-            } catch (saveError) {
-              console.error('❌ Error saving adjusted thresholds:', saveError)
+          console.log('🎯 MouseUp - Refs:', { currentLt1, currentLt2 })
+          
+          // Use refs directly to ensure we save the most current values
+          // Convert to numbers in case they're strings
+          if (currentLt1 && currentLt2) {
+            const lt1Power = typeof currentLt1.power === 'string' ? parseFloat(currentLt1.power) : currentLt1.power
+            const lt1Lactate = typeof currentLt1.lactate === 'string' ? parseFloat(currentLt1.lactate) : currentLt1.lactate
+            const lt2Power = typeof currentLt2.power === 'string' ? parseFloat(currentLt2.power) : currentLt2.power
+            const lt2Lactate = typeof currentLt2.lactate === 'string' ? parseFloat(currentLt2.lactate) : currentLt2.lactate
+            
+            if (typeof lt1Power === 'number' && typeof lt1Lactate === 'number' &&
+                typeof lt2Power === 'number' && typeof lt2Lactate === 'number' &&
+                !isNaN(lt1Power) && !isNaN(lt1Lactate) && !isNaN(lt2Power) && !isNaN(lt2Lactate)) {
+              try {
+                const lt1ToSave = { power: lt1Power, lactate: lt1Lactate }
+                const lt2ToSave = { power: lt2Power, lactate: lt2Lactate }
+                console.log('💾 Saving adjusted thresholds after drag:', { lt1ToSave, lt2ToSave })
+                await onSaveAdjustedThresholdsWithValues(lt1ToSave, lt2ToSave)
+              } catch (saveError) {
+                console.error('❌ Error saving adjusted thresholds:', saveError)
+              }
+            } else {
+              console.warn('⚠️ Cannot save: invalid threshold values after conversion', { 
+                lt1Power, lt1Lactate, lt2Power, lt2Lactate 
+              })
             }
+          } else {
+            console.warn('⚠️ Cannot save: refs are null', { currentLt1, currentLt2 })
           }
         } catch (error) {
           console.error('❌ Error in mouseUp handler:', error)
@@ -240,7 +285,7 @@ export function useChartInteraction({
         document.removeEventListener('mouseup', handleMouseUp)
       }
     }
-  }, [isDragging.type, webhookData.length, selectedMethod, setLt1, setLt2, setTrainingZones, setSelectedMethod, setIsAdjusted, onSaveAdjustedThresholds])
+  }, [isDragging.type, webhookData.length, lt1, lt2, setLt1, setLt2, setTrainingZones, setSelectedMethod, setIsAdjusted, onSaveAdjustedThresholdsWithValues])
 
   return {
     chartRef,
