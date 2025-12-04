@@ -741,6 +741,7 @@ export default function LactateInput() {
                       value={newCustomer.birthDate}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, birthDate: e.target.value }))}
                       className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
+                      aria-label="Birth Date"
                     />
                   </div>
 
@@ -809,6 +810,7 @@ export default function LactateInput() {
                         value={currentTestInfo.testDate}
                         onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, testDate: e.target.value }))}
                         className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        aria-label="Test Date"
                       />
                     </div>
                     
@@ -819,6 +821,7 @@ export default function LactateInput() {
                         value={currentTestInfo.testTime}
                         onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, testTime: e.target.value }))}
                         className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        aria-label="Test Time"
                       />
                     </div>
 
@@ -839,6 +842,7 @@ export default function LactateInput() {
                           })
                         }}
                         className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        aria-label="Device"
                       >
                         <option value="bike">Bike</option>
                         <option value="treadmill">Treadmill</option>
@@ -852,6 +856,7 @@ export default function LactateInput() {
                         value={currentTestInfo.unit}
                         onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, unit: e.target.value }))}
                         className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                        aria-label="Unit"
                       >
                         <option value="watt">Watt (W)</option>
                         <option value="kmh">Speed (km/h)</option>
@@ -1031,6 +1036,7 @@ export default function LactateInput() {
                       value={newCustomer.firstName}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, firstName: e.target.value }))}
                       className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                      aria-label="First Name"
                     />
                   </div>
                   
@@ -1041,6 +1047,7 @@ export default function LactateInput() {
                       value={newCustomer.lastName}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, lastName: e.target.value }))}
                       className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                      aria-label="Last Name"
                     />
                   </div>
 
@@ -1051,6 +1058,7 @@ export default function LactateInput() {
                       value={newCustomer.birthDate}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, birthDate: e.target.value }))}
                       className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                      aria-label="Birth Date"
                     />
                   </div>
 
@@ -1061,6 +1069,7 @@ export default function LactateInput() {
                       value={newCustomer.height_cm}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, height_cm: e.target.value }))}
                       className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                      aria-label="Height in centimeters"
                     />
                   </div>
 
@@ -1071,6 +1080,7 @@ export default function LactateInput() {
                       value={newCustomer.weight_kg}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, weight_kg: e.target.value }))}
                       className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                      aria-label="Weight in kilograms"
                     />
                   </div>
 
@@ -1081,6 +1091,7 @@ export default function LactateInput() {
                       value={newCustomer.email}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, email: e.target.value }))}
                       className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                      aria-label="Email"
                     />
                   </div>
 
@@ -1091,6 +1102,7 @@ export default function LactateInput() {
                       value={newCustomer.phone}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
                       className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                      aria-label="Phone"
                     />
                   </div>
                 </div>
@@ -1102,6 +1114,7 @@ export default function LactateInput() {
                     onChange={(e) => setNewCustomer(prev => ({ ...prev, additionalNotes: e.target.value }))}
                     rows={2}
                     className="w-full px-3 py-2 text-sm border border-green-300 dark:border-green-600 rounded dark:bg-green-900/50 dark:text-green-100"
+                    aria-label="Additional Notes"
                   />
                 </div>
 
@@ -1169,6 +1182,7 @@ export default function LactateInput() {
                           value={currentTestInfo.testDate}
                           onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, testDate: e.target.value }))}
                           className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                          aria-label="Test Date"
                         />
                       </div>
                       
@@ -1179,6 +1193,7 @@ export default function LactateInput() {
                           value={currentTestInfo.testTime}
                           onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, testTime: e.target.value }))}
                           className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                          aria-label="Test Time"
                         />
                       </div>
 
@@ -1199,6 +1214,7 @@ export default function LactateInput() {
                             })
                           }}
                           className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                          aria-label="Device"
                         >
                           <option value="bike">Bike</option>
                           <option value="treadmill">Treadmill</option>
@@ -1212,6 +1228,7 @@ export default function LactateInput() {
                           value={currentTestInfo.unit}
                           onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, unit: e.target.value }))}
                           className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                          aria-label="Unit"
                         >
                           <option value="watt">Watt (W)</option>
                           <option value="kmh">Speed (km/h)</option>
@@ -1226,6 +1243,7 @@ export default function LactateInput() {
                           value={currentTestInfo.startLoad}
                           onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, startLoad: e.target.value }))}
                           className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                          aria-label="Start Load"
                         />
                       </div>
 
@@ -1237,6 +1255,7 @@ export default function LactateInput() {
                           value={currentTestInfo.increment}
                           onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, increment: e.target.value }))}
                           className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                          aria-label="Increment"
                         />
                       </div>
 
@@ -1247,6 +1266,7 @@ export default function LactateInput() {
                           value={currentTestInfo.stageDuration_min}
                           onChange={(e) => setCurrentTestInfo(prev => ({ ...prev, stageDuration_min: e.target.value }))}
                           className="w-full px-2 py-1 text-xs border border-blue-300 dark:border-blue-600 rounded dark:bg-blue-900/50 dark:text-blue-100"
+                          aria-label="Stage Duration in minutes"
                         />
                       </div>
                     </div>
@@ -1271,7 +1291,7 @@ export default function LactateInput() {
                         key={ti.testId || `test-${idx}`}
                         type="button"
                         onClick={() => selectTestForStageEntry(ti)}
-                        className="w-full p-4 text-left border border-blue-300 dark:border-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                        className="w-full p-4 text-left border border-blue-300 dark:border-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors cursor-pointer"
                       >
                         <div className="font-medium text-blue-900 dark:text-blue-100">{ti.testId}</div>
                         <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">

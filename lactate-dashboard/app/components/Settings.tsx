@@ -32,7 +32,7 @@ interface BackupFile {
 }
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('backup')
+  const [activeTab, setActiveTab] = useState<SettingsTab>('database')
   const [dbConfig, setDbConfig] = useState<DbConfig>({
     host: 'localhost',
     port: '5432',
@@ -409,8 +409,8 @@ export default function Settings() {
   }
 
   const settingsTabs = [
-    { id: 'backup' as SettingsTab, label: '💾 Backup & Restore', icon: '💾' },
     { id: 'database' as SettingsTab, label: '🗄️ Database Connection', icon: '🗄️' },
+    { id: 'backup' as SettingsTab, label: '💾 Backup & Restore', icon: '💾' },
     { id: 'general' as SettingsTab, label: '⚙️ General', icon: '⚙️' },
     { id: 'appearance' as SettingsTab, label: '🎨 Appearance', icon: '🎨' },
     { id: 'integrations' as SettingsTab, label: '🔗 Integrations', icon: '🔗' }

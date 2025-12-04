@@ -20,7 +20,7 @@ interface UseChartInteractionProps {
 }
 
 interface UseChartInteractionReturn {
-  chartRef: React.RefObject<HTMLDivElement>
+  chartRef: React.RefObject<HTMLDivElement | null>
   isDragging: { type: 'LT1' | 'LT2' | null }
 }
 

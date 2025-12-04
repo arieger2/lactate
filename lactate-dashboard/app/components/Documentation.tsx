@@ -84,6 +84,7 @@ function OverviewSection({ setActiveSection }: { setActiveSection: (section: Doc
           <button
             onClick={() => setActiveSection('quick-start')}
             className="text-left hover:shadow-lg transition-shadow"
+            title="Schritt-für-Schritt Anleitung öffnen"
           >
             <InteractiveFeatureCard
               icon="🚀"
@@ -94,6 +95,7 @@ function OverviewSection({ setActiveSection }: { setActiveSection: (section: Doc
           <button
             onClick={() => setActiveSection('threshold-methods')}
             className="text-left hover:shadow-lg transition-shadow"
+            title="Informationen zu den 8 Schwellenmethoden anzeigen"
           >
             <InteractiveFeatureCard
               icon="📊"
@@ -104,6 +106,7 @@ function OverviewSection({ setActiveSection }: { setActiveSection: (section: Doc
           <button
             onClick={() => setActiveSection('training-zones')}
             className="text-left hover:shadow-lg transition-shadow"
+            title="5-Zonen Trainingsmodell anzeigen"
           >
             <InteractiveFeatureCard
               icon="🎯"
@@ -114,6 +117,7 @@ function OverviewSection({ setActiveSection }: { setActiveSection: (section: Doc
           <button
             onClick={() => setActiveSection('api-device')}
             className="text-left hover:shadow-lg transition-shadow"
+            title="API-Dokumentation für Geräteintegration anzeigen"
           >
             <InteractiveFeatureCard
               icon="🔗"

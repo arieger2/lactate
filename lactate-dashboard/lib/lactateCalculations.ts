@@ -59,6 +59,29 @@ export function calculateThresholds(
       lt2Point = calculateDMax(sortedData)
       // LT1 = Erster Deflektionspunkt (Steigung +50% über Baseline)
       lt1Point = calculateDMaxLT1(sortedData)
+      
+      // VALIDATION: LT1 must occur before LT2 (physiologically correct)
+      if (lt1Point && lt2Point) {
+        if (lt1Point.power >= lt2Point.power) {
+          console.warn('⚠️ DMAX Validation: LT1 >= LT2 detected, recalculating LT1...', {
+            original_LT1: lt1Point,
+            original_LT2: lt2Point
+          })
+          
+          // Fallback strategy: Use 2.0 mmol/L for LT1 (Mader-like approach)
+          const fallbackLT1 = interpolateThreshold(sortedData, 2.0)
+          
+          // If fallback is still >= LT2, use half of LT2's lactate value
+          if (fallbackLT1 && fallbackLT1.power >= lt2Point.power) {
+            const halfLactate = lt2Point.lactate * 0.6 // 60% of LT2 lactate
+            lt1Point = interpolateThreshold(sortedData, Math.max(halfLactate, 1.5))
+            console.log('✅ DMAX: Using 60% of LT2 lactate for LT1:', lt1Point)
+          } else {
+            lt1Point = fallbackLT1
+            console.log('✅ DMAX: Using 2.0 mmol/L fallback for LT1:', lt1Point)
+          }
+        }
+      }
       break
 
     case 'dickhuth':
@@ -79,6 +102,31 @@ export function calculateThresholds(
       const loglogResult = calculateLogLogBreakpoint(sortedData)
       lt2Point = loglogResult.lt2
       lt1Point = loglogResult.lt1
+      
+      // VALIDATION: Handle null LT1 and ensure LT1 < LT2
+      if (lt1Point === null && lt2Point !== null) {
+        console.warn('⚠️ LogLog: No LT1 found via slope detection, using fallback...')
+        // Fallback: Use 2.0 mmol/L or point at 1/3 of test range
+        const fallbackLT1 = interpolateThreshold(sortedData, 2.0)
+        if (fallbackLT1 && fallbackLT1.power < lt2Point.power) {
+          lt1Point = fallbackLT1
+          console.log('✅ LogLog: Using 2.0 mmol/L fallback for LT1:', lt1Point)
+        } else {
+          const oneThirdIndex = Math.floor(sortedData.length / 3)
+          lt1Point = { power: sortedData[oneThirdIndex].power, lactate: sortedData[oneThirdIndex].lactate }
+          console.log('✅ LogLog: Using 1/3 test range fallback for LT1:', lt1Point)
+        }
+      }
+      
+      if (lt1Point && lt2Point && lt1Point.power >= lt2Point.power) {
+        console.warn('⚠️ LogLog Validation: LT1 >= LT2 detected, recalculating LT1...', {
+          original_LT1: lt1Point,
+          original_LT2: lt2Point
+        })
+        const fallbackLactate = lt2Point.lactate * 0.6
+        lt1Point = interpolateThreshold(sortedData, Math.max(fallbackLactate, 1.5))
+        console.log('✅ LogLog: Using 60% of LT2 lactate for LT1:', lt1Point)
+      }
       break
 
     case 'plus1mmol':
@@ -103,6 +151,17 @@ export function calculateThresholds(
       lt1Point = minPt ? { power: minPt.power, lactate: minPt.lactate } : null
       // LT2 = Max. Distanz ab Laktat-Minimum
       lt2Point = calculateModDMax(sortedData)
+      
+      // VALIDATION: Ensure LT1 < LT2 (edge case prevention)
+      if (lt1Point && lt2Point && lt1Point.power >= lt2Point.power) {
+        console.warn('⚠️ ModDMAX Validation: LT1 >= LT2 detected, using earlier point...', {
+          original_LT1: lt1Point,
+          original_LT2: lt2Point
+        })
+        const oneThirdIndex = Math.floor(sortedData.length / 3)
+        lt1Point = { power: sortedData[oneThirdIndex].power, lactate: sortedData[oneThirdIndex].lactate }
+        console.log('✅ ModDMAX: Using 1/3 test range for LT1:', lt1Point)
+      }
       break
 
     case 'seiler':
@@ -145,6 +204,37 @@ export function calculateThresholds(
       }
   }
 
+  // GLOBAL VALIDATION: Ensure LT1 < LT2 for all methods (safety net)
+  if (lt1Point && lt2Point) {
+    if (lt1Point.power >= lt2Point.power || lt1Point.lactate > lt2Point.lactate) {
+      console.error(`❌ ${method.toUpperCase()} GLOBAL VALIDATION FAILED:`, {
+        lt1: lt1Point,
+        lt2: lt2Point,
+        issue: lt1Point.power >= lt2Point.power ? 'LT1 power >= LT2 power' : 'LT1 lactate > LT2 lactate'
+      })
+      
+      // Apply universal fallback strategy
+      const fallbackLactate = Math.min(lt2Point.lactate * 0.6, 2.0)
+      const newLT1 = interpolateThreshold(sortedData, Math.max(fallbackLactate, 1.5))
+      
+      if (newLT1 && newLT1.power < lt2Point.power) {
+        console.log(`✅ ${method.toUpperCase()}: Applied global fallback for LT1`, newLT1)
+        lt1Point = newLT1
+      } else {
+        // Last resort: use first third of data
+        const oneThirdIndex = Math.floor(sortedData.length / 3)
+        const lastResortLT1 = { power: sortedData[oneThirdIndex].power, lactate: sortedData[oneThirdIndex].lactate }
+        if (lastResortLT1.power < lt2Point.power) {
+          console.log(`✅ ${method.toUpperCase()}: Applied last resort LT1 at 1/3 range`, lastResortLT1)
+          lt1Point = lastResortLT1
+        } else {
+          console.error(`❌ ${method.toUpperCase()}: Could not fix LT1, setting to null`)
+          lt1Point = null
+        }
+      }
+    }
+  }
+  
   // Prüfe ob Schwellen gefunden wurden und erstelle Metadaten
   const lt1Missing = lt1Point === null
   const lt2Missing = lt2Point === null
@@ -245,8 +335,8 @@ export function interpolateThreshold(
       // Validiere das Ergebnis
       if (isNaN(power) || !isFinite(power) || power < 0) {
         console.warn('⚠️ interpolateThreshold: Invalid power calculated', {
-          power,
-          ratio,
+          power: typeof power === 'number' ? power.toFixed(2) : String(power),
+          ratio: typeof ratio === 'number' ? ratio.toFixed(4) : String(ratio),
           targetLactate,
           point1: data[i],
           point2: data[i + 1]
@@ -255,7 +345,11 @@ export function interpolateThreshold(
       }
       
       const result = { power: Math.round(power * 100) / 100, lactate: targetLactate }
-      console.log('✅ interpolateThreshold found:', result)
+      console.log('✅ interpolateThreshold found:', {
+        power: result.power,
+        lactate: result.lactate,
+        interpolatedBetween: `${data[i].power} - ${data[i + 1].power}`
+      })
       return result
     }
   }
@@ -339,6 +433,8 @@ export function calculateModDMax(data: LactateDataPoint[]): ThresholdPoint | nul
 /**
  * DMAX LT1 - Erster Deflektionspunkt (Steigung +50% über Baseline)
  * Nach Cheng et al. (1992) Dokumentation
+ * 
+ * IMPROVED: Only searches in first 70% of data to ensure LT1 < LT2
  */
 export function calculateDMaxLT1(data: LactateDataPoint[]): ThresholdPoint | null {
   if (data.length < 3) return null
@@ -350,22 +446,36 @@ export function calculateDMaxLT1(data: LactateDataPoint[]): ThresholdPoint | nul
   const baselineSlope = (last.lactate - first.lactate) / (last.power - first.power)
   const targetSlope = baselineSlope * 1.5 // +50% über Baseline
   
+  // Only search in first 70% to ensure LT1 comes before LT2
+  const searchLimit = Math.floor(data.length * 0.7)
+  
+  console.log('🔍 DMAX LT1 search:', {
+    baselineSlope: baselineSlope.toFixed(4),
+    targetSlope: targetSlope.toFixed(4),
+    searchLimit,
+    totalPoints: data.length
+  })
+  
   // Finde ersten Punkt mit Steigung > targetSlope
-  for (let i = 1; i < data.length - 1; i++) {
+  for (let i = 1; i < searchLimit; i++) {
     const slope = (data[i + 1].lactate - data[i].lactate) / (data[i + 1].power - data[i].power)
     if (slope > targetSlope) {
       console.log('✅ DMAX LT1: Found deflection point', {
         power: data[i].power,
         lactate: data[i].lactate,
         slope: slope.toFixed(4),
-        targetSlope: targetSlope.toFixed(4)
+        targetSlope: targetSlope.toFixed(4),
+        index: i
       })
       return { power: data[i].power, lactate: data[i].lactate }
     }
   }
   
-  // Fallback: zweiter Messpunkt
-  return data.length >= 2 ? { power: data[1].power, lactate: data[1].lactate } : null
+  // Fallback: Use 2.0 mmol/L or lactate at 1/3 of test range
+  const oneThirdIndex = Math.floor(data.length / 3)
+  const fallbackPoint = data[oneThirdIndex]
+  console.log('⚠️ DMAX LT1: Using fallback at 1/3 of test range:', fallbackPoint)
+  return { power: fallbackPoint.power, lactate: fallbackPoint.lactate }
 }
 
 /**
