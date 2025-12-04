@@ -4,8 +4,6 @@
 
 -- Drop old tables if they exist
 DROP TABLE IF EXISTS adjusted_thresholds CASCADE;
-DROP TABLE IF EXISTS training_zones CASCADE;
-DROP TABLE IF EXISTS threshold_results CASCADE;
 DROP TABLE IF EXISTS lactate_data CASCADE;
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS customers CASCADE;
@@ -59,35 +57,6 @@ CREATE TABLE stages (
     UNIQUE(test_id, stage)
 );
 
--- Create threshold_results table (updated to use test_id)
-CREATE TABLE threshold_results (
-    id SERIAL PRIMARY KEY,
-    test_id VARCHAR(255) NOT NULL,
-    method VARCHAR(50) NOT NULL,
-    lt1_load DECIMAL(5,2),
-    lt1_lactate DECIMAL(4,2),
-    lt2_load DECIMAL(5,2),
-    lt2_lactate DECIMAL(4,2),
-    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
-    UNIQUE(test_id, method)
-);
-
--- Create training_zones table (updated to use test_id)
-CREATE TABLE training_zones (
-    id SERIAL PRIMARY KEY,
-    test_id VARCHAR(255) NOT NULL,
-    method VARCHAR(50) NOT NULL,
-    zone_number INTEGER NOT NULL,
-    zone_name VARCHAR(100) NOT NULL,
-    load_min DECIMAL(5,2) NOT NULL,
-    load_max DECIMAL(5,2) NOT NULL,
-    lactate_range VARCHAR(50),
-    description TEXT,
-    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE
-);
-
 -- Create adjusted_thresholds table (updated to use test_id/profile_id)
 CREATE TABLE adjusted_thresholds (
     id SERIAL PRIMARY KEY,
@@ -117,12 +86,6 @@ CREATE INDEX idx_stages_test_id ON stages(test_id);
 CREATE INDEX idx_stages_stage ON stages(stage);
 CREATE INDEX idx_stages_load ON stages(load);
 
-CREATE INDEX idx_threshold_results_test_id ON threshold_results(test_id);
-CREATE INDEX idx_threshold_results_method ON threshold_results(method);
-
-CREATE INDEX idx_training_zones_test_id ON training_zones(test_id);
-CREATE INDEX idx_training_zones_method ON training_zones(method);
-
 CREATE INDEX idx_adjusted_thresholds_test_id ON adjusted_thresholds(test_id);
 CREATE INDEX idx_adjusted_thresholds_profile_id ON adjusted_thresholds(profile_id);
 
@@ -130,8 +93,6 @@ CREATE INDEX idx_adjusted_thresholds_profile_id ON adjusted_thresholds(profile_i
 COMMENT ON TABLE patient_profiles IS 'Stores patient/athlete profile information';
 COMMENT ON TABLE test_infos IS 'Stores test protocol information (device, unit, increment, etc.)';
 COMMENT ON TABLE stages IS 'Stores individual lactate test stage measurements';
-COMMENT ON TABLE threshold_results IS 'Stores calculated lactate thresholds for different methods';
-COMMENT ON TABLE training_zones IS 'Stores calculated training zones based on threshold methods';
 COMMENT ON TABLE adjusted_thresholds IS 'Stores manually adjusted threshold values by users';
 
 -- Add column comments for clarity

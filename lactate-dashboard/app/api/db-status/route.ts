@@ -14,7 +14,7 @@ export async function GET() {
         SELECT table_name 
         FROM information_schema.tables 
         WHERE table_schema = 'public' 
-        AND table_name IN ('sessions', 'lactate_data', 'threshold_results', 'training_zones')
+        AND table_name IN ('sessions', 'lactate_data')
         ORDER BY table_name
       `)
       

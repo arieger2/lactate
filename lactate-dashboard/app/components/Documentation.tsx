@@ -186,7 +186,7 @@ function QuickStartSection() {
             </ol>
             <div className="bg-blue-100 dark:bg-blue-900 p-3 rounded text-xs text-blue-900 dark:text-blue-100">
               <strong>💡 Hinweis:</strong> Keine manuelle SQL-Ausführung nötig! Die Anwendung erstellt automatisch:
-              patient_profiles, test_infos, stages, threshold_results, training_zones, adjusted_thresholds
+              patient_profiles, test_infos, stages, adjusted_thresholds
             </div>
           </div>
         </div>

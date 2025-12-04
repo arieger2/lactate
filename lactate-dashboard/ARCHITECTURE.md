@@ -33,11 +33,10 @@ Enhanced customer tracking with comprehensive measurement management:
 #### Database Schema
 ```sql
 -- Core tables
-customers (id, customer_id, name, email, phone, date_of_birth, notes)
-sessions (id, session_id, customer_id, test_date, test_type, notes)
-lactate_data (id, session_id, customer_id, power, lactate, heart_rate, fat_oxidation)
-threshold_results (id, session_id, method, lt1_power, lt1_lactate, lt2_power, lt2_lactate)
-training_zones (id, session_id, method, zone_number, zone_name, power_min, power_max)
+patient_profiles (id, customer_id, name, email, phone, date_of_birth, notes)
+test_infos (id, test_id, customer_id, test_date, test_protocol, notes)
+stages (id, test_id, customer_id, stage_number, power, lactate, heart_rate, created_at)
+adjusted_thresholds (id, customer_id, test_id, method, lt1_power, lt1_lactate, lt2_power, lt2_lactate)
 ```
 
 #### API Endpoints

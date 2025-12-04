@@ -18,9 +18,7 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 
 -- Show table structures
 \d sessions
-\d lactate_data  
-\d threshold_results
-\d training_zones
+\d lactate_data
 
 -- Use application interface to create sessions and customers
 
@@ -29,11 +27,7 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';
 -- Verify data was inserted
 SELECT 'Sessions' as table_name, count(*) as record_count FROM sessions
 UNION ALL
-SELECT 'Lactate Data', count(*) FROM lactate_data  
-UNION ALL
-SELECT 'Threshold Results', count(*) FROM threshold_results
-UNION ALL
-SELECT 'Training Zones', count(*) FROM training_zones;
+SELECT 'Lactate Data', count(*) FROM lactate_data;
 
 -- Show sample data
 SELECT s.session_id, s.athlete_name, count(ld.id) as data_points

@@ -127,35 +127,6 @@ export async function POST(request: NextRequest) {
             UNIQUE(test_id, stage)
         );
 
-        -- Create threshold_results table
-        CREATE TABLE IF NOT EXISTS threshold_results (
-            id SERIAL PRIMARY KEY,
-            test_id VARCHAR(255) NOT NULL,
-            method VARCHAR(50) NOT NULL,
-            lt1_load DECIMAL(5,2),
-            lt1_lactate DECIMAL(4,2),
-            lt2_load DECIMAL(5,2),
-            lt2_lactate DECIMAL(4,2),
-            calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
-            UNIQUE(test_id, method)
-        );
-
-        -- Create training_zones table
-        CREATE TABLE IF NOT EXISTS training_zones (
-            id SERIAL PRIMARY KEY,
-            test_id VARCHAR(255) NOT NULL,
-            method VARCHAR(50) NOT NULL,
-            zone_number INTEGER NOT NULL,
-            zone_name VARCHAR(100) NOT NULL,
-            load_min DECIMAL(5,2) NOT NULL,
-            load_max DECIMAL(5,2) NOT NULL,
-            lactate_range VARCHAR(50),
-            description TEXT,
-            calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE
-        );
-
         -- Create adjusted_thresholds table
         CREATE TABLE IF NOT EXISTS adjusted_thresholds (
             id SERIAL PRIMARY KEY,
@@ -182,10 +153,6 @@ export async function POST(request: NextRequest) {
         CREATE INDEX IF NOT EXISTS idx_stages_test_id ON stages(test_id);
         CREATE INDEX IF NOT EXISTS idx_stages_stage ON stages(stage);
         CREATE INDEX IF NOT EXISTS idx_stages_load ON stages(load);
-        CREATE INDEX IF NOT EXISTS idx_threshold_results_test_id ON threshold_results(test_id);
-        CREATE INDEX IF NOT EXISTS idx_threshold_results_method ON threshold_results(method);
-        CREATE INDEX IF NOT EXISTS idx_training_zones_test_id ON training_zones(test_id);
-        CREATE INDEX IF NOT EXISTS idx_training_zones_method ON training_zones(method);
         CREATE INDEX IF NOT EXISTS idx_adjusted_thresholds_test_id ON adjusted_thresholds(test_id);
         CREATE INDEX IF NOT EXISTS idx_adjusted_thresholds_profile_id ON adjusted_thresholds(profile_id);
       `)

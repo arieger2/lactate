@@ -277,8 +277,6 @@ export async function DELETE(request: NextRequest) {
         // Delete specific test and its stages from PostgreSQL
         // Note: stages will be cascade deleted via FK constraint
         await client.query('DELETE FROM adjusted_thresholds WHERE test_id = $1', [testId])
-        await client.query('DELETE FROM training_zones WHERE test_id = $1', [testId])
-        await client.query('DELETE FROM threshold_results WHERE test_id = $1', [testId])
         await client.query('DELETE FROM stages WHERE test_id = $1', [testId])
         await client.query('DELETE FROM test_infos WHERE test_id = $1', [testId])
         
@@ -294,8 +292,6 @@ export async function DELETE(request: NextRequest) {
       } else {
         // Clear all tests from PostgreSQL
         await client.query('DELETE FROM adjusted_thresholds')
-        await client.query('DELETE FROM training_zones')
-        await client.query('DELETE FROM threshold_results')
         await client.query('DELETE FROM stages')
         await client.query('DELETE FROM test_infos')
         
