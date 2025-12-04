@@ -1,0 +1,249 @@
+import { useRef, useEffect, useState } from 'react'
+import * as echarts from 'echarts'
+import { LactateDataPoint, ThresholdPoint, TrainingZone } from '@/lib/types'
+import { createLactateChartOptions } from '@/lib/lactateChartOptions'
+import { calculateTrainingZones, ThresholdMethod } from '@/lib/lactateCalculations'
+
+interface UseChartInteractionProps {
+  webhookData: LactateDataPoint[]
+  trainingZones: TrainingZone[]
+  lt1: ThresholdPoint | null
+  lt2: ThresholdPoint | null
+  currentUnit: string
+  selectedMethod: ThresholdMethod
+  setLt1: (threshold: ThresholdPoint | null) => void
+  setLt2: (threshold: ThresholdPoint | null) => void
+  setTrainingZones: (zones: TrainingZone[]) => void
+  setSelectedMethod: (method: ThresholdMethod) => void
+  setIsAdjusted: (adjusted: boolean) => void
+  onSaveAdjustedThresholds: () => Promise<void>
+}
+
+interface UseChartInteractionReturn {
+  chartRef: React.RefObject<HTMLDivElement>
+  isDragging: { type: 'LT1' | 'LT2' | null }
+}
+
+export function useChartInteraction({
+  webhookData,
+  trainingZones,
+  lt1,
+  lt2,
+  currentUnit,
+  selectedMethod,
+  setLt1,
+  setLt2,
+  setTrainingZones,
+  setSelectedMethod,
+  setIsAdjusted,
+  onSaveAdjustedThresholds
+}: UseChartInteractionProps): UseChartInteractionReturn {
+  const chartRef = useRef<HTMLDivElement>(null)
+  const chartInstanceRef = useRef<echarts.ECharts | null>(null)
+  const [isDragging, setIsDragging] = useState<{ type: 'LT1' | 'LT2' | null }>({ type: null })
+  const currentLt1Ref = useRef<ThresholdPoint | null>(null)
+  const currentLt2Ref = useRef<ThresholdPoint | null>(null)
+  const lastMouseMoveTime = useRef<number>(0)
+  const smoothingBuffer = useRef<{power: number, lactate: number}[]>([])
+
+  // Update refs when values change
+  useEffect(() => {
+    currentLt1Ref.current = lt1
+    currentLt2Ref.current = lt2
+  }, [lt1, lt2])
+
+  // Chart initialization
+  useEffect(() => {
+    if (chartRef.current && webhookData.length > 0 && trainingZones.length > 0) {
+      // Initialize chart if not exists
+      if (!chartInstanceRef.current) {
+        chartInstanceRef.current = echarts.init(chartRef.current)
+      }
+
+      // Generate chart options using extracted function
+      const options = createLactateChartOptions(
+        webhookData,
+        trainingZones,
+        lt1,
+        lt2,
+        isDragging.type !== null,
+        currentUnit
+      )
+
+      chartInstanceRef.current.setOption(options, true)
+    }
+  }, [webhookData, trainingZones, lt1, lt2, isDragging, currentUnit])
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      chartInstanceRef.current?.resize()
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Cleanup chart on unmount
+  useEffect(() => {
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.dispose()
+        chartInstanceRef.current = null
+      }
+    }
+  }, [])
+
+  // Chart interaction (drag & drop)
+  useEffect(() => {
+    if (chartInstanceRef.current && webhookData.length > 0) {
+      const chart = chartInstanceRef.current
+      
+      // Enable brush for dragging thresholds
+      chart.on('mousedown', (params: any) => {
+        if (params.seriesName === 'LT1' || params.seriesName === 'LT2') {
+          setIsDragging({ type: params.seriesName as 'LT1' | 'LT2' })
+          
+          // Clear smoothing buffer for fresh tracking
+          smoothingBuffer.current = []
+          lastMouseMoveTime.current = 0
+          
+          // Switch to adjusted mode when manually dragging
+          if (selectedMethod !== 'adjusted') {
+            setSelectedMethod('adjusted')
+            setIsAdjusted(true)
+          }
+        }
+      })
+
+      // Handle mouse move during drag
+      const handleMouseMove = (event: MouseEvent) => {
+        if (!isDragging.type || !chart) return
+        
+        // Throttle mouse moves for optimal smoothness (max 120fps for ultra-responsive feel)
+        const now = Date.now()
+        if (now - lastMouseMoveTime.current < 8) return // 8ms = ~120fps
+        lastMouseMoveTime.current = now
+        
+        try {
+          const dom = chart.getDom()
+          if (!dom) return
+          
+          const rect = dom.getBoundingClientRect()
+          const x = event.clientX - rect.left
+          const y = event.clientY - rect.top
+          
+          // Validate coordinates
+          if (x < 0 || y < 0 || x > rect.width || y > rect.height) return
+          
+          // Convert pixel coordinates to data coordinates with higher precision
+          const pointInPixel = [x, y]
+          const pointInData = chart.convertFromPixel('grid', pointInPixel)
+          
+          if (!pointInData || !Array.isArray(pointInData) || pointInData.length < 2) return
+          if (typeof pointInData[0] !== 'number' || typeof pointInData[1] !== 'number') return
+          if (pointInData[0] < 0 || pointInData[1] < 0) return
+          
+          // Use ultra-high precision for smoother movement (0.05 steps for power, 0.01 for lactate)
+          let power = Math.max(0, Math.round(pointInData[0] * 20) / 20) // 0.05 steps
+          let lactate = Math.max(0, Math.round(pointInData[1] * 100) / 100) // 0.01 steps
+          
+          // Apply exponential smoothing for more responsive movement
+          smoothingBuffer.current.push({ power, lactate })
+          if (smoothingBuffer.current.length > 4) {
+            smoothingBuffer.current.shift() // Keep last 4 points for better smoothing
+          }
+          
+          // Calculate exponentially weighted moving average for smoother response
+          if (smoothingBuffer.current.length >= 2) {
+            let weightedPower = 0
+            let weightedLactate = 0
+            let totalWeight = 0
+            
+            // Apply exponential weights (newer values get higher weight)
+            smoothingBuffer.current.forEach((point, index) => {
+              const weight = Math.pow(1.5, index) // Exponential weighting
+              weightedPower += point.power * weight
+              weightedLactate += point.lactate * weight
+              totalWeight += weight
+            })
+            
+            power = Math.round((weightedPower / totalWeight) * 20) / 20 // Maintain 0.05 precision
+            lactate = Math.round((weightedLactate / totalWeight) * 100) / 100 // Maintain 0.01 precision
+          }
+          
+          // Validate ranges
+          if (power > 1000 || lactate > 20) return // Reasonable limits
+          
+          // Update threshold
+          if (isDragging.type === 'LT1') {
+            setLt1({ power, lactate })
+          } else if (isDragging.type === 'LT2') {
+            setLt2({ power, lactate })
+          }
+          
+          // Recalculate training zones using current refs
+          if (webhookData.length > 0) {
+            const maxPower = Math.max(...webhookData.map(d => d.power), 400)
+            const currentLt1 = currentLt1Ref.current
+            const currentLt2 = currentLt2Ref.current
+            const newLt1 = isDragging.type === 'LT1' ? { power, lactate } : currentLt1
+            const newLt2 = isDragging.type === 'LT2' ? { power, lactate } : currentLt2
+            
+            if (newLt1 && newLt2 && newLt1.power && newLt1.lactate && newLt2.power && newLt2.lactate) {
+              const zones = calculateTrainingZones(newLt1, newLt2, maxPower, selectedMethod)
+              if (zones) {
+                setTrainingZones(zones)
+              }
+            }
+          }
+          
+          // Mark as adjusted
+          setIsAdjusted(true)
+          
+        } catch (error) {
+          console.warn('⚠️ Error during drag conversion:', error)
+        }
+      }
+
+      // Handle mouse up
+      const handleMouseUp = async () => {
+        if (!isDragging.type) return
+        
+        try {
+          setIsDragging({ type: null })
+          
+          // Nach manuellem Ziehen: Button aktivieren und in DB speichern
+          setIsAdjusted(true)
+          
+          const currentLt1 = currentLt1Ref.current
+          const currentLt2 = currentLt2Ref.current
+          
+          if (currentLt1 && currentLt2 && 
+              currentLt1.power && currentLt1.lactate && currentLt2.power && currentLt2.lactate) {
+            try {
+              await onSaveAdjustedThresholds()
+            } catch (saveError) {
+              console.error('❌ Error saving adjusted thresholds:', saveError)
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error in mouseUp handler:', error)
+          setIsDragging({ type: null }) // Ensure we reset drag state
+        }
+      }
+      
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove)
+        document.removeEventListener('mouseup', handleMouseUp)
+      }
+    }
+  }, [isDragging.type, webhookData.length, selectedMethod, setLt1, setLt2, setTrainingZones, setSelectedMethod, setIsAdjusted, onSaveAdjustedThresholds])
+
+  return {
+    chartRef,
+    isDragging
+  }
+}

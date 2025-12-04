@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import LactateInput from './LactateInput'
 import LactateGraph from './LactateGraph'
-import LactatePerformanceCurve from './LactatePerformanceCurve'
+import PerformanceCurveOrchestrator from './PerformanceCurveOrchestrator'
 import Documentation from './Documentation'
 import Settings from './Settings'
 
@@ -99,7 +99,7 @@ export default function Dashboard() {
         <div className="max-w-6xl mx-auto">
           {activeTab === 'input' && <LactateInput />}
           {activeTab === 'graph' && <LactateGraph />}
-          {activeTab === 'performance' && <LactatePerformanceCurve />}
+          {activeTab === 'performance' && <PerformanceCurveOrchestrator />}
           {activeTab === 'docs' && <Documentation />}
           {activeTab === 'settings' && <Settings />}
         </div>

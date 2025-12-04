@@ -47,7 +47,7 @@ training_zones (id, session_id, method, zone_number, zone_name, power_min, power
 
 ### Component Architecture
 - **LactateInput.tsx** (803 lines): Customer selection, manual measurement entry, device integration
-- **LactatePerformanceCurve.tsx** (1,905 lines): Scientific analysis with 8 threshold calculation methods
+- **PerformanceCurveOrchestrator.tsx** (~256 lines): Orchestrates performance curve UI and logic with custom hooks
 - **Settings.tsx** (611 lines): Database configuration management with dynamic updates
 
 ### Data Flow
