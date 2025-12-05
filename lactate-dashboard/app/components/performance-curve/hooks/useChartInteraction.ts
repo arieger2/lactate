@@ -136,11 +136,11 @@ export function useChartInteraction({
         }
       })
 
-      // Handle mouse move during drag
-      const handleMouseMove = (event: MouseEvent) => {
+      // Unified handler for mouse and touch move
+      const handleMove = (clientX: number, clientY: number) => {
         if (!isDragging.type || !chart) return
         
-        // Throttle mouse moves for optimal smoothness (max 120fps for ultra-responsive feel)
+        // Throttle moves for optimal smoothness (max 120fps for ultra-responsive feel)
         const now = Date.now()
         if (now - lastMouseMoveTime.current < 8) return // 8ms = ~120fps
         lastMouseMoveTime.current = now
@@ -150,8 +150,8 @@ export function useChartInteraction({
           if (!dom) return
           
           const rect = dom.getBoundingClientRect()
-          const x = event.clientX - rect.left
-          const y = event.clientY - rect.top
+          const x = clientX - rect.left
+          const y = clientY - rect.top
           
           // Validate coordinates
           if (x < 0 || y < 0 || x > rect.width || y > rect.height) return
@@ -277,12 +277,40 @@ export function useChartInteraction({
         }
       }
       
+      // Mouse event handlers
+      const handleMouseMove = (event: MouseEvent) => {
+        handleMove(event.clientX, event.clientY)
+      }
+      
+      // Touch event handlers for mobile
+      const handleTouchMove = (event: TouchEvent) => {
+        if (event.touches.length > 0) {
+          // Prevent default scrolling while dragging
+          event.preventDefault()
+          const touch = event.touches[0]
+          handleMove(touch.clientX, touch.clientY)
+        }
+      }
+      
+      const handleTouchEnd = (event: TouchEvent) => {
+        // Prevent default to avoid triggering mouse events
+        event.preventDefault()
+        handleMouseUp()
+      }
+      
+      // Add both mouse and touch event listeners
       document.addEventListener('mousemove', handleMouseMove)
       document.addEventListener('mouseup', handleMouseUp)
+      document.addEventListener('touchmove', handleTouchMove, { passive: false })
+      document.addEventListener('touchend', handleTouchEnd)
+      document.addEventListener('touchcancel', handleTouchEnd)
       
       return () => {
         document.removeEventListener('mousemove', handleMouseMove)
         document.removeEventListener('mouseup', handleMouseUp)
+        document.removeEventListener('touchmove', handleTouchMove)
+        document.removeEventListener('touchend', handleTouchEnd)
+        document.removeEventListener('touchcancel', handleTouchEnd)
       }
     }
   }, [isDragging.type, webhookData.length, lt1, lt2, setLt1, setLt2, setTrainingZones, setSelectedMethod, setIsAdjusted, onSaveAdjustedThresholdsWithValues])
