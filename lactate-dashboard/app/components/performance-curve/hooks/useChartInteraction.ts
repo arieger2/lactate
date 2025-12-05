@@ -284,8 +284,8 @@ export function useChartInteraction({
       
       // Touch event handlers for mobile
       const handleTouchMove = (event: TouchEvent) => {
-        if (event.touches.length > 0) {
-          // Prevent default scrolling while dragging
+        // Only prevent default if we're actually dragging
+        if (isDragging.type && event.touches.length > 0) {
           event.preventDefault()
           const touch = event.touches[0]
           handleMove(touch.clientX, touch.clientY)
@@ -293,9 +293,11 @@ export function useChartInteraction({
       }
       
       const handleTouchEnd = (event: TouchEvent) => {
-        // Prevent default to avoid triggering mouse events
-        event.preventDefault()
-        handleMouseUp()
+        // Only prevent default if we were dragging
+        if (isDragging.type) {
+          event.preventDefault()
+          handleMouseUp()
+        }
       }
       
       // Add both mouse and touch event listeners
