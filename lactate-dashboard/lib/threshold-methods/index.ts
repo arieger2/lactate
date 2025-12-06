@@ -12,26 +12,18 @@
 import { LactateDataPoint } from '../types'
 import { ThresholdMethodResult } from './types'
 
-// Import all threshold methods
-import { calculateMader } from './mader'
-import { calculateDMAX } from './dmax'
-import { calculateDickhuth } from './dickhuth'
-import { calculateLogLog } from './loglog'
-import { calculatePlus1mmol } from './plus1mmol'
-import { calculateModDMAX } from './moddmax'
-import { calculateSeiler } from './seiler'
-import { calculateFatMax } from './fatmax'
+// Import only scientifically validated threshold methods with clear original paper definitions
+import { calculateMader } from './mader'           // Heck et al. (1985) - 4 mmol OBLA
+import { calculateDMAX } from './dmax'             // Cheng et al. (1992) - Maximum distance method
+import { calculateDickhuth } from './dickhuth'     // Dickhuth et al. (1999) - LE + 1.5 mmol
+import { calculateModDMAX } from './moddmax'       // Bishop et al. (1998) - Modified DMAX
 
 export type ThresholdMethod = 
-  | 'mader' 
-  | 'dmax' 
-  | 'dickhuth' 
-  | 'loglog' 
-  | 'plus1mmol' 
-  | 'moddmax' 
-  | 'seiler' 
-  | 'fatmax' 
-  | 'adjusted'
+  | 'mader'      // 4 mmol OBLA (Heck 1985)
+  | 'dmax'       // DMAX (Cheng 1992)
+  | 'dickhuth'   // Dickhuth IAT (Dickhuth 1999)
+  | 'moddmax'    // Modified DMAX (Bishop 1998)
+  | 'adjusted'   // Manual adjustment
 
 /**
  * Calculate thresholds using the specified method
@@ -63,20 +55,8 @@ export function calculateThresholdsByMethod(
     case 'dickhuth':
       return calculateDickhuth(sortedData)
     
-    case 'loglog':
-      return calculateLogLog(sortedData)
-    
-    case 'plus1mmol':
-      return calculatePlus1mmol(sortedData)
-    
     case 'moddmax':
       return calculateModDMAX(sortedData)
-    
-    case 'seiler':
-      return calculateSeiler(sortedData)
-    
-    case 'fatmax':
-      return calculateFatMax(sortedData)
     
     case 'adjusted':
       return {
@@ -103,14 +83,10 @@ export function calculateThresholdsByMethod(
  */
 export function getMethodDisplayName(method: ThresholdMethod): string {
   const names: Record<ThresholdMethod, string> = {
-    mader: 'Mader 4 mmol (OBLA)',
+    mader: '4 mmol OBLA',
     dmax: 'DMAX',
-    dickhuth: 'Dickhuth (IAS)',
-    loglog: 'Log-Log',
-    plus1mmol: '+1 mmol/L',
+    dickhuth: 'Dickhuth (IAT)',
     moddmax: 'ModDMAX',
-    seiler: 'Seiler 3-Zone',
-    fatmax: 'FatMax/LT',
     adjusted: 'Manually Adjusted'
   }
   return names[method] || method
@@ -121,14 +97,10 @@ export function getMethodDisplayName(method: ThresholdMethod): string {
  */
 export function getMethodReference(method: ThresholdMethod): string {
   const references: Record<ThresholdMethod, string> = {
-    mader: 'Mader et al. (1976), Heck et al. (1985)',
+    mader: 'Heck et al. (1985)',
     dmax: 'Cheng et al. (1992)',
     dickhuth: 'Dickhuth et al. (1999)',
-    loglog: 'Beaver et al. (1985)',
-    plus1mmol: 'Faude et al. (2009)',
     moddmax: 'Bishop et al. (1998)',
-    seiler: 'Seiler & Kjerland (2006)',
-    fatmax: 'San-Millán & Brooks (2018), Achten & Jeukendrup (2003)',
     adjusted: 'User-defined'
   }
   return references[method] || 'N/A'

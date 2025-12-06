@@ -56,28 +56,19 @@ export default function ThresholdMethodSelector({
   return (
     <div className="col-span-2">
       <label className="block text-sm font-medium mb-4 text-zinc-700 dark:text-zinc-300">
-        Wissenschaftliche Schwellenmethoden
+        Wissenschaftliche Schwellenmethoden (nur Originaldefinitionen)
       </label>
       
       <div className="grid grid-cols-4 gap-4 mb-5">
-        {/* Erste Reihe */}
-        {renderMethodButton('dmax', 'DMAX', 'Cheng et al.')}
-        {renderMethodButton('dickhuth', 'Dickhuth', 'Dickhuth et al.')}
-        {renderMethodButton('mader', 'Mader 4mmol', 'Mader (1976) -')}
-        {renderMethodButton('loglog', 'Log-Log', 'Beaver et al.')}
-      </div>
-      
-      <div className="grid grid-cols-4 gap-4 mb-5">
-        {/* Zweite Reihe */}
-        {renderMethodButton('plus1mmol', '+1.0 mmol/L', 'Faude et al.')}
-        {renderMethodButton('moddmax', 'ModDMAX', 'Bishop et al.')}
-        {renderMethodButton('seiler', 'Seiler 3-Zone', 'Seiler - Polarisiertes')}
-        <div></div>
+        {/* Nur wissenschaftlich validierte Methoden mit klaren Originalpaper-Definitionen */}
+        {renderMethodButton('dmax', 'DMAX', 'Cheng et al. (1992)')}
+        {renderMethodButton('dickhuth', 'Dickhuth IAT', 'Dickhuth et al. (1999)')}
+        {renderMethodButton('mader', '4 mmol OBLA', 'Heck et al. (1985)')}
+        {renderMethodButton('moddmax', 'ModDMAX', 'Bishop et al. (1998)')}
       </div>
       
       <div className="grid grid-cols-4 gap-4">
-        {/* Dritte Reihe */}
-        {renderMethodButton('fatmax', 'FatMax/LT', 'San-Millán - FatMax')}
+        {/* Manual adjustment */}
         
         {/* Only show Manual button when there are actual manual adjustments */}
         {isAdjusted && (
