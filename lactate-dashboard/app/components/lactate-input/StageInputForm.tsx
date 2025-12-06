@@ -116,15 +116,14 @@ export default function StageInputForm({
           
           <div>
             <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Duration (min)
+              Duration (min:sec)
             </label>
             <input
-              type="number"
-              step="1"
+              type="text"
               value={currentStage.duration || ''}
               onChange={(e) => onStageChange({ duration: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-zinc-700 dark:text-zinc-100"
-              placeholder="3"
+              placeholder="3:00"
             />
           </div>
         </div>

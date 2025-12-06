@@ -61,8 +61,8 @@ export default function ThresholdMethodSelector({
       
       <div className="grid grid-cols-4 gap-4 mb-5">
         {/* Nur wissenschaftlich validierte Methoden mit klaren Originalpaper-Definitionen */}
-        {renderMethodButton('dmax', 'DMAX', 'Cheng et al. (1992)')}
         {renderMethodButton('dickhuth', 'Dickhuth IAT', 'Dickhuth et al. (1999)')}
+        {renderMethodButton('dmax', 'DMAX', 'Cheng et al. (1992)')}
         {renderMethodButton('mader', '4 mmol OBLA', 'Heck et al. (1985)')}
         {renderMethodButton('moddmax', 'ModDMAX', 'Bishop et al. (1998)')}
       </div>

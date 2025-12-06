@@ -7,6 +7,42 @@ import TestProtocolManager from './lactate-input/TestProtocolManager'
 import StageInputForm from './lactate-input/StageInputForm'
 import StagesList from './lactate-input/StagesList'
 
+// ========== DURATION HELPERS ==========
+
+/**
+ * Convert duration string (3:00 or 0:50) to decimal minutes (3.0 or 0.833)
+ */
+function parseDurationToDecimal(input: string): number {
+  if (!input || input.trim() === '') return 3.0
+
+  // If already a decimal number, return as-is
+  if (input.match(/^\d+\.?\d*$/)) {
+    return parseFloat(input)
+  }
+
+  // Parse min:sec format
+  const parts = input.split(':')
+  if (parts.length === 2) {
+    const minutes = parseInt(parts[0]) || 0
+    const seconds = parseInt(parts[1]) || 0
+    return minutes + (seconds / 60)
+  }
+
+  // Fallback: treat as minutes
+  return parseFloat(input) || 3.0
+}
+
+/**
+ * Convert decimal minutes (3.0 or 0.833) to min:sec string (3:00 or 0:50)
+ */
+function formatDurationDisplay(decimalMinutes: number): string {
+  const minutes = Math.floor(decimalMinutes)
+  const seconds = Math.round((decimalMinutes - minutes) * 60)
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+// ========== INTERFACES ==========
+
 interface TestInfo {
   testId?: string
   testDate: string
@@ -26,6 +62,7 @@ interface Stage {
   rrSystolic?: number
   rrDiastolic?: number
   duration?: number
+  theoreticalLoad?: number
   notes?: string
 }
 
@@ -116,6 +153,7 @@ export default function LactateInput() {
           if (stages && stages.length > 0) {
             const maxStage = Math.max(...stages.map((s: Stage) => s.stage))
             const nextLoad = parseFloat(selectedTestInfo.startLoad) + (maxStage * parseFloat(selectedTestInfo.increment))
+            const defaultDuration = formatDurationDisplay(parseFloat(selectedTestInfo.stageDuration_min))
             setCurrentStage({
               stage: maxStage + 1,
               load: nextLoad.toString(),
@@ -123,10 +161,11 @@ export default function LactateInput() {
               heartRate: '',
               rrSystolic: '',
               rrDiastolic: '',
-              duration: selectedTestInfo.stageDuration_min,
+              duration: defaultDuration,
               notes: ''
             })
           } else {
+            const defaultDuration = formatDurationDisplay(parseFloat(selectedTestInfo.stageDuration_min))
             setCurrentStage({
               stage: 1,
               load: selectedTestInfo.startLoad,
@@ -134,7 +173,7 @@ export default function LactateInput() {
               heartRate: '',
               rrSystolic: '',
               rrDiastolic: '',
-              duration: selectedTestInfo.stageDuration_min,
+              duration: defaultDuration,
               notes: ''
             })
           }
@@ -160,6 +199,8 @@ export default function LactateInput() {
   }
 
   const buildStagePayload = (stageData: CurrentStage, duration: number, isExisting: boolean = false) => {
+    const durationDecimal = parseDurationToDecimal(stageData.duration || '3')
+    
     return {
       testId: selectedTestInfo!.testId,
       stage: stageData.stage,
@@ -168,7 +209,7 @@ export default function LactateInput() {
       heartRate: stageData.heartRate ? parseInt(stageData.heartRate) : undefined,
       rrSystolic: stageData.rrSystolic ? parseInt(stageData.rrSystolic) : undefined,
       rrDiastolic: stageData.rrDiastolic ? parseInt(stageData.rrDiastolic) : undefined,
-      duration: duration,
+      duration: durationDecimal,
       notes: stageData.notes || undefined,
       isExistingStage: isExisting // Flag to prevent backend re-interpolation
     }
@@ -221,6 +262,7 @@ export default function LactateInput() {
     if (!selectedTestInfo) return
     
     const nextLoad = parseFloat(currentStage.load) + parseFloat(selectedTestInfo.increment)
+    const defaultDuration = formatDurationDisplay(parseFloat(selectedTestInfo.stageDuration_min))
     
     setCurrentStage({
       stage: currentStage.stage + 1,
@@ -229,7 +271,7 @@ export default function LactateInput() {
       heartRate: '',
       rrSystolic: '',
       rrDiastolic: '',
-      duration: selectedTestInfo.stageDuration_min,
+      duration: defaultDuration,
       notes: ''
     })
   }
@@ -298,6 +340,8 @@ export default function LactateInput() {
   }
 
   const handleStageClick = (stage: Stage) => {
+    const formattedDuration = stage.duration ? formatDurationDisplay(stage.duration) : ''
+    
     setCurrentStage({
       stage: stage.stage,
       load: stage.load.toString(),
@@ -305,7 +349,7 @@ export default function LactateInput() {
       heartRate: stage.heartRate ? stage.heartRate.toString() : '',
       rrSystolic: stage.rrSystolic ? stage.rrSystolic.toString() : '',
       rrDiastolic: stage.rrDiastolic ? stage.rrDiastolic.toString() : '',
-      duration: stage.duration ? stage.duration.toString() : '',
+      duration: formattedDuration,
       notes: stage.notes || ''
     })
     setHasUnsavedChanges(false)

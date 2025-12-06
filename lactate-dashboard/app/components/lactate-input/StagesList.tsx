@@ -1,5 +1,14 @@
 'use client'
 
+/**
+ * Convert decimal minutes (3.0 or 0.833) to min:sec string (3:00 or 0:50)
+ */
+function formatDurationDisplay(decimalMinutes: number): string {
+  const minutes = Math.floor(decimalMinutes)
+  const seconds = Math.round((decimalMinutes - minutes) * 60)
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
 interface Stage {
   stage: number
   load: number
@@ -8,6 +17,7 @@ interface Stage {
   rrSystolic?: number
   rrDiastolic?: number
   duration?: number
+  theoreticalLoad?: number
   notes?: string
 }
 
@@ -49,10 +59,29 @@ export default function StagesList({
           >
             <div className="flex-1">
               <span className="font-medium text-green-900 dark:text-green-100">Stage {stage.stage}</span>
+              {stage.duration && (
+                <>
+                  <span className="mx-2 text-green-700 dark:text-green-300">•</span>
+                  <span className="text-green-700 dark:text-green-300">
+                    {formatDurationDisplay(stage.duration)} min
+                  </span>
+                </>
+              )}
               <span className="mx-2 text-green-700 dark:text-green-300">•</span>
               <span className="text-green-700 dark:text-green-300">
-                {stage.load} {unit} • {stage.lactate} mmol/L
+                {stage.load} {unit}
               </span>
+              {stage.theoreticalLoad && (
+                <>
+                  <span className="mx-1 text-red-600 dark:text-red-400">(theoretical: </span>
+                  <span className="text-red-600 dark:text-red-400 font-semibold">
+                    {stage.theoreticalLoad.toFixed(2)} {unit}
+                  </span>
+                  <span className="text-red-600 dark:text-red-400">)</span>
+                </>
+              )}
+              <span className="mx-2 text-green-700 dark:text-green-300">•</span>
+              <span className="text-green-700 dark:text-green-300">{stage.lactate} mmol/L</span>
               {stage.heartRate && (
                 <>
                   <span className="mx-2 text-green-700 dark:text-green-300">•</span>
@@ -83,3 +112,4 @@ export default function StagesList({
     </div>
   )
 }
+

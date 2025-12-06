@@ -45,7 +45,7 @@ export interface ThresholdResult {
  */
 export function calculateThresholds(
   data: LactateDataPoint[], 
-  method: ThresholdMethod = 'dmax'
+  method: ThresholdMethod = 'dickhuth'
 ): ThresholdResult {
   if (data.length === 0) {
     return { 
@@ -94,10 +94,10 @@ export { interpolateThreshold } from './threshold-methods'
  * @remarks Zone ranges work for both units (Watt/km/h)
  */
 export function calculateTrainingZones(
-  lt1: ThresholdPoint | null, 
-  lt2: ThresholdPoint | null, 
-  maxPower: number, 
-  method: ThresholdMethod = 'mader'
+  lt1: ThresholdPoint | null,
+  lt2: ThresholdPoint | null,
+  maxPower: number,
+  method: ThresholdMethod = 'dickhuth'
 ): TrainingZone[] {
   const lt1Power = lt1?.power || maxPower * 0.65
   const lt2Power = lt2?.power || maxPower * 0.85

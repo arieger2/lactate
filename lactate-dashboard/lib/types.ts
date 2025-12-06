@@ -32,6 +32,7 @@ export interface Stage {
   stage: number
   duration_min: number
   load: number
+  theoreticalLoad?: number
   heartRate_bpm?: number
   lactate_mmol: number
   rr?: BloodPressure

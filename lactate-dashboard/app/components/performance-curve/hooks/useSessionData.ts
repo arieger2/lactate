@@ -81,12 +81,12 @@ export function useSessionData({
           } else {
             // Map load/power fields for backward compatibility
             const mappedData = data.map((point: any) => ({
-              power: point.power || point.load,
+              power: point.theoreticalLoad || point.power || point.load,
               lactate: point.lactate,
               heartRate: point.heartRate,
               vo2: point.vo2,
               timestamp: point.timestamp,
-              isInterpolated: point.isFinalApproximation === true
+              isInterpolated: point.isFinalApproximation === true || !!point.theoreticalLoad
             }))
             setWebhookData(mappedData)
             const unit = data[0]?.unit || 'watt'

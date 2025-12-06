@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
 import { interpolateIncompleteStage, isStageIncomplete } from '@/lib/incompleteStageInterpolation'
+import { calculateTheoreticalLoad, needsTheoreticalLoad } from '@/lib/theoreticalLoadExtrapolation'
 
 interface LactateWebhookPayload {
   timestamp?: string
   load: number // Generic load (watt or kmh depending on unit)
+  theoreticalLoad?: number // Calculated theoretical load for incomplete stages
   power?: number // Backward compatibility
   lactate: number // mmol/L
   heartRate?: number // bpm
@@ -141,11 +143,13 @@ export async function POST(request: NextRequest) {
           let finalLoad = dataEntry.load
           let finalLactate = dataEntry.lactate
           let finalHeartRate = dataEntry.heartRate
+          let theoreticalLoad: number | null = null
           let isFinalApproximation = dataEntry.isFinalApproximation || false
           
-          // Only interpolate for NEW incomplete stages, not when editing existing stages
-          if (!isExistingStage && stageNumber > 1 && isStageIncomplete(actualDuration, targetDuration)) {
-            // Get previous stage for interpolation
+          // NEW: Calculate theoretical load for incomplete stages
+          // This replaces the old interpolation logic that reduced values
+          if (!isExistingStage && stageNumber > 1 && needsTheoreticalLoad(actualDuration, targetDuration)) {
+            // Get previous stage
             const prevStage = await client.query(`
               SELECT load, lactate_mmol as lactate, heart_rate_bpm as "heartRate"
               FROM stages
@@ -165,7 +169,7 @@ export async function POST(request: NextRequest) {
                 heartRate: dataEntry.heartRate
               }
               
-              // Get pre-previous stage for quadratic interpolation (if available)
+              // Get pre-previous stage for quadratic extrapolation (if available)
               let prePreviousStage: { power: number; lactate: number; heartRate?: number } | undefined
               if (stageNumber > 2) {
                 const prePrevStage = await client.query(`
@@ -183,7 +187,8 @@ export async function POST(request: NextRequest) {
                 }
               }
               
-              const interpolated = interpolateIncompleteStage({
+              // Calculate theoretical load (what could be sustained for full duration)
+              const theoretical = calculateTheoreticalLoad({
                 previousStage,
                 currentStage,
                 prePreviousStage,
@@ -191,39 +196,39 @@ export async function POST(request: NextRequest) {
                 targetDuration
               })
               
-              console.log('📊 Stage interpolation applied:', {
+              console.log('📊 Theoretical load calculated:', {
                 stage: stageNumber,
-                method: interpolated.method,
-                original: { load: dataEntry.load, lactate: dataEntry.lactate, heartRate: dataEntry.heartRate },
-                interpolated: {
-                  load: interpolated.interpolatedLoad,
-                  lactate: interpolated.interpolatedLactate,
-                  heartRate: interpolated.interpolatedHeartRate
-                },
-                actualDuration,
+                method: theoretical.method,
+                actualLoad: dataEntry.load,
+                theoreticalLoad: theoretical.theoreticalLoad,
+                actualDuration: actualDuration.toFixed(3),
                 targetDuration,
-                confidence: interpolated.confidence,
-                note: interpolated.note
+                confidence: theoretical.confidence,
+                note: theoretical.note
               })
               
-              finalLoad = interpolated.interpolatedLoad
-              finalLactate = interpolated.interpolatedLactate
-              finalHeartRate = interpolated.interpolatedHeartRate
+              theoreticalLoad = theoretical.theoreticalLoad
               isFinalApproximation = true
+              
+              // Keep actual values as-is, store theoretical load separately
+              finalLoad = dataEntry.load
+              finalLactate = dataEntry.lactate
+              finalHeartRate = dataEntry.heartRate
             }
           }
           
-          // Insert stage data (with interpolated values if applicable)
+          // Insert stage data (with theoretical load if calculated)
           await client.query(`
             INSERT INTO stages (
-              test_id, stage, duration_min, load, heart_rate_bpm, lactate_mmol,
+              test_id, stage, duration_min, load, theoretical_load, heart_rate_bpm, lactate_mmol,
               rr_systolic, rr_diastolic, is_final_approximation, notes
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (test_id, stage) 
             DO UPDATE SET 
               duration_min = EXCLUDED.duration_min,
               load = EXCLUDED.load,
+              theoretical_load = EXCLUDED.theoretical_load,
               heart_rate_bpm = EXCLUDED.heart_rate_bpm,
               lactate_mmol = EXCLUDED.lactate_mmol,
               rr_systolic = EXCLUDED.rr_systolic,
@@ -235,6 +240,7 @@ export async function POST(request: NextRequest) {
             stageNumber,
             actualDuration,
             finalLoad,
+            theoreticalLoad,
             finalHeartRate || null,
             finalLactate,
             dataEntry.rrSystolic || null,
@@ -291,6 +297,7 @@ export async function GET(request: NextRequest) {
           s.stage,
           s.duration_min as duration,
           s.load,
+          s.theoretical_load as "theoreticalLoad",
           s.heart_rate_bpm as "heartRate",
           s.lactate_mmol as lactate,
           s.rr_systolic as "rrSystolic",
@@ -311,6 +318,7 @@ export async function GET(request: NextRequest) {
         const baseData: LactateWebhookPayload = {
           timestamp: row.timestamp,
           load: row.load,
+          theoreticalLoad: row.theoreticalLoad,
           power: row.load, // Backward compatibility
           lactate: parseFloat(row.lactate),
           heartRate: row.heartRate,
