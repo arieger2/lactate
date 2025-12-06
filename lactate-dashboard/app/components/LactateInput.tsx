@@ -46,6 +46,7 @@ export default function LactateInput() {
   const [testInfos, setTestInfos] = useState<TestInfo[]>([])
   const [selectedTestInfo, setSelectedTestInfo] = useState<TestInfo | null>(null)
   const [stages, setStages] = useState<Stage[]>([])
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [currentStage, setCurrentStage] = useState<CurrentStage>({
     stage: 1,
     load: '',
@@ -151,10 +152,14 @@ export default function LactateInput() {
   const isLastStage = (currentStageNumber: number): boolean => {
     if (stages.length === 0) return true
     const maxStage = Math.max(...stages.map(s => s.stage))
-    return currentStageNumber >= maxStage
+    return currentStageNumber > maxStage
   }
 
-  const buildStagePayload = (stageData: CurrentStage, duration: number) => {
+  const isExistingStage = (currentStageNumber: number): boolean => {
+    return stages.some(s => s.stage === currentStageNumber)
+  }
+
+  const buildStagePayload = (stageData: CurrentStage, duration: number, isExisting: boolean = false) => {
     return {
       testId: selectedTestInfo!.testId,
       stage: stageData.stage,
@@ -164,7 +169,8 @@ export default function LactateInput() {
       rrSystolic: stageData.rrSystolic ? parseInt(stageData.rrSystolic) : undefined,
       rrDiastolic: stageData.rrDiastolic ? parseInt(stageData.rrDiastolic) : undefined,
       duration: duration,
-      notes: stageData.notes || undefined
+      notes: stageData.notes || undefined,
+      isExistingStage: isExisting // Flag to prevent backend re-interpolation
     }
   }
 
@@ -240,38 +246,53 @@ export default function LactateInput() {
     const targetDuration = parseInt(selectedTestInfo.stageDuration_min)
     const actualDuration = currentStage.duration ? parseInt(currentStage.duration) : targetDuration
     const isLast = isLastStage(currentStage.stage)
+    const isExisting = isExistingStage(currentStage.stage)
     
-    // 2.) Check if time 100% reached
-    if (actualDuration >= targetDuration) {
-      // 2.1) Time 100% reached: save
-      const payload = buildStagePayload(currentStage, actualDuration)
+    // CASE 1: Editing an existing stage
+    if (isExisting) {
+      // Always save existing stage modifications, regardless of duration
+      const payload = buildStagePayload(currentStage, actualDuration, true) // Pass isExisting=true
       const saved = await saveStageToDatabase(payload)
       
       if (saved) {
         updateLocalStagesArray(currentStage, actualDuration)
+        setHasUnsavedChanges(false)
         
-        // 2.1.1) If last stage: prepare next stage
-        if (isLast) {
+        // Check if this was the last existing stage AND time is 100%
+        // If so, prepare next stage to allow continuing
+        const maxStage = Math.max(...stages.map(s => s.stage))
+        if (currentStage.stage === maxStage && actualDuration >= targetDuration) {
           prepareNextStage()
         }
-        // 2.1.2) If not last stage: nothing (user can select another stage)
+        // Otherwise, user stays on this stage to continue editing
       }
-    } else {
-      // 2.2) Time < 100%
-      
-      // 2.2.1) Not last stage: error message
-      if (!isLast) {
-        showErrorMessage('Stage not completed! Only the last stage can have incomplete duration.')
-        return
-      }
-      
-      // 2.2.2) Last stage with incomplete time: save with approximation
-      const payload = buildStagePayload(currentStage, actualDuration)
+      return
+    }
+    
+    // CASE 2: Creating a new stage (isLast should be true)
+    // Check if time 100% reached
+    if (actualDuration >= targetDuration) {
+      // 2.1) Time 100% reached: save
+      const payload = buildStagePayload(currentStage, actualDuration, false) // New stage
       const saved = await saveStageToDatabase(payload)
       
       if (saved) {
         updateLocalStagesArray(currentStage, actualDuration)
+        setHasUnsavedChanges(false)
+        // 2.1.1) New stage completed: prepare next stage
         prepareNextStage()
+      }
+    } else {
+      // 2.2) Time < 100% for new stage
+      // Only allowed for the last/new stage with approximation
+      // This means the test is FINISHED (user couldn't complete the stage)
+      const payload = buildStagePayload(currentStage, actualDuration, false) // New incomplete stage
+      const saved = await saveStageToDatabase(payload)
+      
+      if (saved) {
+        updateLocalStagesArray(currentStage, actualDuration)
+        setHasUnsavedChanges(false)
+        // DO NOT prepare next stage - test is finished with incomplete last stage
       }
     }
   }
@@ -287,56 +308,79 @@ export default function LactateInput() {
       duration: stage.duration ? stage.duration.toString() : '',
       notes: stage.notes || ''
     })
+    setHasUnsavedChanges(false)
   }
 
   const handleRemoveStage = async (stageNumber: number) => {
     if (!selectedTestInfo) return
     
     try {
-      const remainingStages = stages.filter(s => s.stage !== stageNumber)
-      
-      // Delete entire test and re-save stages
-      await fetch(`/api/lactate-webhook?testId=${selectedTestInfo.testId}`, {
+      // Delete only the specific stage
+      await fetch(`/api/lactate-webhook?testId=${selectedTestInfo.testId}&stage=${stageNumber}`, {
         method: 'DELETE'
       })
       
-      // Re-save test_info
-      await fetch('/api/test-infos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          test_id: selectedTestInfo.testId,
-          customer_id: selectedCustomer!.customer_id,
-          test_date: selectedTestInfo.testDate,
-          test_time: selectedTestInfo.testTime,
-          device: selectedTestInfo.device,
-          unit: selectedTestInfo.unit,
-          start_load: parseFloat(selectedTestInfo.startLoad),
-          increment: parseFloat(selectedTestInfo.increment),
-          stage_duration_min: parseInt(selectedTestInfo.stageDuration_min)
-        })
-      })
+      // Filter out the removed stage and renumber remaining stages
+      const remainingStages = stages
+        .filter(s => s.stage !== stageNumber)
+        .map((s, index) => ({
+          ...s,
+          stage: index + 1 // Renumber stages sequentially
+        }))
       
-      // Re-save remaining stages
+      // Update stage numbers in database for remaining stages
       for (const stage of remainingStages) {
-        await fetch('/api/lactate-webhook', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            testId: selectedTestInfo.testId,
-            stage: stage.stage,
-            load: stage.load,
-            lactate: stage.lactate,
-            heartRate: stage.heartRate,
-            rrSystolic: stage.rrSystolic,
-            rrDiastolic: stage.rrDiastolic,
-            duration: stage.duration,
-            notes: stage.notes
+        // Only update if stage number changed
+        const originalStage = stages.find(s => s.load === stage.load && s.lactate === stage.lactate)
+        if (originalStage && originalStage.stage !== stage.stage) {
+          await fetch('/api/lactate-webhook', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              testId: selectedTestInfo.testId,
+              stage: stage.stage,
+              load: stage.load,
+              lactate: stage.lactate,
+              heartRate: stage.heartRate,
+              rrSystolic: stage.rrSystolic,
+              rrDiastolic: stage.rrDiastolic,
+              duration: stage.duration || selectedTestInfo.stageDuration_min,
+              notes: stage.notes,
+              isExistingStage: true // Prevent re-interpolation
+            })
           })
-        })
+        }
       }
       
       setStages(remainingStages)
+      
+      // If we removed the current stage, switch to the nearest valid stage
+      if (currentStage.stage === stageNumber) {
+        const newStageNumber = Math.min(currentStage.stage, remainingStages.length)
+        if (remainingStages.length > 0) {
+          const stageToLoad = remainingStages.find(s => s.stage === newStageNumber) || remainingStages[0]
+          handleStageClick(stageToLoad)
+        } else {
+          // No stages left, reset to initial state
+          setCurrentStage({
+            stage: 1,
+            load: '',
+            lactate: '',
+            heartRate: '',
+            rrSystolic: '',
+            rrDiastolic: '',
+            duration: selectedTestInfo?.stageDuration_min || '3',
+            notes: ''
+          })
+        }
+      } else if (currentStage.stage > stageNumber) {
+        // Adjust current stage number if it's after the removed stage
+        const newStageNumber = currentStage.stage - 1
+        const stageToLoad = remainingStages.find(s => s.stage === newStageNumber)
+        if (stageToLoad) {
+          handleStageClick(stageToLoad)
+        }
+      }
     } catch (error) {
       console.error('Error removing stage:', error)
     }
@@ -380,8 +424,10 @@ export default function LactateInput() {
             }}
             onStageChange={(updates) => {
               setCurrentStage(prev => ({ ...prev, ...updates }))
+              setHasUnsavedChanges(true)
             }}
             onSave={handleSaveStage}
+            hasUnsavedChanges={hasUnsavedChanges}
             onChangeProtocol={() => {
               setSelectedTestInfo(null)
               setStages([])

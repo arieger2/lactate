@@ -119,12 +119,21 @@ export async function POST(request: NextRequest) {
           
           // Get next stage number if not provided
           let stageNumber: number = dataEntry.stage || 0
+          let isExistingStage = body.isExistingStage === true // Check the flag from request body first
+          
           if (!stageNumber) {
             const maxStage = await client.query(
               'SELECT COALESCE(MAX(stage), 0) as max_stage FROM stages WHERE test_id = $1',
               [testId]
             )
             stageNumber = maxStage.rows[0].max_stage + 1
+          } else if (!isExistingStage) {
+            // Only check database if flag not explicitly set to true
+            const existingStage = await client.query(
+              'SELECT stage FROM stages WHERE test_id = $1 AND stage = $2',
+              [testId, stageNumber]
+            )
+            isExistingStage = existingStage.rows.length > 0
           }
           
           // Check if interpolation is needed
@@ -134,7 +143,8 @@ export async function POST(request: NextRequest) {
           let finalHeartRate = dataEntry.heartRate
           let isFinalApproximation = dataEntry.isFinalApproximation || false
           
-          if (stageNumber > 1 && isStageIncomplete(actualDuration, targetDuration)) {
+          // Only interpolate for NEW incomplete stages, not when editing existing stages
+          if (!isExistingStage && stageNumber > 1 && isStageIncomplete(actualDuration, targetDuration)) {
             // Get previous stage for interpolation
             const prevStage = await client.query(`
               SELECT load, lactate_mmol as lactate, heart_rate_bpm as "heartRate"
@@ -366,11 +376,21 @@ export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const sessionId = searchParams.get('sessionId') || searchParams.get('testId')
   const testId = sessionId
+  const stageNumber = searchParams.get('stage')
 
   try {
     const client = await pool.connect()
     try {
-      if (testId) {
+      if (testId && stageNumber) {
+        // Delete specific stage from PostgreSQL
+        await client.query('DELETE FROM stages WHERE test_id = $1 AND stage = $2', [testId, parseInt(stageNumber)])
+        
+        return NextResponse.json({
+          success: true,
+          message: `Stage ${stageNumber} of test ${testId} deleted from database`,
+          source: 'postgresql'
+        })
+      } else if (testId) {
         // Delete specific test and its stages from PostgreSQL
         // Note: stages will be cascade deleted via FK constraint
         await client.query('DELETE FROM adjusted_thresholds WHERE test_id = $1', [testId])

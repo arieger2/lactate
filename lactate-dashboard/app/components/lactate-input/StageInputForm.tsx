@@ -25,6 +25,7 @@ interface StageInputFormProps {
   selectedTestInfo: TestInfo
   onStageChange: (updates: Partial<Stage>) => void
   onSave: () => void
+  hasUnsavedChanges?: boolean
   onChangeProtocol?: () => void
 }
 
@@ -33,6 +34,7 @@ export default function StageInputForm({
   selectedTestInfo, 
   onStageChange,
   onSave,
+  hasUnsavedChanges = false,
   onChangeProtocol
 }: StageInputFormProps) {
   
@@ -174,10 +176,10 @@ export default function StageInputForm({
           onClick={onSave}
           disabled={!isValid}
           className={`px-4 py-2 ${
-            isValid
+            isValid && hasUnsavedChanges
               ? 'bg-green-500 hover:bg-green-600'
               : 'bg-zinc-400'
-          } text-white rounded font-medium disabled:bg-zinc-400`}
+          } text-white rounded font-medium disabled:bg-zinc-400 disabled:cursor-not-allowed`}
         >
           ✓ Continue to Next Stage
         </button>
