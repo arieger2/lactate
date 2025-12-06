@@ -102,126 +102,97 @@ export function calculateTrainingZones(
   const lt1Power = lt1?.power || maxPower * 0.65
   const lt2Power = lt2?.power || maxPower * 0.85
 
-  // Method-specific zone calculation
-  switch (method) {
-    case 'seiler':
-      // Seiler 3-Zone Model: Zone 1 (<LT1), Zone 2 (LT1-LT2), Zone 3 (>LT2)
-      return [
-        {
-          id: 1,
-          name: 'Zone 1 - Aerob',
-          range: [0, lt1Power],
-          color: 'rgba(34, 197, 94, 0.2)',
-          borderColor: 'rgba(34, 197, 94, 0.8)',
-          description: 'Aerobe Zone (bis LT1 ~2mmol/L)'
-        },
-        {
-          id: 2,
-          name: 'Zone 2 - Schwelle',
-          range: [lt1Power, lt2Power],
-          color: 'rgba(251, 191, 36, 0.2)',
-          borderColor: 'rgba(251, 191, 36, 0.8)',
-          description: 'Schwellenzone (LT1 bis LT2 ~4mmol/L)'
-        },
-        {
-          id: 3,
-          name: 'Zone 3 - Anaerob',
-          range: [lt2Power, maxPower * 1.1],
-          color: 'rgba(239, 68, 68, 0.2)',
-          borderColor: 'rgba(239, 68, 68, 0.8)',
-          description: 'Anaerobe Zone (>LT2)'
-        }
-      ]
-
-    case 'dickhuth':
-      // Dickhuth: LT1 at +0.5mmol, LT2 at +1.5mmol (smaller spacing)
-      return [
-        {
-          id: 1,
-          name: 'Zone 1 - Regeneration',
-          range: [0, lt1Power * 0.75],
-          color: 'rgba(34, 197, 94, 0.2)',
-          borderColor: 'rgba(34, 197, 94, 0.8)',
-          description: 'Regenerationsbereich'
-        },
-        {
-          id: 2,
-          name: 'Zone 2 - Aerobe Basis',
-          range: [lt1Power * 0.75, lt1Power],
-          color: 'rgba(59, 130, 246, 0.2)',
-          borderColor: 'rgba(59, 130, 246, 0.8)',
-          description: 'Aerob bis LT1 (+0.5mmol/L)'
-        },
-        {
-          id: 3,
-          name: 'Zone 3 - Schwelle',
-          range: [lt1Power, lt2Power],
-          color: 'rgba(251, 191, 36, 0.2)',
-          borderColor: 'rgba(251, 191, 36, 0.8)',
-          description: 'LT1 bis LT2 (+1.5mmol/L)'
-        },
-        {
-          id: 4,
-          name: 'Zone 4 - Anaerob',
-          range: [lt2Power, lt2Power * 1.15],
-          color: 'rgba(239, 68, 68, 0.2)',
-          borderColor: 'rgba(239, 68, 68, 0.8)',
-          description: 'Anaerober Bereich'
-        },
-        {
-          id: 5,
-          name: 'Zone 5 - Power',
-          range: [lt2Power * 1.15, maxPower * 1.1],
-          color: 'rgba(147, 51, 234, 0.2)',
-          borderColor: 'rgba(147, 51, 234, 0.8)',
-          description: 'Maximale Power'
-        }
-      ]
-
-    default:
-      // Standard 5-Zone Model for all other methods
-      // LT1 = End of Zone 2, LT2 = End of Zone 3
-      return [
-        {
-          id: 1,
-          name: 'Zone 1 - Regeneration',
-          range: [0, lt1Power * 0.68],
-          color: 'rgba(34, 197, 94, 0.2)',
-          borderColor: 'rgba(34, 197, 94, 0.8)',
-          description: 'Regeneration & Fettstoffwechsel'
-        },
-        {
-          id: 2,
-          name: 'Zone 2 - Aerobe Basis',
-          range: [lt1Power * 0.68, lt1Power],
-          color: 'rgba(59, 130, 246, 0.2)',
-          borderColor: 'rgba(59, 130, 246, 0.8)',
-          description: 'Aerober Grundlagenbereich (bis LT1)'
-        },
-        {
-          id: 3,
-          name: 'Zone 3 - Schwelle',
-          range: [lt1Power, lt2Power],
-          color: 'rgba(251, 191, 36, 0.2)',
-          borderColor: 'rgba(251, 191, 36, 0.8)',
-          description: 'Tempobereich (LT1 bis LT2)'
-        },
-        {
-          id: 4,
-          name: 'Zone 4 - Anaerob',
-          range: [lt2Power, lt2Power * 1.08],
-          color: 'rgba(239, 68, 68, 0.2)',
-          borderColor: 'rgba(239, 68, 68, 0.8)',
-          description: 'Schwellenbereich (um LT2)'
-        },
-        {
-          id: 5,
-          name: 'Zone 5 - Power',
-          range: [lt2Power * 1.08, maxPower * 1.1],
-          color: 'rgba(147, 51, 234, 0.2)',
-          borderColor: 'rgba(147, 51, 234, 0.8)',
-          description: 'Maximale anaerobe Leistung (>LT2)'
-        }
-      ]
+  // Method-specific zone calculation - only for valid methods
+  // For dickhuth, use 5-zone model, for others use standard 5-zone
+  if (method === 'dickhuth') {
+    // Dickhuth: LT1 at LE, LT2 at LE +1.5mmol (smaller spacing)
+    return [
+      {
+        id: 1,
+        name: 'Zone 1 - Regeneration',
+        range: [0, lt1Power * 0.75],
+        color: 'rgba(34, 197, 94, 0.2)',
+        borderColor: 'rgba(34, 197, 94, 0.8)',
+        description: 'Regenerationsbereich'
+      },
+      {
+        id: 2,
+        name: 'Zone 2 - Aerobe Basis',
+        range: [lt1Power * 0.75, lt1Power],
+        color: 'rgba(59, 130, 246, 0.2)',
+        borderColor: 'rgba(59, 130, 246, 0.8)',
+        description: 'Aerob bis LT1 (LE)'
+      },
+      {
+        id: 3,
+        name: 'Zone 3 - Schwelle',
+        range: [lt1Power, lt2Power],
+        color: 'rgba(251, 191, 36, 0.2)',
+        borderColor: 'rgba(251, 191, 36, 0.8)',
+        description: 'LT1 bis LT2 (LE + 1.5mmol/L)'
+      },
+      {
+        id: 4,
+        name: 'Zone 4 - Anaerob',
+        range: [lt2Power, lt2Power * 1.15],
+        color: 'rgba(239, 68, 68, 0.2)',
+        borderColor: 'rgba(239, 68, 68, 0.8)',
+        description: 'Anaerober Bereich'
+      },
+      {
+        id: 5,
+        name: 'Zone 5 - Power',
+        range: [lt2Power * 1.15, maxPower * 1.1],
+        color: 'rgba(147, 51, 234, 0.2)',
+        borderColor: 'rgba(147, 51, 234, 0.8)',
+        description: 'Maximale Power'
+      }
+    ]
   }
+
+  // Default: Standard 5-zone model (all other methods)
+  // Standard 5-Zone Model for all other methods
+  // LT1 = End of Zone 2, LT2 = End of Zone 3
+  return [
+    {
+      id: 1,
+      name: 'Zone 1 - Regeneration',
+      range: [0, lt1Power * 0.68],
+      color: 'rgba(34, 197, 94, 0.2)',
+      borderColor: 'rgba(34, 197, 94, 0.8)',
+      description: 'Regeneration & Fettstoffwechsel'
+    },
+    {
+      id: 2,
+      name: 'Zone 2 - Aerobe Basis',
+      range: [lt1Power * 0.68, lt1Power],
+      color: 'rgba(59, 130, 246, 0.2)',
+      borderColor: 'rgba(59, 130, 246, 0.8)',
+      description: 'Aerober Grundlagenbereich (bis LT1)'
+    },
+    {
+      id: 3,
+      name: 'Zone 3 - Schwelle',
+      range: [lt1Power, lt2Power],
+      color: 'rgba(251, 191, 36, 0.2)',
+      borderColor: 'rgba(251, 191, 36, 0.8)',
+      description: 'Tempobereich (LT1 bis LT2)'
+    },
+    {
+      id: 4,
+      name: 'Zone 4 - Anaerob',
+      range: [lt2Power, lt2Power * 1.08],
+      color: 'rgba(239, 68, 68, 0.2)',
+      borderColor: 'rgba(239, 68, 68, 0.8)',
+      description: 'Schwellenbereich (um LT2)'
+    },
+    {
+      id: 5,
+      name: 'Zone 5 - Power',
+      range: [lt2Power * 1.08, maxPower * 1.1],
+      color: 'rgba(147, 51, 234, 0.2)',
+      borderColor: 'rgba(147, 51, 234, 0.8)',
+      description: 'Maximale anaerobe Leistung (>LT2)'
+    }
+  ]
 }
