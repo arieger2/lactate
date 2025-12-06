@@ -35,6 +35,22 @@ export function createLactateChartOptions(
     }
   }
   
+  // Check if last stage is interpolated
+  const lastStageIndex = webhookData.length - 1
+  const hasInterpolatedLastStage = lastStageIndex > 0 && (webhookData[lastStageIndex] as any).isInterpolated === true
+  
+  // Prepare data series - split into complete and interpolated segments
+  const completeData = hasInterpolatedLastStage 
+    ? webhookData.slice(0, -1).map(d => [d.power, d.lactate])
+    : webhookData.map(d => [d.power, d.lactate])
+  
+  const interpolatedSegment = hasInterpolatedLastStage && lastStageIndex > 0
+    ? [
+        [webhookData[lastStageIndex - 1].power, webhookData[lastStageIndex - 1].lactate],
+        [webhookData[lastStageIndex].power, webhookData[lastStageIndex].lactate]
+      ]
+    : []
+  
   return {
     animation: false,
     title: {
@@ -62,7 +78,13 @@ export function createLactateChartOptions(
     },
     legend: {
       top: 30,
-      data: ['Laktat', 'Herzfrequenz', 'LT1', 'LT2']
+      data: [
+        'Laktat', 
+        ...(hasInterpolatedLastStage ? ['Laktat (interpoliert)'] : []),
+        'Herzfrequenz', 
+        'LT1', 
+        'LT2'
+      ]
     },
     xAxis: {
       type: 'value',
@@ -95,11 +117,11 @@ export function createLactateChartOptions(
       bottom: 80
     },
     series: [
-      // Lactate curve mit Trainingszonen als Hintergrundbereiche
+      // Lactate curve (complete stages) mit Trainingszonen als Hintergrundbereiche
       {
         name: 'Laktat',
         type: 'line' as const,
-        data: webhookData.map(d => [d.power, d.lactate]),
+        data: completeData,
         smooth: true,
         lineStyle: {
           color: '#ef4444',
@@ -133,6 +155,25 @@ export function createLactateChartOptions(
           }])
         }
       },
+      // Interpolated segment (last stage, dashed)
+      ...(hasInterpolatedLastStage && interpolatedSegment.length > 0 ? [{
+        name: 'Laktat (interpoliert)',
+        type: 'line' as const,
+        data: interpolatedSegment,
+        smooth: true,
+        lineStyle: {
+          color: '#ef4444',
+          width: 3,
+          type: 'dashed' as const
+        },
+        itemStyle: {
+          color: '#ef4444'
+        },
+        yAxisIndex: 0,
+        showSymbol: true,
+        symbol: 'circle',
+        symbolSize: 8
+      }] : []),
       // Heart rate (optional, wenn vorhanden)
       ...(webhookData.some(d => d.heartRate) ? [{
         name: 'Herzfrequenz',

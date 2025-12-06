@@ -6,10 +6,13 @@ export async function POST(request: NextRequest) {
   let client
   try {
     const body = await request.json()
-    const { test_id, profile_id, test_date, test_time, device, unit, start_load, increment, stage_duration_min } = body
+    const { test_id, customer_id, profile_id, test_date, test_time, device, unit, start_load, increment, stage_duration_min } = body
+    
+    // Accept either customer_id or profile_id (they're the same)
+    const actualProfileId = customer_id || profile_id
     
     // Validation
-    if (!test_id || !profile_id || !test_date || !test_time || !device || !unit || start_load === undefined || increment === undefined || stage_duration_min === undefined) {
+    if (!test_id || !actualProfileId || !test_date || !test_time || !device || !unit || start_load === undefined || increment === undefined || stage_duration_min === undefined) {
       return NextResponse.json({
         success: false,
         error: 'Missing required fields'
@@ -38,7 +41,7 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `, [
       test_id,
-      profile_id,
+      actualProfileId,
       test_date,
       test_time,
       device,
@@ -68,12 +71,13 @@ export async function POST(request: NextRequest) {
 // GET - List test infos for a profile
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  const profile_id = searchParams.get('profile_id')
+  const customerId = searchParams.get('customerId')
+  const profile_id = customerId || searchParams.get('profile_id')
   
   if (!profile_id) {
     return NextResponse.json({
       success: false,
-      error: 'profile_id parameter is required'
+      error: 'customerId or profile_id parameter is required'
     }, { status: 400 })
   }
   

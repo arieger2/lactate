@@ -75,7 +75,10 @@ export interface LactateDataPoint {
   lactate: number
   heartRate?: number
   vo2?: number
-  timestamp: string
+  timestamp?: string
+  stage?: number
+  /** Flag indicating this value was interpolated from an incomplete stage */
+  isInterpolated?: boolean
 }
 
 export interface ThresholdPoint {

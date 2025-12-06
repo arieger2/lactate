@@ -52,7 +52,21 @@ export default function LactateGraph() {
       distributionChartInstance.current = echarts.init(distributionChartRef.current)
     }
 
-    return () => {}
+    return () => {
+      // Proper cleanup
+      if (trendChartInstance.current) {
+        trendChartInstance.current.dispose()
+        trendChartInstance.current = null
+      }
+      if (gaugeChartInstance.current) {
+        gaugeChartInstance.current.dispose()
+        gaugeChartInstance.current = null
+      }
+      if (distributionChartInstance.current) {
+        distributionChartInstance.current.dispose()
+        distributionChartInstance.current = null
+      }
+    }
   }, [])
 
   // Filter data based on time range
@@ -95,31 +109,6 @@ export default function LactateGraph() {
   }
 
   const stats = getStatistics()
-
-  // Update charts when data changes
-  useEffect(() => {
-    // Charts will be updated in the render cycle through the chart options
-  }, [data, timeRange])
-
-  // Handle window resize
-  useEffect(() => {
-    const handleResize = () => {
-      trendChartInstance.current?.resize()
-      gaugeChartInstance.current?.resize()
-      distributionChartInstance.current?.resize()
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      trendChartInstance.current?.dispose()
-      gaugeChartInstance.current?.dispose()
-      distributionChartInstance.current?.dispose()
-    }
-  }, [])
 
   const getChartOption = () => {
     return {
@@ -335,63 +324,91 @@ export default function LactateGraph() {
   }
 
   const getDistributionOption = () => {
-    // Create distribution buckets
-    const buckets = [
-      { name: 'Rest (0-2.2)', min: 0, max: 2.2, color: '#10b981' },
-      { name: 'Aerobic (2.2-4)', min: 2.2, max: 4, color: '#f59e0b' },
-      { name: 'Anaerobic (4+)', min: 4, max: Infinity, color: '#ef4444' }
+    const ranges = [
+      { name: 'Rest (< 2.2)', min: 0, max: 2.2, color: '#10b981' },
+      { name: 'Aerobic (2.2-4)', min: 2.2, max: 4, color: '#3b82f6' },
+      { name: 'Threshold (4-6)', min: 4, max: 6, color: '#f59e0b' },
+      { name: 'High (> 6)', min: 6, max: 100, color: '#ef4444' }
     ]
 
-    const distribution = buckets.map(bucket => {
-      const count = filteredData.filter(d => d.value >= bucket.min && d.value < bucket.max).length
+    const distribution = ranges.map(range => {
+      const count = filteredData.filter(d => d.value >= range.min && d.value < range.max).length
+      const percentage = filteredData.length > 0 ? (count / filteredData.length * 100).toFixed(1) : 0
       return {
-        name: bucket.name,
+        name: range.name,
         value: count,
-        itemStyle: { color: bucket.color }
+        percentage,
+        itemStyle: { color: range.color }
       }
     })
 
     return {
-      title: {
-        show: false
-      },
       tooltip: {
         trigger: 'item',
-        formatter: '{a} <br/>{b}: {c} readings ({d}%)'
-      },
-      legend: {
-        bottom: '5%',
-        left: 'center',
-        textStyle: {
-          color: '#6b7280'
+        formatter: (params: any) => {
+          return `${params.name}<br/>Count: ${params.value} (${params.data.percentage}%)`
         }
       },
       series: [
         {
-          name: 'Zone Distribution',
           type: 'pie',
           radius: ['40%', '70%'],
-          center: ['50%', '40%'],
           avoidLabelOverlap: false,
+          itemStyle: {
+            borderRadius: 10,
+            borderColor: '#fff',
+            borderWidth: 2
+          },
           label: {
-            show: false,
-            position: 'center'
+            show: true,
+            formatter: '{b}: {d}%',
+            color: '#6b7280'
           },
           emphasis: {
             label: {
               show: true,
-              fontSize: 16,
+              fontSize: 14,
               fontWeight: 'bold'
             }
           },
-          labelLine: {
-            show: false
-          },
           data: distribution
         }
-      ]
+      ],
+      backgroundColor: 'transparent'
     }
   }
+
+  // Update trend chart when data changes
+  useEffect(() => {
+    if (trendChartInstance.current) {
+      trendChartInstance.current.setOption(getChartOption())
+    }
+  }, [filteredData, timeRange])
+
+  // Update gauge chart when data changes
+  useEffect(() => {
+    if (gaugeChartInstance.current) {
+      gaugeChartInstance.current.setOption(getGaugeOption())
+    }
+  }, [filteredData])
+
+  // Update distribution chart when data changes
+  useEffect(() => {
+    if (distributionChartInstance.current) {
+      distributionChartInstance.current.setOption(getDistributionOption())
+    }
+  }, [filteredData])
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      trendChartInstance.current?.resize()
+      gaugeChartInstance.current?.resize()
+      distributionChartInstance.current?.resize()
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   return (
     <div className="space-y-6">

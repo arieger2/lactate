@@ -85,7 +85,8 @@ export function useSessionData({
               lactate: point.lactate,
               heartRate: point.heartRate,
               vo2: point.vo2,
-              timestamp: point.timestamp
+              timestamp: point.timestamp,
+              isInterpolated: point.isFinalApproximation === true
             }))
             setWebhookData(mappedData)
             const unit = data[0]?.unit || 'watt'

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
+import { interpolateIncompleteStage, isStageIncomplete } from '@/lib/incompleteStageInterpolation'
 
 interface LactateWebhookPayload {
   timestamp?: string
@@ -109,8 +110,15 @@ export async function POST(request: NextRequest) {
         if (testExists.rows.length === 0) {
           console.warn(`Test ${testId} not found - stage data not saved to database`)
         } else {
+          // Get test info for stage duration
+          const testInfo = await client.query(
+            'SELECT stage_duration_min FROM test_infos WHERE test_id = $1',
+            [testId]
+          )
+          const targetDuration = testInfo.rows[0]?.stage_duration_min || 3
+          
           // Get next stage number if not provided
-          let stageNumber = dataEntry.stage
+          let stageNumber: number = dataEntry.stage || 0
           if (!stageNumber) {
             const maxStage = await client.query(
               'SELECT COALESCE(MAX(stage), 0) as max_stage FROM stages WHERE test_id = $1',
@@ -119,7 +127,83 @@ export async function POST(request: NextRequest) {
             stageNumber = maxStage.rows[0].max_stage + 1
           }
           
-          // Insert stage data
+          // Check if interpolation is needed
+          const actualDuration = dataEntry.duration || targetDuration
+          let finalLoad = dataEntry.load
+          let finalLactate = dataEntry.lactate
+          let finalHeartRate = dataEntry.heartRate
+          let isFinalApproximation = dataEntry.isFinalApproximation || false
+          
+          if (stageNumber > 1 && isStageIncomplete(actualDuration, targetDuration)) {
+            // Get previous stage for interpolation
+            const prevStage = await client.query(`
+              SELECT load, lactate_mmol as lactate, heart_rate_bpm as "heartRate"
+              FROM stages
+              WHERE test_id = $1 AND stage = $2
+            `, [testId, stageNumber - 1])
+            
+            if (prevStage.rows.length > 0) {
+              const previousStage = {
+                power: parseFloat(prevStage.rows[0].load),
+                lactate: parseFloat(prevStage.rows[0].lactate),
+                heartRate: prevStage.rows[0].heartRate ? parseInt(prevStage.rows[0].heartRate) : undefined
+              }
+              
+              const currentStage = {
+                power: dataEntry.load,
+                lactate: dataEntry.lactate,
+                heartRate: dataEntry.heartRate
+              }
+              
+              // Get pre-previous stage for quadratic interpolation (if available)
+              let prePreviousStage: { power: number; lactate: number; heartRate?: number } | undefined
+              if (stageNumber > 2) {
+                const prePrevStage = await client.query(`
+                  SELECT load, lactate_mmol as lactate, heart_rate_bpm as "heartRate"
+                  FROM stages
+                  WHERE test_id = $1 AND stage = $2
+                `, [testId, stageNumber - 2])
+                
+                if (prePrevStage.rows.length > 0) {
+                  prePreviousStage = {
+                    power: parseFloat(prePrevStage.rows[0].load),
+                    lactate: parseFloat(prePrevStage.rows[0].lactate),
+                    heartRate: prePrevStage.rows[0].heartRate ? parseInt(prePrevStage.rows[0].heartRate) : undefined
+                  }
+                }
+              }
+              
+              const interpolated = interpolateIncompleteStage({
+                previousStage,
+                currentStage,
+                prePreviousStage,
+                actualDuration,
+                targetDuration
+              })
+              
+              console.log('📊 Stage interpolation applied:', {
+                stage: stageNumber,
+                method: interpolated.method,
+                original: { load: dataEntry.load, lactate: dataEntry.lactate, heartRate: dataEntry.heartRate },
+                interpolated: {
+                  load: interpolated.interpolatedLoad,
+                  lactate: interpolated.interpolatedLactate,
+                  heartRate: interpolated.interpolatedHeartRate
+                },
+                actualDuration,
+                targetDuration,
+                confidence: interpolated.confidence,
+                note: interpolated.note
+              })
+              
+              finalLoad = interpolated.interpolatedLoad
+              finalLactate = interpolated.interpolatedLactate
+              finalHeartRate = interpolated.interpolatedHeartRate
+              isFinalApproximation = true
+            }
+          }
+          
+          // Insert stage data (with interpolated values if applicable)
           await client.query(`
             INSERT INTO stages (
               test_id, stage, duration_min, load, heart_rate_bpm, lactate_mmol,
@@ -139,13 +223,13 @@ export async function POST(request: NextRequest) {
           `, [
             testId,
             stageNumber,
-            dataEntry.duration || 3, // Default 3 minutes
-            dataEntry.load,
-            dataEntry.heartRate || null,
-            dataEntry.lactate,
+            actualDuration,
+            finalLoad,
+            finalHeartRate || null,
+            finalLactate,
             dataEntry.rrSystolic || null,
             dataEntry.rrDiastolic || null,
-            dataEntry.isFinalApproximation || false,
+            isFinalApproximation,
             dataEntry.notes || null
           ])
         }
@@ -205,7 +289,8 @@ export async function GET(request: NextRequest) {
           s.notes,
           s.created_at as timestamp,
           ti.unit,
-          ti.device
+          ti.device,
+          ti.stage_duration_min
         FROM stages s
         JOIN test_infos ti ON s.test_id = ti.test_id
         WHERE s.test_id = $1 
@@ -238,14 +323,26 @@ export async function GET(request: NextRequest) {
       // Sync memory cache with database
       dataStore.set(sessionId, dbData)
 
-      return NextResponse.json({
+      // Build response with optional metadata
+      const response: any = {
         sessionId: sessionId,
         testId: testId,
         data: dbData,
         totalPoints: dbData.length,
         lastUpdated: dbData.length > 0 ? dbData[dbData.length - 1].timestamp : null,
         source: 'postgresql'
-      })
+      }
+      
+      // Include metadata if requested
+      if (includeMetadata && result.rows.length > 0) {
+        response.metadata = {
+          stage_duration_min: result.rows[0].stage_duration_min,
+          unit: result.rows[0].unit,
+          device: result.rows[0].device
+        }
+      }
+
+      return NextResponse.json(response)
     } finally {
       client.release()
     }
