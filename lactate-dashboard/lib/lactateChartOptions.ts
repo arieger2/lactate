@@ -44,9 +44,6 @@ export function createLactateChartOptions(
     ? webhookData.slice(0, -1).map(d => [d.power, d.lactate])
     : webhookData.map(d => [d.power, d.lactate])
   
-  console.log('📊 Complete data points:', completeData)
-  console.log('📊 Last complete point:', completeData[completeData.length - 1])
-  
   // Generate parabolic curve through last 3 points if interpolated
   let parabolaCurveData: number[][] = []
   if (hasInterpolatedLastStage && lastStageIndex >= 2) {
@@ -56,12 +53,11 @@ export function createLactateChartOptions(
     
     const theoreticalLoad = parseFloat((p2 as any).theoreticalLoad || p2.power)
     
-    // CRITICAL: Lactate 8.24 was measured at 20 km/h but only for 50 seconds
-    // Theoretical load 18.6 = what could be sustained for full 3 minutes
-    // Therefore: Parabola through (16, 3.49), (18, 6.45), (18.6, 8.24)
+    // Parabola through last 3 stages using theoretical load for incomplete stage
+    // Example: (16, 3.49), (18, 6.45), (18.6, 8.24)
     const x0 = parseFloat(p0.power as any), y0 = parseFloat(p0.lactate as any)
     const x1 = parseFloat(p1.power as any), y1 = parseFloat(p1.lactate as any)
-    const x2 = theoreticalLoad, y2 = parseFloat(p2.lactate as any)  // Use theoretical load!
+    const x2 = theoreticalLoad, y2 = parseFloat(p2.lactate as any)
     
     const denom = (x0 - x1) * (x0 - x2) * (x1 - x2)
     
@@ -70,7 +66,7 @@ export function createLactateChartOptions(
       const b = (x2*x2 * (y0 - y1) + x1*x1 * (y2 - y0) + x0*x0 * (y1 - y2)) / denom
       const c = (x1*x2 * (x1 - x2) * y0 + x2*x0 * (x2 - x0) * y1 + x0*x1 * (x0 - x1) * y2) / denom
       
-      // Draw parabola from x1 (18.0) to theoreticalLoad (18.44)
+      // Draw parabola from previous stage to theoretical load
       const steps = 50
       const stepSize = (theoreticalLoad - x1) / steps
       
@@ -79,10 +75,6 @@ export function createLactateChartOptions(
         const y = a * x * x + b * x + c
         parabolaCurveData.push([x, y])
       }
-      
-      console.log('✅ Parabola fit: (16,3.49)→(18,6.45)→(18.6,8.24), drawn: 18.0→18.6,', parabolaCurveData.length, 'pts')
-      console.log('🔢 Parabola coefficients: a=', a, 'b=', b, 'c=', c)
-      console.log('📍 First point:', parabolaCurveData[0], 'Last point:', parabolaCurveData[parabolaCurveData.length - 1])
     }
   }
   
@@ -208,7 +200,6 @@ export function createLactateChartOptions(
         lineStyle: {
           color: '#ef4444',
           width: 3
-          // Durchgezogene Linie (kein 'type' = solid)
         },
         itemStyle: {
           color: '#ef4444'
@@ -218,12 +209,12 @@ export function createLactateChartOptions(
         symbol: 'circle',
         symbolSize: 8
       }] : []),
-      // Parabolic curve through last 3 points (QUADRATIC)
+      // Parabolic curve through last 3 points
       ...(parabolaCurveData.length > 0 ? [{
-        name: 'Laktat (quadratisch)',
+        name: 'Laktat (Parabel)',
         type: 'line' as const,
         data: parabolaCurveData,
-        smooth: true, // Smooth curve
+        smooth: true,
         lineStyle: {
           color: '#ef4444',
           width: 3
