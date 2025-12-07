@@ -33,7 +33,7 @@ export function useThresholdCalculation(
   const [lt1, setLt1] = useState<ThresholdPoint | null>(null)
   const [lt2, setLt2] = useState<ThresholdPoint | null>(null)
   const [trainingZones, setTrainingZones] = useState<TrainingZone[]>([])
-  const [selectedMethod, setSelectedMethod] = useState<ThresholdMethod>('dmax')
+  const [selectedMethod, setSelectedMethod] = useState<ThresholdMethod>('dickhuth')
   const [thresholdMessage, setThresholdMessage] = useState<string | null>(null)
   const [showAiAnalysis, setShowAiAnalysis] = useState(false)
 

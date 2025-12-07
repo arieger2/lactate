@@ -75,7 +75,9 @@ export default function StagesList({
                 <>
                   <span className="mx-1 text-red-600 dark:text-red-400">(theoretical: </span>
                   <span className="text-red-600 dark:text-red-400 font-semibold">
-                    {stage.theoreticalLoad.toFixed(2)} {unit}
+                    {typeof stage.theoreticalLoad === 'number' 
+                      ? stage.theoreticalLoad.toFixed(2) 
+                      : parseFloat(stage.theoreticalLoad).toFixed(2)} {unit}
                   </span>
                   <span className="text-red-600 dark:text-red-400">)</span>
                 </>

@@ -1,16 +1,20 @@
 /**
  * Theoretical Load Extrapolation Module
  * 
- * Calculates the theoretical maximum load that would have been sustainable
- * for the full stage duration based on an incomplete stage.
+ * Calculates the theoretical load at the prescribed stage level based on 
+ * an incomplete stage that was terminated early.
  * 
- * This is the INVERSE of interpolation:
- * - Interpolation: reduces actual values to estimate what they would be at full duration
- * - Extrapolation: calculates what maximum load would be sustainable at full duration
+ * Core Logic:
+ * - If stage is incomplete (e.g., 1:40 min instead of 3:00 min)
+ * - The athlete achieved some load at that duration (e.g., 17.5 kmh)
+ * - We extrapolate what the NEXT stage's load would be (must be HIGHER than previous stage)
+ * - The actual measured lactate still corresponds to this extrapolated load
  * 
  * Example: 
- * - Athlete runs 20 km/h for 50 seconds (incomplete stage, target was 180 seconds)
- * - Theoretical load: What speed could be sustained for full 180 seconds? → 18.60 km/h (lower due to fatigue)
+ * - Stage 7 complete: 16.5 kmh @ 3:00 min → 8.0 mmol/L
+ * - Stage 8 incomplete: 17.5 kmh @ 1:40 min → 9.0 mmol/L
+ * - Theoretical Stage 8 load: 18.5 kmh (extrapolated, must be > 16.5)
+ * - This represents the load level at which the lactate was measured
  */
 
 import { LactateDataPoint } from './types'
@@ -46,13 +50,13 @@ export interface TheoreticalLoadResult {
 /**
  * Quadratic Extrapolation Method
  * 
- * Uses three stages to model fatigue progression as a quadratic curve.
- * Assumes that load capacity decreases non-linearly with duration within a stage.
+ * Uses three stages to model load progression and extrapolate theoretical load.
+ * Ensures theoretical load is always higher than previous complete stage.
  * 
  * Logic:
- * - If athlete can maintain high load for short duration
- * - Calculate what sustainable load would be for full duration
- * - Uses previous stages to model the fatigue curve
+ * - Uses 3 stages to detect load progression pattern
+ * - Accounts for acceleration in lactate accumulation
+ * - Extrapolates theoretical load based on progression curve
  */
 function quadraticExtrapolation(
   input: TheoreticalLoadInput
@@ -63,41 +67,43 @@ function quadraticExtrapolation(
     throw new Error('Quadratic extrapolation requires 3 data points')
   }
   
-  // Normalize time: 0 = stage start, 1 = full stage duration
   const completionRatio = actualDuration / targetDuration
   
-  // Model load progression across stages (stage n-2, n-1, n)
-  // Assume load increases between stages, but sustainable load decreases with longer duration
-  
-  // Three points for quadratic fit
+  // Three points for load progression analysis
   const p0 = prePreviousStage.power  // Load at stage n-2
   const p1 = previousStage.power      // Load at stage n-1
-  const p2 = currentStage.power       // Load at incomplete stage n (early termination)
+  const p2 = currentStage.power       // Load at incomplete stage n (actual)
   
-  // Calculate rate of load increase per stage
-  const loadIncrease1 = p1 - p0
-  const loadIncrease2 = p2 - p1
+  // Lactate progression
+  const l0 = prePreviousStage.lactate
+  const l1 = previousStage.lactate
+  const l2 = currentStage.lactate
   
-  // Model fatigue factor: how much less load can be sustained at full duration
-  // Based on the progression pattern from previous stages
+  // Calculate load increments between stages
+  const loadIncrease1 = p1 - p0  // Stage n-2 to n-1
+  const loadIncrease2 = p2 - p1  // Stage n-1 to n (actual)
   
-  // Simple model: linear decay within stage based on completion ratio
-  // More sophisticated: quadratic fit of the load-duration relationship
+  // Calculate lactate increments
+  const lactateIncrease1 = l1 - l0
+  const lactateIncrease2 = l2 - l1
   
-  // Estimate: If athlete stopped early, they were likely at/near their limit
-  // Theoretical sustainable load = current load × (completion ratio ^ fatigue_exponent)
-  // Fatigue exponent derived from stage progression
-  
+  // Average load increment per stage
   const avgLoadIncrease = (loadIncrease1 + loadIncrease2) / 2
-  const loadVariability = Math.abs(loadIncrease2 - loadIncrease1) / avgLoadIncrease
   
-  // Fatigue factor: more aggressive for lower completion ratios
-  // Based on anaerobic contribution increasing exponentially with intensity
-  const fatigueExponent = 1.2 + (loadVariability * 0.3)
+  // Detect if lactate is accelerating (exponential phase)
+  const lactateAcceleration = lactateIncrease2 / lactateIncrease1
   
-  // Theoretical load = current load × (completion ratio ^ fatigue exponent)
-  // This gives lower load for lower completion ratios
-  const theoreticalLoad = p2 * Math.pow(completionRatio, 1 / fatigueExponent)
+  // Adjustment factor based on:
+  // 1. Completion ratio (inverse relationship)
+  // 2. Lactate acceleration (higher acceleration = higher theoretical load)
+  
+  const baseAdjustment = Math.min(2.0, Math.max(1.2, 1.0 / completionRatio))
+  const lactateAdjustment = Math.min(1.5, Math.max(1.0, lactateAcceleration * 0.8))
+  
+  const adjustmentFactor = baseAdjustment * lactateAdjustment
+  
+  // Theoretical load = previous stage + (average load increase × adjustment)
+  const theoreticalLoad = p1 + (avgLoadIncrease * adjustmentFactor)
   
   return {
     theoreticalLoad: Math.round(theoreticalLoad * 100) / 100,
@@ -108,8 +114,16 @@ function quadraticExtrapolation(
 /**
  * Linear Extrapolation Method
  * 
- * Simple linear model of fatigue within a stage.
- * Assumes load capacity decreases linearly with duration.
+ * Extrapolates the theoretical load level based on load progression pattern.
+ * Key principle: Theoretical load MUST be higher than previous complete stage.
+ * 
+ * Logic:
+ * - Previous stage: 16.5 kmh @ 3:00 min
+ * - Current incomplete: 17.5 kmh @ 1:40 min
+ * - Load increase per stage: e.g., 1.5 kmh
+ * - If incomplete, we're partway through the load increase
+ * - Extrapolate: theoretical load = previous + (load_increase × adjustment_factor)
+ * - Adjustment factor based on completion ratio and lactate increase
  */
 function linearExtrapolation(
   input: TheoreticalLoadInput
@@ -121,15 +135,29 @@ function linearExtrapolation(
   // Calculate load increase from previous stage
   const loadIncrease = currentStage.power - previousStage.power
   
-  // Model: If athlete achieved current load at completion ratio,
-  // what load could be sustained for full duration?
+  // Calculate lactate increase from previous stage
+  const lactateIncrease = currentStage.lactate - previousStage.lactate
   
-  // Simple linear fatigue model:
-  // Sustainable load decreases linearly with required duration
-  // fatigue_factor = 0.85 to 0.95 depending on completion ratio
+  // Model: The theoretical load should represent the full stage level
+  // Since the athlete stopped early but achieved a certain load and lactate,
+  // we extrapolate what the full stage load would be
   
-  const fatigueFactor = 0.85 + (completionRatio * 0.10)
-  const theoreticalLoad = currentStage.power * fatigueFactor
+  // Key insight: If completion ratio is low (e.g., 0.55 = 1:40 of 3:00),
+  // but lactate already increased significantly, this suggests high intensity
+  // The theoretical load should be proportionally higher
+  
+  // Base case: if completed full duration, theoretical = actual
+  // If stopped early: theoretical = previous + (load_increase / completion_ratio)
+  // This ensures theoretical > previous (always increasing)
+  
+  // Adjustment factor: scale by inverse of completion ratio
+  // 1:40 of 3:00 = 0.55 → adjustment = 1/0.55 = 1.82
+  // But cap at reasonable values (1.2 to 2.0 range)
+  
+  const adjustmentFactor = Math.min(2.0, Math.max(1.2, 1.0 / completionRatio))
+  
+  // Theoretical load = previous stage + (observed increase × adjustment)
+  const theoreticalLoad = previousStage.power + (loadIncrease * adjustmentFactor)
   
   return {
     theoreticalLoad: Math.round(theoreticalLoad * 100) / 100,
