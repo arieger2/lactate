@@ -169,6 +169,7 @@ function linearExtrapolation(
  * Main Theoretical Load Calculation
  * 
  * Automatically selects best extrapolation method based on data availability.
+ * Only performs extrapolation if >80% of target duration is achieved.
  */
 export function calculateTheoreticalLoad(
   input: TheoreticalLoadInput
@@ -177,36 +178,36 @@ export function calculateTheoreticalLoad(
   
   const completionRatio = actualDuration / targetDuration
   
+  // Only extrapolate if >80% of target duration achieved
+  if (completionRatio < 0.8) {
+    // Return null or very low confidence for extrapolations below 80%
+    return {
+      theoreticalLoad: currentStage.power, // Use actual load as fallback
+      actualLoad: currentStage.power,
+      actualDuration,
+      method: 'linear',
+      confidence: 0,
+      note: `Insufficient duration (${Math.round(completionRatio * 100)}% completion) - minimum 80% required for extrapolation`
+    }
+  }
+  
   // Choose extrapolation method
   let result: Omit<TheoreticalLoadResult, 'confidence' | 'note' | 'actualLoad' | 'actualDuration'>
   let methodNote: string
   
-  // Prefer quadratic if we have 3+ stages and completion is low-to-moderate
-  if (prePreviousStage && completionRatio >= 0.25 && completionRatio < 0.75) {
-    try {
-      result = quadraticExtrapolation(input)
-      methodNote = `Theoretical load calculated using quadratic fatigue model (${Math.round(completionRatio * 100)}% completion)`
-    } catch (error) {
-      console.warn('Quadratic extrapolation failed, falling back to linear:', error)
-      result = linearExtrapolation(input)
-      methodNote = `Theoretical load calculated using linear fatigue model (${Math.round(completionRatio * 100)}% completion)`
-    }
-  } else {
-    result = linearExtrapolation(input)
-    methodNote = `Theoretical load calculated using linear fatigue model (${Math.round(completionRatio * 100)}% completion)`
-  }
+  // Use linear extrapolation for high completion ratios (≥80%)
+  result = linearExtrapolation(input)
+  methodNote = `Theoretical load calculated using linear extrapolation (${Math.round(completionRatio * 100)}% completion)`
   
   // Calculate confidence based on completion ratio
   // Higher completion = higher confidence in theoretical estimate
   let confidence = 0.5
-  if (completionRatio >= 0.67) {
+  if (completionRatio >= 0.9) {
+    confidence = 0.95
+  } else if (completionRatio >= 0.85) {
+    confidence = 0.90
+  } else if (completionRatio >= 0.8) {
     confidence = 0.85
-  } else if (completionRatio >= 0.5) {
-    confidence = 0.70
-  } else if (completionRatio >= 0.33) {
-    confidence = 0.55
-  } else {
-    confidence = 0.40
   }
   
   return {

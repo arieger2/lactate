@@ -155,7 +155,7 @@ export function createLactateChartOptions(
           }])
         }
       },
-      // Interpolated segment (last stage, dashed)
+      // Interpolated segment (last stage)
       ...(hasInterpolatedLastStage && interpolatedSegment.length > 0 ? [{
         name: 'Laktat (interpoliert)',
         type: 'line' as const,
@@ -163,8 +163,7 @@ export function createLactateChartOptions(
         smooth: true,
         lineStyle: {
           color: '#ef4444',
-          width: 3,
-          type: 'dashed' as const
+          width: 3
         },
         itemStyle: {
           color: '#ef4444'
@@ -182,8 +181,7 @@ export function createLactateChartOptions(
         smooth: true,
         lineStyle: {
           color: '#3b82f6',
-          width: 2,
-          type: 'dashed' as const
+          width: 2
         },
         itemStyle: {
           color: '#3b82f6'

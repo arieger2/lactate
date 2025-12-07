@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
     // Store the data in PostgreSQL
     const testId = dataEntry.testId!
     const sessionId = testId // For backward compatibility
+    let theoreticalLoad: number | null = null
     
     try {
       const client = await pool.connect()
@@ -143,12 +144,11 @@ export async function POST(request: NextRequest) {
           let finalLoad = dataEntry.load
           let finalLactate = dataEntry.lactate
           let finalHeartRate = dataEntry.heartRate
-          let theoreticalLoad: number | null = null
           let isFinalApproximation = dataEntry.isFinalApproximation || false
           
           // NEW: Calculate theoretical load for incomplete stages
-          // This replaces the old interpolation logic that reduced values
-          if (!isExistingStage && stageNumber > 1 && needsTheoreticalLoad(actualDuration, targetDuration)) {
+          // Always check if theoretical load is needed, regardless of whether stage is new or existing
+          if (stageNumber > 1 && needsTheoreticalLoad(actualDuration, targetDuration)) {
             // Get previous stage
             const prevStage = await client.query(`
               SELECT load, lactate_mmol as lactate, heart_rate_bpm as "heartRate"
@@ -261,12 +261,19 @@ export async function POST(request: NextRequest) {
     if (!dataStore.has(sessionId)) {
       dataStore.set(sessionId, [])
     }
-    dataStore.get(sessionId)!.push(dataEntry)
+    
+    // Add theoretical load to dataEntry for response
+    const responseData = {
+      ...dataEntry,
+      theoreticalLoad: theoreticalLoad || undefined
+    }
+    
+    dataStore.get(sessionId)!.push(responseData)
 
     return NextResponse.json({
       success: true,
       message: 'Data received successfully',
-      data: dataEntry,
+      data: responseData,
       testId: testId,
       sessionId: sessionId, // For backward compatibility
       totalPoints: dataStore.get(sessionId)!.length

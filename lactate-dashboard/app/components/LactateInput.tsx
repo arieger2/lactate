@@ -201,22 +201,42 @@ export default function LactateInput() {
   const buildStagePayload = (stageData: CurrentStage, duration: number, isExisting: boolean = false) => {
     const durationDecimal = parseDurationToDecimal(stageData.duration || '3')
     
+    // Validate and parse numeric fields
+    const load = parseFloat(stageData.load)
+    const lactate = parseFloat(stageData.lactate)
+    
+    if (isNaN(load) || isNaN(lactate)) {
+      throw new Error('Load and lactate must be valid numbers')
+    }
+    
+    const heartRate = stageData.heartRate && stageData.heartRate.trim() !== '' 
+      ? parseInt(stageData.heartRate) 
+      : undefined
+    const rrSystolic = stageData.rrSystolic && stageData.rrSystolic.trim() !== '' 
+      ? parseInt(stageData.rrSystolic) 
+      : undefined
+    const rrDiastolic = stageData.rrDiastolic && stageData.rrDiastolic.trim() !== '' 
+      ? parseInt(stageData.rrDiastolic) 
+      : undefined
+    
     return {
       testId: selectedTestInfo!.testId,
       stage: stageData.stage,
-      load: parseFloat(stageData.load),
-      lactate: parseFloat(stageData.lactate),
-      heartRate: stageData.heartRate ? parseInt(stageData.heartRate) : undefined,
-      rrSystolic: stageData.rrSystolic ? parseInt(stageData.rrSystolic) : undefined,
-      rrDiastolic: stageData.rrDiastolic ? parseInt(stageData.rrDiastolic) : undefined,
+      load: load,
+      lactate: lactate,
+      heartRate: heartRate,
+      rrSystolic: rrSystolic,
+      rrDiastolic: rrDiastolic,
       duration: durationDecimal,
       notes: stageData.notes || undefined,
       isExistingStage: isExisting // Flag to prevent backend re-interpolation
     }
   }
 
-  const saveStageToDatabase = async (payload: any): Promise<boolean> => {
+  const saveStageToDatabase = async (payload: any): Promise<{ success: boolean; theoreticalLoad?: number }> => {
     try {
+      console.log('Sending payload:', JSON.stringify(payload, null, 2))
+      
       const response = await fetch('/api/lactate-webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -226,17 +246,23 @@ export default function LactateInput() {
       if (!response.ok) {
         const responseData = await response.json()
         console.error('Failed to save stage:', response.status, responseData)
-        return false
+        showErrorMessage(`Failed to save: ${responseData.error || 'Unknown error'}`)
+        return { success: false }
       }
       
-      return true
+      // Get the response data which includes theoreticalLoad
+      const responseData = await response.json()
+      const theoreticalLoad = responseData.data?.theoreticalLoad
+      
+      return { success: true, theoreticalLoad }
     } catch (error) {
       console.error('❌ Error saving stage:', error)
-      return false
+      showErrorMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      return { success: false }
     }
   }
 
-  const updateLocalStagesArray = (stageData: CurrentStage, duration: number) => {
+  const updateLocalStagesArray = (stageData: CurrentStage, duration: number, theoreticalLoad?: number) => {
     setStages(prev => {
       const stageObj = {
         stage: stageData.stage,
@@ -246,6 +272,7 @@ export default function LactateInput() {
         rrSystolic: stageData.rrSystolic ? parseInt(stageData.rrSystolic) : undefined,
         rrDiastolic: stageData.rrDiastolic ? parseInt(stageData.rrDiastolic) : undefined,
         duration: duration,
+        theoreticalLoad: theoreticalLoad,
         notes: stageData.notes || undefined
       }
       
@@ -282,6 +309,7 @@ export default function LactateInput() {
 
   const handleSaveStage = async () => {
     if (!selectedTestInfo || !currentStage.load || !currentStage.lactate) {
+      showErrorMessage('Load and Lactate are required fields')
       return
     }
     
@@ -290,52 +318,83 @@ export default function LactateInput() {
     const isLast = isLastStage(currentStage.stage)
     const isExisting = isExistingStage(currentStage.stage)
     
-    // CASE 1: Editing an existing stage
-    if (isExisting) {
-      // Always save existing stage modifications, regardless of duration
-      const payload = buildStagePayload(currentStage, actualDuration, true) // Pass isExisting=true
-      const saved = await saveStageToDatabase(payload)
-      
-      if (saved) {
-        updateLocalStagesArray(currentStage, actualDuration)
-        setHasUnsavedChanges(false)
-        
-        // Check if this was the last existing stage AND time is 100%
-        // If so, prepare next stage to allow continuing
+    try {
+      // CASE 1: Editing an existing stage
+      if (isExisting) {
+        // NEW LOGIC: If this is the last stage AND time is 100% AND load INCREASED
+        // Then create a NEW stage instead of updating
         const maxStage = Math.max(...stages.map(s => s.stage))
-        if (currentStage.stage === maxStage && actualDuration >= targetDuration) {
+        const isLastStage = currentStage.stage === maxStage
+        const isFullDuration = actualDuration >= targetDuration
+        
+        if (isLastStage && isFullDuration) {
+          // Get the existing stage's load
+          const existingStage = stages.find(s => s.stage === currentStage.stage)
+          const currentLoad = parseFloat(currentStage.load)
+          const existingLoad = existingStage?.load || 0
+          
+          // Check if load INCREASED (new load > existing load)
+          if (currentLoad > existingLoad) {
+            // Create NEW stage (user progressed to next level)
+            const payload = buildStagePayload(currentStage, actualDuration, false) // New stage
+            const result = await saveStageToDatabase(payload)
+            
+            if (result.success) {
+              updateLocalStagesArray(currentStage, actualDuration, result.theoreticalLoad)
+              setHasUnsavedChanges(false)
+              prepareNextStage()
+            }
+            return
+          }
+        }
+        
+        // Default: Update existing stage (load same or decreased, or not last stage, or time < 100%)
+        const payload = buildStagePayload(currentStage, actualDuration, true) // Pass isExisting=true
+        const result = await saveStageToDatabase(payload)
+      
+        if (result.success) {
+          updateLocalStagesArray(currentStage, actualDuration, result.theoreticalLoad)
+          setHasUnsavedChanges(false)
+          
+          // Check if this was the last existing stage AND time is 100%
+          // If so, prepare next stage to allow continuing
+          if (isLastStage && isFullDuration) {
+            prepareNextStage()
+          }
+          // Otherwise, user stays on this stage to continue editing
+        }
+        return
+      }
+      
+      // CASE 2: Creating a new stage (isLast should be true)
+      // Check if time 100% reached
+      if (actualDuration >= targetDuration) {
+        // 2.1) Time 100% reached: save
+        const payload = buildStagePayload(currentStage, actualDuration, false) // New stage
+        const result = await saveStageToDatabase(payload)
+        
+        if (result.success) {
+          updateLocalStagesArray(currentStage, actualDuration, result.theoreticalLoad)
+          setHasUnsavedChanges(false)
+          // 2.1.1) New stage completed: prepare next stage
           prepareNextStage()
         }
-        // Otherwise, user stays on this stage to continue editing
+      } else {
+        // 2.2) Time < 100% for new stage
+        // Only allowed for the last/new stage with approximation
+        // This means the test is FINISHED (user couldn't complete the stage)
+        const payload = buildStagePayload(currentStage, actualDuration, false) // New incomplete stage
+        const result = await saveStageToDatabase(payload)
+        
+        if (result.success) {
+          updateLocalStagesArray(currentStage, actualDuration, result.theoreticalLoad)
+          setHasUnsavedChanges(false)
+          // DO NOT prepare next stage - test is finished with incomplete last stage
+        }
       }
-      return
-    }
-    
-    // CASE 2: Creating a new stage (isLast should be true)
-    // Check if time 100% reached
-    if (actualDuration >= targetDuration) {
-      // 2.1) Time 100% reached: save
-      const payload = buildStagePayload(currentStage, actualDuration, false) // New stage
-      const saved = await saveStageToDatabase(payload)
-      
-      if (saved) {
-        updateLocalStagesArray(currentStage, actualDuration)
-        setHasUnsavedChanges(false)
-        // 2.1.1) New stage completed: prepare next stage
-        prepareNextStage()
-      }
-    } else {
-      // 2.2) Time < 100% for new stage
-      // Only allowed for the last/new stage with approximation
-      // This means the test is FINISHED (user couldn't complete the stage)
-      const payload = buildStagePayload(currentStage, actualDuration, false) // New incomplete stage
-      const saved = await saveStageToDatabase(payload)
-      
-      if (saved) {
-        updateLocalStagesArray(currentStage, actualDuration)
-        setHasUnsavedChanges(false)
-        // DO NOT prepare next stage - test is finished with incomplete last stage
-      }
+    } catch (error) {
+      console.error('Error in handleSaveStage:', error)
+      showErrorMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -383,12 +442,12 @@ export default function LactateInput() {
             body: JSON.stringify({
               testId: selectedTestInfo.testId,
               stage: stage.stage,
-              load: stage.load,
-              lactate: stage.lactate,
-              heartRate: stage.heartRate,
-              rrSystolic: stage.rrSystolic,
-              rrDiastolic: stage.rrDiastolic,
-              duration: stage.duration || selectedTestInfo.stageDuration_min,
+              load: typeof stage.load === 'string' ? parseFloat(stage.load) : stage.load,
+              lactate: typeof stage.lactate === 'string' ? parseFloat(stage.lactate) : stage.lactate,
+              heartRate: stage.heartRate ? (typeof stage.heartRate === 'string' ? parseInt(stage.heartRate) : stage.heartRate) : undefined,
+              rrSystolic: stage.rrSystolic ? (typeof stage.rrSystolic === 'string' ? parseInt(stage.rrSystolic) : stage.rrSystolic) : undefined,
+              rrDiastolic: stage.rrDiastolic ? (typeof stage.rrDiastolic === 'string' ? parseInt(stage.rrDiastolic) : stage.rrDiastolic) : undefined,
+              duration: typeof stage.duration === 'string' ? parseFloat(stage.duration) : stage.duration || parseFloat(selectedTestInfo.stageDuration_min),
               notes: stage.notes,
               isExistingStage: true // Prevent re-interpolation
             })
@@ -423,6 +482,24 @@ export default function LactateInput() {
         const stageToLoad = remainingStages.find(s => s.stage === newStageNumber)
         if (stageToLoad) {
           handleStageClick(stageToLoad)
+        } else {
+          // Update the form to prepare for the next stage after remaining stages
+          const maxStageNumber = remainingStages.length > 0 ? Math.max(...remainingStages.map(s => s.stage)) : 0
+          setCurrentStage({
+            ...currentStage,
+            stage: maxStageNumber + 1
+          })
+        }
+      } else {
+        // Current stage is before the removed stage, but we still need to prepare the form
+        // for the next stage based on the updated stages array
+        const maxStageNumber = remainingStages.length > 0 ? Math.max(...remainingStages.map(s => s.stage)) : 0
+        // Only update if the current form stage is higher than the max existing stage
+        if (currentStage.stage > maxStageNumber) {
+          setCurrentStage({
+            ...currentStage,
+            stage: maxStageNumber + 1
+          })
         }
       }
     } catch (error) {
