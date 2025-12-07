@@ -1,9 +1,14 @@
 'use client'
 
-import { ThresholdPoint } from '@/lib/types'
+import { useRef } from 'react'
+import { ThresholdPoint, TrainingZone } from '@/lib/types'
+import ZoneBoundaryMarkers from './ZoneBoundaryMarkers'
+
+import * as echarts from 'echarts'
 
 interface LactateCurveViewProps {
   chartRef: React.RefObject<HTMLDivElement | null>
+  chartInstance: echarts.ECharts | null
   isDragging: boolean
   loading: boolean
   webhookData: any[]
@@ -15,10 +20,14 @@ interface LactateCurveViewProps {
   selectedCustomer: any
   currentUnit: string
   onAiAnalysisRequest: () => Promise<void>
+  zoneBoundaryPositions?: {id: number, x: number, y: number}[]
+  trainingZones?: TrainingZone[]
+  onZoneBoundaryDrag?: (zoneId: number, newPower: number) => void
 }
 
 export default function LactateCurveView({
   chartRef,
+  chartInstance,
   isDragging,
   loading,
   webhookData,
@@ -29,8 +38,12 @@ export default function LactateCurveView({
   selectedSessionId,
   selectedCustomer,
   currentUnit,
-  onAiAnalysisRequest
+  onAiAnalysisRequest,
+  zoneBoundaryPositions = [],
+  trainingZones = [],
+  onZoneBoundaryDrag
 }: LactateCurveViewProps) {
+  const chartContainerRef = useRef<HTMLDivElement>(null)
   
   if (webhookData.length === 0) {
     return (
@@ -53,18 +66,30 @@ export default function LactateCurveView({
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
-      {/* eslint-disable-next-line react/forbid-dom-props */}
-      <div 
-        ref={chartRef} 
-        style={{ 
-          height: '650px', 
-          width: '100%',
-          cursor: isDragging ? 'grabbing' : 'default',
-          transition: 'cursor 0.1s ease',
-          margin: '20px 0'
-        }}
-      />
-      
+      <div ref={chartContainerRef} style={{ position: 'relative' }}>
+        {/* eslint-disable-next-line react/forbid-dom-props */}
+        <div 
+          ref={chartRef} 
+          style={{ 
+            height: '650px', 
+            width: '100%',
+            cursor: isDragging ? 'grabbing' : 'default',
+            transition: 'cursor 0.1s ease',
+            margin: '20px 0'
+          }}
+        />
+        
+        {/* Zone Boundary Markers */}
+        {onZoneBoundaryDrag && (
+          <ZoneBoundaryMarkers
+            chartInstance={chartInstance}
+            chartRef={chartRef}
+            zoneBoundaryPositions={zoneBoundaryPositions}
+            trainingZones={trainingZones}
+            onZoneBoundaryDrag={onZoneBoundaryDrag}
+          />
+        )}
+      </div>
       {/* Threshold Info */}
       <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
         {lt1 && (

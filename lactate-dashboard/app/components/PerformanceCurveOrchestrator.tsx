@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import { useCustomer } from '@/lib/CustomerContext'
@@ -11,11 +11,13 @@ import LactateCurveView from './performance-curve/LactateCurveView'
 import TrainingZonesDescription from './performance-curve/TrainingZonesDescription'
 import { useSessionData } from './performance-curve/hooks/useSessionData'
 import { useThresholdCalculation } from './performance-curve/hooks/useThresholdCalculation'
-import { useThresholdPersistence } from './performance-curve/hooks/useThresholdPersistence'
+import { useManualThresholds } from './performance-curve/hooks/useManualThresholds'
+import { useManualZones } from './performance-curve/hooks/useManualZones'
 import { useChartInteraction } from './performance-curve/hooks/useChartInteraction'
 
 export default function PerformanceCurveOrchestrator() {
   const { selectedCustomer, selectedSessionId, setSelectedSessionId } = useCustomer()
+  const wasDraggingRef = useRef(false)
   
   // Custom hooks for data and logic
   const { 
@@ -45,29 +47,17 @@ export default function PerformanceCurveOrchestrator() {
     calculateThresholdsWrapper
   } = useThresholdCalculation(currentUnit)
 
-  const {
-    isAdjusted,
-    isManuallyLoading,
-    setIsAdjusted,
-    setIsManuallyLoading,
-    saveAdjustedThresholds,
-    saveAdjustedThresholdsWithValues,
-    loadAdjustedThresholds
-  } = useThresholdPersistence({
+  const { loadThresholds, saveThresholds } = useManualThresholds({
     selectedSessionId,
-    selectedCustomer,
-    webhookData,
-    lt1,
-    lt2,
-    selectedMethod,
-    setLt1,
-    setLt2,
-    setTrainingZones,
-    setSelectedMethod,
-    calculateThresholdsWrapper
+    selectedCustomerId: selectedCustomer?.customer_id || null
   })
 
-  const { chartRef, isDragging } = useChartInteraction({
+  const { loadZones, saveZones } = useManualZones({
+    selectedSessionId,
+    selectedCustomerId: selectedCustomer?.customer_id || null
+  })
+
+  const { chartRef, chartInstance, isDragging, zoneBoundaryPositions } = useChartInteraction({
     webhookData,
     trainingZones,
     lt1,
@@ -77,23 +67,29 @@ export default function PerformanceCurveOrchestrator() {
     setLt1,
     setLt2,
     setTrainingZones,
-    setSelectedMethod,
-    setIsAdjusted,
-    onSaveAdjustedThresholds: saveAdjustedThresholds,
-    onSaveAdjustedThresholdsWithValues: saveAdjustedThresholdsWithValues
+    setSelectedMethod
   })
 
   // Calculate thresholds when data loads
   useEffect(() => {
     if (webhookData.length > 0 && selectedMethod !== 'adjusted') {
-      calculateThresholdsWrapper(
-        webhookData, 
-        selectedMethod, 
-        currentUnit, 
-        saveAdjustedThresholdsWithValues
-      )
+      calculateThresholdsWrapper(webhookData, selectedMethod, currentUnit)
     }
-  }, [webhookData, selectedMethod, currentUnit, calculateThresholdsWrapper, saveAdjustedThresholdsWithValues])
+  }, [webhookData, selectedMethod, currentUnit, calculateThresholdsWrapper])
+
+  // Save on drag end - detects when dragging stops
+  useEffect(() => {
+    if (isDragging.type) {
+      wasDraggingRef.current = true
+    } else if (wasDraggingRef.current) {
+      wasDraggingRef.current = false
+      
+      if (lt1 && lt2 && trainingZones.length > 0) {
+        saveThresholds(lt1, lt2)
+        saveZones(trainingZones)
+      }
+    }
+  }, [isDragging.type, lt1, lt2, trainingZones, saveThresholds, saveZones])
 
   // PDF Export
   const exportToPDF = async () => {
@@ -151,30 +147,26 @@ export default function PerformanceCurveOrchestrator() {
     }
   }
 
-  // Handler for manual threshold loading
+  // Handler for manual threshold loading - loads saved manual adjustments
   const handleManualLoad = async () => {
-    console.log('🔧 Manual button clicked - loading adjusted thresholds...')
-    console.log('Session:', selectedSessionId, 'Customer:', selectedCustomer?.customer_id)
+    const thresholds = await loadThresholds()
+    const zones = await loadZones()
     
-    setIsManuallyLoading(true)
+    if (!thresholds && !zones) {
+      console.warn('No manual adjustments found')
+      return
+    }
+
     setSelectedMethod('adjusted')
     
-    setLt1(null)
-    setLt2(null)
-    setTrainingZones([])
-    
-    await new Promise(resolve => setTimeout(resolve, 50))
-    
-    const loaded = await loadAdjustedThresholds()
-    console.log('🔧 Manual loading result:', loaded)
-    
-    if (!loaded) {
-      console.warn('⚠️ No adjusted thresholds found - switching back to DMAX')
-      setSelectedMethod('dmax')
-      calculateThresholdsWrapper(webhookData, 'dmax', currentUnit, saveAdjustedThresholdsWithValues)
+    if (thresholds) {
+      setLt1(thresholds.lt1)
+      setLt2(thresholds.lt2)
     }
     
-    setIsManuallyLoading(false)
+    if (zones) {
+      setTrainingZones(zones)
+    }
   }
 
   // Render
@@ -225,7 +217,6 @@ export default function PerformanceCurveOrchestrator() {
           {/* 1.2 Schwellenmethoden */}
           <ThresholdMethodSelector
             selectedMethod={selectedMethod}
-            isAdjusted={isAdjusted}
             onMethodChange={(method) => {
               setSelectedMethod(method)
               calculateThresholdsWrapper(webhookData, method, currentUnit)
@@ -238,6 +229,7 @@ export default function PerformanceCurveOrchestrator() {
       {/* 1.3 Laktat Kurve View */}
       <LactateCurveView
         chartRef={chartRef}
+        chartInstance={chartInstance}
         isDragging={isDragging.type !== null}
         loading={loading}
         webhookData={webhookData}
@@ -249,6 +241,20 @@ export default function PerformanceCurveOrchestrator() {
         selectedCustomer={selectedCustomer}
         currentUnit={currentUnit}
         onAiAnalysisRequest={handleAiAnalysisRequest}
+        zoneBoundaryPositions={zoneBoundaryPositions}
+        trainingZones={trainingZones}
+        onZoneBoundaryDrag={(zoneId, newPower) => {
+          const currentZones = [...trainingZones]
+          const zoneIndex = currentZones.findIndex(z => z.id === zoneId)
+          const prevZoneIndex = currentZones.findIndex(z => z.id === zoneId - 1)
+          
+          if (zoneIndex >= 0 && prevZoneIndex >= 0) {
+            currentZones[prevZoneIndex].range[1] = newPower
+            currentZones[zoneIndex].range[0] = newPower
+            setTrainingZones(currentZones)
+            setSelectedMethod('adjusted')
+          }
+        }}
       />
 
       {/* 1.4 Training Zones Description (5-Zonen Trainingssystem) */}
