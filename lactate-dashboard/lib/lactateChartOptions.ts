@@ -97,17 +97,14 @@ export function createLactateChartOptions(
       }
     },
     tooltip: {
-      trigger: 'axis',
+      trigger: 'item',
       formatter: (params: any) => {
-        let tooltip = `${tooltipLabel}: ${params[0].value[0]} ${tooltipUnit}<br/>`
-        params.forEach((param: any) => {
-          if (param.seriesName === 'Laktat') {
-            tooltip += `${param.seriesName}: ${param.value[1].toFixed(2)} mmol/L<br/>`
-          } else if (param.seriesName === 'Herzfrequenz') {
-            tooltip += `${param.seriesName}: ${param.value[1]} bpm<br/>`
-          }
-        })
-        return tooltip
+        if (params.seriesName === 'Laktat' || params.seriesName === 'Laktat (Parabel)' || params.seriesName === 'Laktat (interpoliert)') {
+          return `${tooltipLabel}: ${params.value[0]} ${tooltipUnit}<br/>${params.seriesName}: ${params.value[1].toFixed(2)} mmol/L`
+        } else if (params.seriesName === 'Herzfrequenz') {
+          return `${tooltipLabel}: ${params.value[0]} ${tooltipUnit}<br/>${params.seriesName}: ${params.value[1]} bpm`
+        }
+        return ''
       }
     },
     legend: {
@@ -223,8 +220,11 @@ export function createLactateChartOptions(
           color: '#ef4444'
         },
         yAxisIndex: 0,
-        showSymbol: false,
-        symbol: 'none'
+        showSymbol: true,
+        symbol: 'circle',
+        symbolSize: (value: any, params: any) => {
+          return params.dataIndex === parabolaCurveData.length - 1 ? 8 : 0
+        }
       }] : []),
       // Heart rate (optional, wenn vorhanden)
       ...(webhookData.some(d => d.heartRate) ? [{
