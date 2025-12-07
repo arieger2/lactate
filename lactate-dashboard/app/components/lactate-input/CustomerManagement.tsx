@@ -100,19 +100,23 @@ export default function CustomerManagement({
       setNewCustomerError('First name and last name are required.')
       return
     }
+    
+    if (!newCustomer.profileId || newCustomer.profileId.trim() === '') {
+      setNewCustomerError('Profile ID is required.')
+      return
+    }
 
     try {
-      const profileId = newCustomer.profileId || `PROFILE-${Date.now()}`
-      
       const payload = {
-        customer_id: profileId,
-        name: `${newCustomer.firstName} ${newCustomer.lastName}`,
+        firstName: newCustomer.firstName,
+        lastName: newCustomer.lastName,
+        profileId: newCustomer.profileId,
+        birthDate: newCustomer.birthDate || undefined,
         email: newCustomer.email || undefined,
         phone: newCustomer.phone || undefined,
-        date_of_birth: newCustomer.birthDate || undefined,
         height_cm: newCustomer.height_cm ? parseFloat(newCustomer.height_cm) : undefined,
         weight_kg: newCustomer.weight_kg ? parseFloat(newCustomer.weight_kg) : undefined,
-        notes: newCustomer.additionalNotes || undefined
+        additionalNotes: newCustomer.additionalNotes || undefined
       }
 
       const response = await fetch('/api/customers', {
