@@ -29,7 +29,7 @@ export default function SessionSelection({
         <option value="">Session auswählen...</option>
         {availableSessions.map(session => (
           <option key={session.id} value={session.id}>
-            {session.point_count} Punkte | {new Date(session.test_date).toLocaleString()}
+            {session.id} | {session.point_count} Punkte | {new Date(session.test_date).toLocaleString()}
           </option>
         ))}
       </select>

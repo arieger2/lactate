@@ -127,7 +127,38 @@ export default function CustomerManagement({
 
       if (response.ok) {
         const data = await response.json()
-        onCustomerSelected(data.customer)
+        const createdCustomer = data.customer
+        
+        // Create test protocol if testInfos have been added
+        if (testInfos.length > 0) {
+          try {
+            for (const testInfo of testInfos) {
+              const testPayload = {
+                test_id: `TEST-${String(Date.now()).slice(-5)}`,
+                customer_id: createdCustomer.customer_id,
+                test_date: testInfo.testDate,
+                test_time: testInfo.testTime,
+                device: testInfo.device,
+                unit: testInfo.unit,
+                start_load: parseFloat(testInfo.startLoad),
+                increment: parseFloat(testInfo.increment),
+                stage_duration_min: parseFloat(testInfo.stageDuration_min)
+              }
+              
+              await fetch('/api/test-infos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(testPayload)
+              })
+            }
+            onTestInfosChange(testInfos)
+          } catch (error) {
+            console.error('Error creating test protocols:', error)
+            // Don't fail customer creation if test protocol creation fails
+          }
+        }
+        
+        onCustomerSelected(createdCustomer)
         setShowNewCustomerForm(false)
         setNewCustomerError(null)
         setNewCustomer({

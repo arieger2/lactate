@@ -44,7 +44,49 @@ export function createLactateChartOptions(
     ? webhookData.slice(0, -1).map(d => [d.power, d.lactate])
     : webhookData.map(d => [d.power, d.lactate])
   
-  const interpolatedSegment = hasInterpolatedLastStage && lastStageIndex > 0
+  console.log('📊 Complete data points:', completeData)
+  console.log('📊 Last complete point:', completeData[completeData.length - 1])
+  
+  // Generate parabolic curve through last 3 points if interpolated
+  let parabolaCurveData: number[][] = []
+  if (hasInterpolatedLastStage && lastStageIndex >= 2) {
+    const p0 = webhookData[lastStageIndex - 2]
+    const p1 = webhookData[lastStageIndex - 1]
+    const p2 = webhookData[lastStageIndex]
+    
+    const theoreticalLoad = parseFloat((p2 as any).theoreticalLoad || p2.power)
+    
+    // CRITICAL: Lactate 8.24 was measured at 20 km/h but only for 50 seconds
+    // Theoretical load 18.6 = what could be sustained for full 3 minutes
+    // Therefore: Parabola through (16, 3.49), (18, 6.45), (18.6, 8.24)
+    const x0 = parseFloat(p0.power as any), y0 = parseFloat(p0.lactate as any)
+    const x1 = parseFloat(p1.power as any), y1 = parseFloat(p1.lactate as any)
+    const x2 = theoreticalLoad, y2 = parseFloat(p2.lactate as any)  // Use theoretical load!
+    
+    const denom = (x0 - x1) * (x0 - x2) * (x1 - x2)
+    
+    if (Math.abs(denom) >= 0.001) {
+      const a = (x2 * (y1 - y0) + x1 * (y0 - y2) + x0 * (y2 - y1)) / denom
+      const b = (x2*x2 * (y0 - y1) + x1*x1 * (y2 - y0) + x0*x0 * (y1 - y2)) / denom
+      const c = (x1*x2 * (x1 - x2) * y0 + x2*x0 * (x2 - x0) * y1 + x0*x1 * (x0 - x1) * y2) / denom
+      
+      // Draw parabola from x1 (18.0) to theoreticalLoad (18.44)
+      const steps = 50
+      const stepSize = (theoreticalLoad - x1) / steps
+      
+      for (let i = 0; i <= steps; i++) {
+        const x = x1 + (i * stepSize)
+        const y = a * x * x + b * x + c
+        parabolaCurveData.push([x, y])
+      }
+      
+      console.log('✅ Parabola fit: (16,3.49)→(18,6.45)→(18.6,8.24), drawn: 18.0→18.6,', parabolaCurveData.length, 'pts')
+      console.log('🔢 Parabola coefficients: a=', a, 'b=', b, 'c=', c)
+      console.log('📍 First point:', parabolaCurveData[0], 'Last point:', parabolaCurveData[parabolaCurveData.length - 1])
+    }
+  }
+  
+  const interpolatedSegment = hasInterpolatedLastStage && lastStageIndex > 0 && parabolaCurveData.length === 0
     ? [
         [webhookData[lastStageIndex - 1].power, webhookData[lastStageIndex - 1].lactate],
         [webhookData[lastStageIndex].power, webhookData[lastStageIndex].lactate]
@@ -79,8 +121,10 @@ export function createLactateChartOptions(
     legend: {
       top: 30,
       data: [
-        'Laktat', 
-        ...(hasInterpolatedLastStage ? ['Laktat (interpoliert)'] : []),
+        'Laktat',
+        ...(parabolaCurveData.length > 0 ? ['Laktat (quadratisch)'] : 
+            hasInterpolatedLastStage && interpolatedSegment.length > 0 ? ['Laktat (interpoliert)'] : 
+            []),
         'Herzfrequenz', 
         'LT1', 
         'LT2'
@@ -155,7 +199,7 @@ export function createLactateChartOptions(
           }])
         }
       },
-      // Interpolated segment (last stage)
+      // Interpolated segment (last stage) - LINEAR fallback if parabola failed
       ...(hasInterpolatedLastStage && interpolatedSegment.length > 0 ? [{
         name: 'Laktat (interpoliert)',
         type: 'line' as const,
@@ -164,6 +208,7 @@ export function createLactateChartOptions(
         lineStyle: {
           color: '#ef4444',
           width: 3
+          // Durchgezogene Linie (kein 'type' = solid)
         },
         itemStyle: {
           color: '#ef4444'
@@ -172,6 +217,23 @@ export function createLactateChartOptions(
         showSymbol: true,
         symbol: 'circle',
         symbolSize: 8
+      }] : []),
+      // Parabolic curve through last 3 points (QUADRATIC)
+      ...(parabolaCurveData.length > 0 ? [{
+        name: 'Laktat (quadratisch)',
+        type: 'line' as const,
+        data: parabolaCurveData,
+        smooth: true, // Smooth curve
+        lineStyle: {
+          color: '#ef4444',
+          width: 3
+        },
+        itemStyle: {
+          color: '#ef4444'
+        },
+        yAxisIndex: 0,
+        showSymbol: false,
+        symbol: 'none'
       }] : []),
       // Heart rate (optional, wenn vorhanden)
       ...(webhookData.some(d => d.heartRate) ? [{

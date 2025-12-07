@@ -43,7 +43,7 @@ export default function TestProtocolManager({
     }
 
     try {
-      const testId = `TEST-${Date.now()}`
+      const testId = `TEST-${String(Date.now()).slice(-5)}`
       const payload = {
         test_id: testId,
         customer_id: customerId,
