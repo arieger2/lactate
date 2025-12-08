@@ -30,6 +30,18 @@ export function createLactateChartOptions(
     : 20;
   const xAxisMax = Math.ceil(lastDataPointPower * 1.1); // Add 10% buffer and round up
 
+  // Calculate dynamic max for lactate y-axis (max lactate + 1 mmol/L)
+  const maxLactate = webhookData.length > 0
+    ? Math.max(...webhookData.map(d => d.lactate))
+    : 10;
+  const lactateYMax = Math.ceil(maxLactate + 1);
+
+  // Calculate dynamic max for heart rate y-axis (max HR + 20 bpm)
+  const maxHeartRate = webhookData.length > 0
+    ? Math.max(...webhookData.map(d => d.heartRate || 0).filter(hr => hr > 0))
+    : 0;
+  const heartRateYMax = maxHeartRate > 0 ? Math.ceil(maxHeartRate + 20) : undefined;
+
   // Calculate xAxis min value based on the first zone's start
   let xAxisMin: number | undefined = undefined;
   if (trainingZones.length > 0) {
@@ -145,14 +157,15 @@ export function createLactateChartOptions(
         nameLocation: 'middle',
         nameGap: 40,
         min: 0,
-        max: 12
+        max: lactateYMax
       },
       {
         type: 'value',
         name: 'Herzfrequenz (bpm)',
         nameLocation: 'middle',
         nameGap: 40,
-        position: 'right'
+        position: 'right',
+        ...(heartRateYMax ? { max: heartRateYMax } : {})
       }
     ],
     grid: {
