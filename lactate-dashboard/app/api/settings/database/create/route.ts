@@ -103,8 +103,9 @@ export async function POST(request: NextRequest) {
             id SERIAL PRIMARY KEY,
             test_id VARCHAR(255) NOT NULL,
             stage INTEGER NOT NULL,
-            duration_min INTEGER NOT NULL,
+            duration_min NUMERIC(5,3) NOT NULL,
             load DECIMAL(5,2) NOT NULL,
+            theoretical_load DECIMAL(5,2),
             heart_rate_bpm INTEGER,
             lactate_mmol DECIMAL(4,2) NOT NULL,
             rr_systolic INTEGER,
@@ -133,6 +134,21 @@ export async function POST(request: NextRequest) {
             UNIQUE(test_id)
         );
 
+        -- Create manual_zones table
+        CREATE TABLE IF NOT EXISTS manual_zones (
+            id SERIAL PRIMARY KEY,
+            test_id VARCHAR(255) NOT NULL,
+            profile_id VARCHAR(255) NOT NULL,
+            zone_id INTEGER NOT NULL,
+            range_start NUMERIC NOT NULL,
+            range_end NUMERIC NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
+            FOREIGN KEY (profile_id) REFERENCES patient_profiles(profile_id) ON DELETE CASCADE,
+            UNIQUE(test_id, zone_id)
+        );
+
         -- Create indexes
         CREATE INDEX IF NOT EXISTS idx_patient_profiles_name ON patient_profiles(last_name, first_name);
         CREATE INDEX IF NOT EXISTS idx_patient_profiles_email ON patient_profiles(email);
@@ -144,6 +160,8 @@ export async function POST(request: NextRequest) {
         CREATE INDEX IF NOT EXISTS idx_stages_load ON stages(load);
         CREATE INDEX IF NOT EXISTS idx_adjusted_thresholds_test_id ON adjusted_thresholds(test_id);
         CREATE INDEX IF NOT EXISTS idx_adjusted_thresholds_profile_id ON adjusted_thresholds(profile_id);
+        CREATE INDEX IF NOT EXISTS idx_manual_zones_test_id ON manual_zones(test_id);
+        CREATE INDEX IF NOT EXISTS idx_manual_zones_profile_id ON manual_zones(profile_id);
       `)
       
       console.log('✅ Tables created successfully')

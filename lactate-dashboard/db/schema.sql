@@ -75,6 +75,21 @@ CREATE TABLE adjusted_thresholds (
     UNIQUE(test_id)
 );
 
+-- Create manual_zones table
+CREATE TABLE manual_zones (
+    id SERIAL PRIMARY KEY,
+    test_id VARCHAR(255) NOT NULL,
+    profile_id VARCHAR(255) NOT NULL,
+    zone_id INTEGER NOT NULL,
+    range_start NUMERIC NOT NULL,
+    range_end NUMERIC NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (test_id) REFERENCES test_infos(test_id) ON DELETE CASCADE,
+    FOREIGN KEY (profile_id) REFERENCES patient_profiles(profile_id) ON DELETE CASCADE,
+    UNIQUE(test_id, zone_id)
+);
+
 -- Create indexes for better performance
 CREATE INDEX idx_patient_profiles_name ON patient_profiles(last_name, first_name);
 CREATE INDEX idx_patient_profiles_email ON patient_profiles(email);
@@ -90,11 +105,15 @@ CREATE INDEX idx_stages_load ON stages(load);
 CREATE INDEX idx_adjusted_thresholds_test_id ON adjusted_thresholds(test_id);
 CREATE INDEX idx_adjusted_thresholds_profile_id ON adjusted_thresholds(profile_id);
 
+CREATE INDEX idx_manual_zones_test_id ON manual_zones(test_id);
+CREATE INDEX idx_manual_zones_profile_id ON manual_zones(profile_id);
+
 -- Add comments to tables
 COMMENT ON TABLE patient_profiles IS 'Stores patient/athlete profile information';
 COMMENT ON TABLE test_infos IS 'Stores test protocol information (device, unit, increment, etc.)';
 COMMENT ON TABLE stages IS 'Stores individual lactate test stage measurements';
 COMMENT ON TABLE adjusted_thresholds IS 'Stores manually adjusted threshold values by users';
+COMMENT ON TABLE manual_zones IS 'Stores manually adjusted training zone ranges';
 
 -- Add column comments for clarity
 COMMENT ON COLUMN stages.load IS 'Load value (watt or kmh depending on test_infos.unit)';

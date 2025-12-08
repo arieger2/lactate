@@ -399,8 +399,23 @@ export default function LactateInput() {
           const response = await fetch(`/api/lactate-webhook?testId=${selectedTestInfo.testId}`);
           if (response.ok) {
             const data = await response.json();
-            const stages = data.data || data.stages || [];
-            setStages(stages);
+            const reloadedStages = data.data || data.stages || [];
+            setStages(reloadedStages);
+            
+            // Find the stage we just saved and update the form to show it
+            const savedStage = reloadedStages.find((s: Stage) => s.stage === currentStage.stage);
+            if (savedStage) {
+              setCurrentStage({
+                stage: savedStage.stage,
+                load: savedStage.load.toString(),
+                lactate: savedStage.lactate.toString(),
+                heartRate: savedStage.heartRate ? savedStage.heartRate.toString() : '',
+                rrSystolic: savedStage.rrSystolic ? savedStage.rrSystolic.toString() : '',
+                rrDiastolic: savedStage.rrDiastolic ? savedStage.rrDiastolic.toString() : '',
+                duration: savedStage.duration ? formatDurationDisplay(savedStage.duration) : '',
+                notes: savedStage.notes || ''
+              });
+            }
           }
         }
         

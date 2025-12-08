@@ -58,16 +58,31 @@ export function useSessionData({
   useEffect(() => {
     if (!selectedSessionId) {
       setWebhookData([])
+      setTestInfo(null)
       return
     }
 
     const loadData = async () => {
       setLoading(true)
       try {
-        const response = await fetch(`/api/lactate-webhook?sessionId=${selectedSessionId}`)
+        const response = await fetch(`/api/lactate-webhook?sessionId=${selectedSessionId}&includeMetadata=true`)
         if (response.ok) {
           const result = await response.json()
           const data = Array.isArray(result) ? result : (result.data || [])
+          
+          // Extract test info from metadata
+          if (result.metadata) {
+            setTestInfo({
+              device: result.metadata.device,
+              unit: result.metadata.unit
+            })
+          } else if (data.length > 0) {
+            // Fallback: extract from first data point
+            setTestInfo({
+              device: data[0].device,
+              unit: data[0].unit
+            })
+          }
           
           if (data.length === 0) {
             const testData = [
@@ -108,31 +123,6 @@ export function useSessionData({
     }
 
     loadData()
-  }, [selectedSessionId, dataVersion])
-
-  // Load test info when session changes
-  useEffect(() => {
-    if (!selectedSessionId) {
-      setTestInfo(null)
-      return
-    }
-
-    const loadTestInfo = async () => {
-      try {
-        const response = await fetch(`/api/session-info?sessionId=${selectedSessionId}`)
-        if (response.ok) {
-          const data = await response.json()
-          setTestInfo(data || null)
-        } else {
-          console.error('❌ API response not ok:', response.status, response.statusText)
-        }
-      } catch (error) {
-        console.error('❌ Error fetching test info:', error)
-        setTestInfo(null)
-      }
-    }
-
-    loadTestInfo()
   }, [selectedSessionId, dataVersion])
 
   return {
