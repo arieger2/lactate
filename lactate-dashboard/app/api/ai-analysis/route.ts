@@ -23,15 +23,6 @@ export async function POST(request: NextRequest) {
       timestamp
     } = body
 
-    console.log('🤖 AI Analysis Request received:', {
-      method,
-      unit,
-      dataPoints: testData?.length,
-      sessionId,
-      customerId,
-      timestamp
-    })
-
     // Validierung
     if (!method || !testData || !Array.isArray(testData) || testData.length === 0) {
       return NextResponse.json(
@@ -81,15 +72,6 @@ export async function POST(request: NextRequest) {
     */
 
     // Placeholder response bis Webhook implementiert ist
-    console.log('📊 AI Analysis data prepared for webhook:', {
-      method,
-      unit,
-      dataPoints: testData.length,
-      dataPreview: testData.slice(0, 3),
-      sessionId,
-      customerId
-    })
-
     return NextResponse.json({
       success: true,
       message: 'AI-Analyse wurde empfangen und wird verarbeitet. (Webhook-Integration ausstehend)',

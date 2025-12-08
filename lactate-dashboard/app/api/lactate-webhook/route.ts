@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
         )
         
         if (testExists.rows.length === 0) {
-          console.warn(`Test ${testId} not found - stage data not saved to database`)
+          // Test not found, do not save to DB
         } else {
           // Get test info for stage duration
           const testInfo = await client.query(
@@ -196,94 +196,99 @@ export async function POST(request: NextRequest) {
                 targetDuration
               })
               
-              console.log('📊 Theoretical load calculated:', {
-                stage: stageNumber,
-                method: theoretical.method,
-                actualLoad: dataEntry.load,
-                theoreticalLoad: theoretical.theoreticalLoad,
-                actualDuration: actualDuration.toFixed(3),
-                targetDuration,
-                confidence: theoretical.confidence,
-                note: theoretical.note
-              })
-              
               theoreticalLoad = theoretical.theoreticalLoad
-              isFinalApproximation = true
-              
-              // Keep actual values as-is, store theoretical load separately
-              finalLoad = dataEntry.load
-              finalLactate = dataEntry.lactate
-              finalHeartRate = dataEntry.heartRate
+              isFinalApproximation = true // Mark this as a final approximation
             }
           }
           
-          // Insert stage data (with theoretical load if calculated)
-          await client.query(`
-            INSERT INTO stages (
-              test_id, stage, duration_min, load, theoretical_load, heart_rate_bpm, lactate_mmol,
-              rr_systolic, rr_diastolic, is_final_approximation, notes
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            ON CONFLICT (test_id, stage) 
-            DO UPDATE SET 
-              duration_min = EXCLUDED.duration_min,
-              load = EXCLUDED.load,
-              theoretical_load = EXCLUDED.theoretical_load,
-              heart_rate_bpm = EXCLUDED.heart_rate_bpm,
-              lactate_mmol = EXCLUDED.lactate_mmol,
-              rr_systolic = EXCLUDED.rr_systolic,
-              rr_diastolic = EXCLUDED.rr_diastolic,
-              is_final_approximation = EXCLUDED.is_final_approximation,
-              notes = EXCLUDED.notes
-          `, [
-            testId,
-            stageNumber,
-            actualDuration,
-            finalLoad,
-            theoreticalLoad,
-            finalHeartRate || null,
-            finalLactate,
-            dataEntry.rrSystolic || null,
-            dataEntry.rrDiastolic || null,
-            isFinalApproximation,
-            dataEntry.notes || null
-          ])
+          // If stage is new, use INSERT. If existing, use UPDATE.
+          if (isExistingStage) {
+            // UPDATE existing stage
+            const query = `
+              UPDATE stages SET
+                load = $3,
+                lactate_mmol = $4,
+                heart_rate_bpm = $5,
+                duration_min = $6,
+                rr_systolic = $7,
+                rr_diastolic = $8,
+                notes = $9,
+                is_final_approximation = $10,
+                theoretical_load = $11
+              WHERE test_id = $1 AND stage = $2
+            `
+            await client.query(query, [
+              testId,
+              stageNumber,
+              finalLoad,
+              finalLactate,
+              finalHeartRate,
+              actualDuration,
+              dataEntry.rrSystolic,
+              dataEntry.rrDiastolic,
+              dataEntry.notes,
+              isFinalApproximation,
+              theoreticalLoad
+            ])
+          } else {
+            // INSERT new stage
+            const query = `
+              INSERT INTO stages (
+                test_id, stage, load, lactate_mmol, heart_rate_bpm, duration_min,
+                rr_systolic, rr_diastolic, notes, is_final_approximation, theoretical_load
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            `
+            await client.query(query, [
+              testId,
+              stageNumber,
+              finalLoad,
+              finalLactate,
+              finalHeartRate,
+              actualDuration,
+              dataEntry.rrSystolic,
+              dataEntry.rrDiastolic,
+              dataEntry.notes,
+              isFinalApproximation,
+              theoreticalLoad
+            ])
+          }
         }
-
       } finally {
         client.release()
       }
     } catch (dbError) {
-      console.error('PostgreSQL error, falling back to memory:', dbError)
+      console.error('Database operation failed:', dbError)
+      // Continue without saving to DB if it fails
     }
 
-    // Also store in memory for immediate access
+    // Also update in-memory store for non-DB use cases
     if (!dataStore.has(sessionId)) {
       dataStore.set(sessionId, [])
     }
-    
-    // Add theoretical load to dataEntry for response
-    const responseData = {
-      ...dataEntry,
-      theoreticalLoad: theoreticalLoad || undefined
+    const sessionData = dataStore.get(sessionId)!
+
+    // If stage exists, update it. Otherwise, add new.
+    const existingIndex = sessionData.findIndex(d => d.stage === dataEntry.stage)
+    if (existingIndex > -1) {
+      sessionData[existingIndex] = dataEntry
+    } else {
+      sessionData.push(dataEntry)
     }
     
-    dataStore.get(sessionId)!.push(responseData)
+    // Sort by stage number
+    sessionData.sort((a, b) => (a.stage || 0) - (b.stage || 0))
 
     return NextResponse.json({
-      success: true,
       message: 'Data received successfully',
-      data: responseData,
       testId: testId,
-      sessionId: sessionId, // For backward compatibility
-      totalPoints: dataStore.get(sessionId)!.length
+      stage: dataEntry.stage,
+      theoreticalLoad: theoreticalLoad
     })
-
   } catch (error) {
-    console.error('Webhook error:', error)
+    console.error('Error processing lactate data:', error)
     return NextResponse.json(
-      { error: 'Invalid JSON payload' },
-      { status: 400 }
+      { error: 'Internal Server Error' },
+      { status: 500 }
     )
   }
 }

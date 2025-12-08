@@ -127,7 +127,7 @@ export default function LactateInput() {
           setTestInfos(formattedTests)
         }
       } catch (error) {
-        console.error('Error loading test infos:', error)
+        // silent error
       }
     }
 
@@ -179,7 +179,7 @@ export default function LactateInput() {
           }
         }
       } catch (error) {
-        console.error('Error loading stages:', error)
+        // silent error
       }
     }
 

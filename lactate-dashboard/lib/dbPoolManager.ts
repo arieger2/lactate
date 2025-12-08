@@ -10,7 +10,6 @@ function getDatabaseConfig() {
     const configPath = path.join(process.cwd(), 'config', 'app.config.json')
     
     if (!fs.existsSync(configPath)) {
-      console.warn('⚠️ Config file not found, using defaults')
       return getDefaultConfig()
     }
     
@@ -77,62 +76,21 @@ class DatabasePoolManager {
       }
 
       const dbConfig = getDatabaseConfig()
-
-      console.log(`📦 Creating database pool: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`)
       
       // CRITICAL FIX: Ensure password is always a string for PostgreSQL driver
       const password = String(dbConfig.password || '')
 
-      console.log('🔧 Pool config before creation:', {
-        host: typeof dbConfig.host,
-        port: typeof dbConfig.port,
-        database: typeof dbConfig.database,
-        user: typeof dbConfig.user,
-        password: typeof dbConfig.password,
-        passwordValue: password ? '***HIDDEN***' : 'EMPTY',
-        passwordLength: password.length,
-        passwordIsString: typeof password === 'string'
+      this.pool = new Pool({
+        ...dbConfig,
+        password,
+        max: dbConfig.pool.max,
+        min: dbConfig.pool.min
       })
-
-      // CRITICAL: All Pool config values must be the correct type for PostgreSQL
-      const poolConfig = {
-        host: String(dbConfig.host || 'localhost'),
-        port: Number(dbConfig.port || 5432),
-        database: String(dbConfig.database || 'laktat'),
-        user: String(dbConfig.user || 'postgres'),
-        password: password, // Already converted to string above
-        ssl: dbConfig.ssl === true
-          ? {
-              rejectUnauthorized: false,
-              requestCert: false
-            }
-          : false,
-        max: Number(dbConfig.pool?.max ?? 10),
-        min: Number(dbConfig.pool?.min ?? 2),
-        idleTimeoutMillis: 10000,
-        connectionTimeoutMillis: 30000
-      }
-
-
-      this.pool = new Pool(poolConfig)
+      
       this.isInitialized = true
-
-      // Setup event listeners
-      this.pool.on('connect', () => {
-
-      })
-
-      this.pool.on('error', (err) => {
-        console.error('❌ Database connection error:', err)
-      })
-
-
     } catch (error) {
       console.error('❌ Failed to initialize database pool:', error)
-      console.error('❌ Error details:', error)
-      this.pool = null
       this.isInitialized = false
-      // Don't throw - just log and continue
     }
   }
 

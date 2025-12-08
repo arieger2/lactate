@@ -278,7 +278,7 @@ export default function PerformanceCurveOrchestrator() {
       />
 
       {/* 1.4 Training Zones Description (5-Zonen Trainingssystem) */}
-      <TrainingZonesDescription trainingZones={trainingZones} />
+      <TrainingZonesDescription trainingZones={trainingZones} unit={currentUnit} />
     </div>
   )
 }

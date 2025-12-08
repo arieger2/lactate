@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     try {
       await fs.mkdir(backupDir, { recursive: true })
     } catch (error) {
-      console.error('Failed to create backup directory:', error)
+      // silent error
     }
 
     // Save file to backup directory
@@ -35,8 +35,6 @@ export async function POST(request: Request) {
     const filePath = path.join(backupDir, file.name)
 
     await fs.writeFile(filePath, buffer)
-
-    console.log('✅ Backup file uploaded:', filePath)
 
     return NextResponse.json({
       success: true,

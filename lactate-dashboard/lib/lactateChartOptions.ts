@@ -106,7 +106,7 @@ export function createLactateChartOptions(
     tooltip: {
       trigger: 'item',
       formatter: (params: any) => {
-        if (params.seriesName === 'Laktat' || params.seriesName === 'Laktat (Parabel)' || params.seriesName === 'Laktat (interpoliert)') {
+        if (params.seriesName === 'Laktat' || params.seriesName === 'Laktat (quadratisch)' || params.seriesName === 'Laktat (interpoliert)') {
           return `${tooltipLabel}: ${params.value[0]} ${tooltipUnit}<br/>${params.seriesName}: ${params.value[1].toFixed(2)} mmol/L`
         } else if (params.seriesName === 'Herzfrequenz') {
           return `${tooltipLabel}: ${params.value[0]} ${tooltipUnit}<br/>${params.seriesName}: ${params.value[1]} bpm`
@@ -216,7 +216,7 @@ export function createLactateChartOptions(
       }] : []),
       // Parabolic curve through last 3 points
       ...(parabolaCurveData.length > 0 ? [{
-        name: 'Laktat (Parabel)',
+        name: 'Laktat (quadratisch)',
         type: 'line' as const,
         data: parabolaCurveData,
         smooth: true,

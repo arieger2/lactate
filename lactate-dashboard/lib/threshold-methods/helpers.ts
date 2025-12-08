@@ -52,22 +52,14 @@ export function calculateDMaxLT1Point(data: LactateDataPoint[]): ThresholdPoint 
   
   const searchLimit = Math.floor(data.length * 0.7)
   
-  console.log('🔍 DMAX LT1 search:', {
-    baselineSlope: baselineSlope.toFixed(4),
-    targetSlope: targetSlope.toFixed(4),
-    searchLimit
-  })
-  
   for (let i = 1; i < searchLimit; i++) {
     const slope = (data[i + 1].lactate - data[i].lactate) / (data[i + 1].power - data[i].power)
     if (slope > targetSlope) {
-      console.log('✅ DMAX LT1: Found deflection point at index', i)
       return { power: data[i].power, lactate: data[i].lactate }
     }
   }
   
   const oneThirdIndex = Math.floor(data.length / 3)
-  console.log('⚠️ DMAX LT1: Using fallback at 1/3 of test range')
   return { power: data[oneThirdIndex].power, lactate: data[oneThirdIndex].lactate }
 }
 

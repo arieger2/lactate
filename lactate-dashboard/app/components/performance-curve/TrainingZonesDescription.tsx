@@ -4,12 +4,18 @@ import { TrainingZone } from '@/lib/types'
 
 interface TrainingZonesDescriptionProps {
   trainingZones: TrainingZone[]
+  unit: string
 }
 
-export default function TrainingZonesDescription({ trainingZones }: TrainingZonesDescriptionProps) {
+export default function TrainingZonesDescription({
+  trainingZones,
+  unit
+}: TrainingZonesDescriptionProps) {
   if (trainingZones.length === 0) {
     return null
   }
+
+  const unitLabel = unit === 'kmh' ? 'km/h' : 'W'
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
@@ -30,7 +36,9 @@ export default function TrainingZonesDescription({ trainingZones }: TrainingZone
             <h4 className="font-semibold text-zinc-900">{zone.name}</h4>
             <p className="text-sm text-zinc-700">{zone.description}</p>
             <p className="text-xs mt-2 text-zinc-600">
-              {Math.round(zone.range[0])}W - {Math.round(zone.range[1])}W
+              {Math.round(zone.range[0])}
+              {unitLabel} - {Math.round(zone.range[1])}
+              {unitLabel}
             </p>
           </div>
         ))}

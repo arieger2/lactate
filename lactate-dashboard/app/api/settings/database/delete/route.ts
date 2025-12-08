@@ -35,24 +35,15 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    console.log('🗑️ Delete Database Request:', {
-      host: finalHost,
-      port: finalPort,
-      user: finalUser,
-      database: databaseToDelete,
-      ssl: finalSsl,
-      hasPassword: !!finalPassword
-    })
-    
     // Connect to postgres database (not the one being deleted)
     pool = new Pool({
       host: finalHost,
       port: finalPort,
-      database: 'postgres',
+      database: 'postgres', // Connect to default DB to run delete command
       user: finalUser,
-      password: finalPassword,
+      password: String(finalPassword),
       ssl: finalSsl ? { rejectUnauthorized: false } : false,
-      connectionTimeoutMillis: 10000
+      connectionTimeoutMillis: 5000
     })
     
     const client = await pool.connect()
@@ -72,7 +63,6 @@ export async function POST(request: NextRequest) {
       }
       
       // Terminate all connections to the database
-      console.log(`🔌 Terminating connections to "${databaseToDelete}"...`)
       await client.query(`
         SELECT pg_terminate_backend(pg_stat_activity.pid)
         FROM pg_stat_activity
@@ -81,9 +71,7 @@ export async function POST(request: NextRequest) {
       `, [databaseToDelete])
       
       // Drop the database
-      console.log(`🗑️ Dropping database "${databaseToDelete}"...`)
       await client.query(`DROP DATABASE "${databaseToDelete}"`)
-      console.log(`✅ Database "${databaseToDelete}" deleted successfully`)
       
       return NextResponse.json({
         success: true,

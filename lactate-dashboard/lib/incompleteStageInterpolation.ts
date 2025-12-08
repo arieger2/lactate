@@ -211,11 +211,7 @@ export function interpolateIncompleteStage(
   
   // If stage was completed <33%, interpolation is unreliable
   if (completionRatio < 0.33) {
-    console.warn('⚠️ Stage completion <33% - interpolation may be unreliable', {
-      actualDuration,
-      targetDuration,
-      completionRatio: (completionRatio * 100).toFixed(1) + '%'
-    })
+    // Potentially log this event if a logging service is available
   }
   
   // Choose interpolation method
@@ -228,7 +224,6 @@ export function interpolateIncompleteStage(
       result = quadraticInterpolation(input)
       methodNote = `Quadratic interpolation (polynomial fit) from ${Math.round(completionRatio * 100)}% stage completion`
     } catch (error) {
-      console.warn('Quadratic interpolation failed, falling back to linear:', error)
       result = linearInterpolation(input)
       methodNote = `Linear interpolation (fallback) from ${Math.round(completionRatio * 100)}% stage completion`
     }
@@ -323,30 +318,19 @@ export function interpolateDataSeries(
       targetDuration
     })
     
-    console.log('📊 Incomplete stage interpolated:', {
-      stage: i + 1,
-      original: {
-        power: currentPoint.power,
-        lactate: currentPoint.lactate,
-        heartRate: currentPoint.heartRate
-      },
-      interpolated: {
-        power: interpolated.interpolatedLoad,
-        lactate: interpolated.interpolatedLactate,
-        heartRate: interpolated.interpolatedHeartRate
-      },
-      actualDuration,
-      targetDuration,
-      confidence: interpolated.confidence,
-      note: interpolated.note
-    })
-    
     result.push({
+      ...currentPoint,
       power: interpolated.interpolatedLoad,
       lactate: interpolated.interpolatedLactate,
       heartRate: interpolated.interpolatedHeartRate,
-      stage: currentPoint.stage,
-      isInterpolated: true // Flag to indicate this is an adjusted value
+      interpolationInfo: {
+        originalPower: currentPoint.power,
+        originalLactate: currentPoint.lactate,
+        originalHeartRate: currentPoint.heartRate,
+        method: interpolated.method,
+        confidence: interpolated.confidence,
+        note: interpolated.note
+      }
     })
   }
   

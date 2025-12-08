@@ -23,7 +23,6 @@ export function interpolateThreshold(
   targetLactate: number
 ): ThresholdPoint | null {
   if (data.length < 2) {
-    console.warn('⚠️ interpolateThreshold: Not enough data points', { dataLength: data.length, targetLactate })
     return null
   }
   
@@ -39,27 +38,13 @@ export function interpolateThreshold(
       const slope = (data[1].lactate - data[0].lactate) / (data[1].power - data[0].power)
       const extrapolatedPower = data[0].power - (data[0].lactate - targetLactate) / slope
       if (extrapolatedPower > 0) {
-        console.log('✅ interpolateThreshold: Extrapolated below minimum', {
-          targetLactate,
-          minLactate,
-          extrapolatedPower: Math.round(extrapolatedPower * 100) / 100
-        })
         return { power: Math.round(extrapolatedPower * 100) / 100, lactate: targetLactate }
       }
     }
-    console.warn('⚠️ interpolateThreshold: Target lactate below measured range', {
-      targetLactate,
-      minLactate,
-      deviation: (deviation * 100).toFixed(1) + '%'
-    })
     return null
   }
   
   if (targetLactate > maxLactate) {
-    console.warn('⚠️ interpolateThreshold: Target lactate above maximum', {
-      targetLactate,
-      maxLactate
-    })
     return null
   }
   
@@ -69,11 +54,6 @@ export function interpolateThreshold(
       
       // Verhindere Division durch Null
       if (lactateDiff === 0) {
-        console.warn('⚠️ interpolateThreshold: Zero lactate difference', {
-          i,
-          point1: data[i],
-          point2: data[i + 1]
-        })
         return null
       }
       
@@ -82,30 +62,14 @@ export function interpolateThreshold(
       
       // Validiere das Ergebnis
       if (isNaN(power) || !isFinite(power) || power < 0) {
-        console.warn('⚠️ interpolateThreshold: Invalid power calculated', {
-          power: typeof power === 'number' ? power.toFixed(2) : String(power),
-          ratio: typeof ratio === 'number' ? ratio.toFixed(4) : String(ratio),
-          targetLactate,
-          point1: data[i],
-          point2: data[i + 1]
-        })
         return null
       }
       
       const result = { power: Math.round(power * 100) / 100, lactate: targetLactate }
-      console.log('✅ interpolateThreshold found:', {
-        power: result.power,
-        lactate: result.lactate,
-        interpolatedBetween: `${data[i].power} - ${data[i + 1].power}`
-      })
       return result
     }
   }
   
-  console.warn('⚠️ interpolateThreshold: No interpolation point found', {
-    targetLactate,
-    dataPoints: data.map(d => ({ power: d.power, lactate: d.lactate }))
-  })
   return null
 }
 

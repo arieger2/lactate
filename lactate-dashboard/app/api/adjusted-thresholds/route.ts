@@ -5,8 +5,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    console.log('📥 Received adjusted thresholds POST:', body)
-    
     const { sessionId, profileId, lt1Power, lt1Lactate, lt2Power, lt2Lactate, adjustedAt } = body
     
     // Check for missing or invalid values (allow 0 as valid)
@@ -15,14 +13,6 @@ export async function POST(request: NextRequest) {
         lt1Lactate === null || lt1Lactate === undefined ||
         lt2Power === null || lt2Power === undefined || 
         lt2Lactate === null || lt2Lactate === undefined) {
-      console.error('❌ Missing required fields:', {
-        sessionId: !!sessionId,
-        profileId: !!profileId,
-        lt1Power: lt1Power !== null && lt1Power !== undefined,
-        lt1Lactate: lt1Lactate !== null && lt1Lactate !== undefined,
-        lt2Power: lt2Power !== null && lt2Power !== undefined,
-        lt2Lactate: lt2Lactate !== null && lt2Lactate !== undefined
-      })
       return NextResponse.json(
         { 
           error: 'Missing required fields',

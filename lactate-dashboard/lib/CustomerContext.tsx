@@ -30,11 +30,6 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
 
   // Reset session when customer changes
   const handleSetSelectedCustomer = (customer: Customer | null) => {
-    console.log('👤 Customer selection changed:', { 
-      newCustomer: customer ? `${customer.customer_id} - ${customer.name}` : null, 
-      previousCustomer: selectedCustomer ? `${selectedCustomer.customer_id} - ${selectedCustomer.name}` : null,
-      willResetSession: !customer || customer.customer_id !== selectedCustomer?.customer_id
-    })
     setSelectedCustomer(customer)
     if (!customer || customer.customer_id !== selectedCustomer?.customer_id) {
       setSelectedSessionId(null)

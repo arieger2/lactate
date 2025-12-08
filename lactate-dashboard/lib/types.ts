@@ -80,6 +80,14 @@ export interface LactateDataPoint {
   stage?: number
   /** Flag indicating this value was interpolated from an incomplete stage */
   isInterpolated?: boolean
+  interpolationInfo?: {
+    originalPower: number
+    originalLactate: number
+    originalHeartRate?: number
+    method: 'quadratic' | 'linear' | 'none'
+    confidence: number
+    note: string
+  }
 }
 
 export interface ThresholdPoint {

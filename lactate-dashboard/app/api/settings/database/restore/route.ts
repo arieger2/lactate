@@ -13,7 +13,6 @@ function getDatabaseConfig() {
     const config = JSON.parse(configContent)
     return config.database || {}
   } catch (error) {
-    console.error('Failed to read config:', error)
     return {}
   }
 }

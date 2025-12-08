@@ -12,7 +12,7 @@ function getConfigPassword() {
       return config.database?.password || ''
     }
   } catch (error) {
-    console.warn('Could not read config file for test endpoint')
+    // silent error
   }
   return ''
 }
@@ -27,16 +27,6 @@ export async function POST(request: NextRequest) {
     
     // Use provided password or fallback to config - CRITICAL: Must be string
     const dbPassword = String(password || getConfigPassword())
-    
-    console.log('🧪 Test connection with:', {
-      host: host || 'localhost',
-      port: parseInt(port) || 5432,
-      database: database || 'laktat',
-      user: user || 'postgres',
-      passwordType: typeof dbPassword,
-      passwordLength: dbPassword.length,
-      ssl: !!ssl
-    })
     
     pool = new Pool({
       host: String(host || 'localhost'),

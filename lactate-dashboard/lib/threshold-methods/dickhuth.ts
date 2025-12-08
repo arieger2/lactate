@@ -51,12 +51,6 @@ export function calculateDickhuth(data: LactateDataPoint[]): ThresholdMethodResu
     }
   }
   
-  console.log('🔍 Dickhuth LE Point:', {
-    power: lePoint.power,
-    lactate: lePoint.lactate,
-    ratio: minRatio
-  })
-  
   // LT1 = LE Point (minimum lactate/power ratio)
   const lt1 = {
     power: lePoint.power,
@@ -67,17 +61,16 @@ export function calculateDickhuth(data: LactateDataPoint[]): ThresholdMethodResu
   const iatTarget = lePoint.lactate + 1.5
   const lt2 = interpolateThreshold(data, iatTarget)
   
-  console.log('🔍 Dickhuth IAT Target:', {
-    lePointLactate: lePoint.lactate.toFixed(2),
-    iatTarget: iatTarget.toFixed(2),
-    lt2Result: lt2
-  })
-  
+  let notes = `LEP at ${lt1.power.toFixed(1)} W, IAT target ${iatTarget.toFixed(2)} mmol/L`
+  if (lt2 && lt2.power < lt1.power) {
+    notes += ' - Warning: IAT is below LEP, result may be invalid.'
+  }
+
   return {
     lt1,
     lt2,
     methodName: 'Dickhuth (IAT)',
     reference: 'Dickhuth et al. (1999)',
-    notes: `LE at ${lePoint.lactate.toFixed(2)} mmol/L, IAT at LE + 1.5 = ${iatTarget.toFixed(2)} mmol/L`
+    notes
   }
 }

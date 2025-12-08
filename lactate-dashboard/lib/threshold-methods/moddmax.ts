@@ -37,10 +37,8 @@ export function calculateModDMAX(data: LactateDataPoint[]): ThresholdMethodResul
   
   // Validation: Ensure LT1 < LT2
   if (lt1 && lt2 && lt1.power >= lt2.power) {
-    console.warn('⚠️ ModDMAX Validation: LT1 >= LT2, using earlier point...')
     const oneThirdIndex = Math.floor(data.length / 3)
     lt1 = { power: data[oneThirdIndex].power, lactate: data[oneThirdIndex].lactate }
-    console.log('✅ ModDMAX: Using 1/3 test range for LT1')
   }
   
   return {

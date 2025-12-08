@@ -19,15 +19,6 @@ export async function POST(request: NextRequest) {
     const finalSsl = ssl !== undefined ? ssl : (process.env.DB_SSL === 'true')
     const dbName = database || process.env.DB_NAME || 'laktat'
     
-    console.log('🗄️ Create Database Request:', {
-      host: finalHost,
-      port: finalPort,
-      user: finalUser,
-      database: dbName,
-      ssl: finalSsl,
-      hasPassword: !!finalPassword
-    })
-    
     // Connect to postgres database first (default db)
     adminPool = new Pool({
       host: finalHost,
@@ -39,9 +30,7 @@ export async function POST(request: NextRequest) {
       connectionTimeoutMillis: 10000
     })
     
-    console.log('📡 Connecting to postgres database...')
     const adminClient = await adminPool.connect()
-    console.log('✅ Connected to postgres database')
     
     // Check if database exists
     const checkResult = await adminClient.query(

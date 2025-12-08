@@ -63,30 +63,15 @@ export function useThresholdCalculation(
     const result = calculateThresholds(data, method)
     const { lt1: lt1Point, lt2: lt2Point, message, lt1Missing, lt2Missing } = result
 
-    // Log calculation results for debugging
-    console.log('🔍 Threshold calculation:', {
-      method,
-      unit,
-      dataPoints: data.length,
-      lt1Found: lt1Point ? `${lt1Point.power}/${lt1Point.lactate}` : 'NULL',
-      lt2Found: lt2Point ? `${lt2Point.power}/${lt2Point.lactate}` : 'NULL',
-      lt1Missing,
-      lt2Missing,
-      message,
-      shouldShowWarning: !!(message && (lt1Missing || lt2Missing))
-    })
-
     // Set thresholds directly - no conversion needed
     setLt1(lt1Point)
     setLt2(lt2Point)
 
     // Display message and AI analysis button if thresholds are missing
     if (message && (lt1Missing || lt2Missing)) {
-      console.log('⚠️ Setting warning message and AI button:', message)
       setThresholdMessage(message)
       setShowAiAnalysis(true)
     } else {
-      console.log('✅ No warning needed - thresholds found or no message')
       setThresholdMessage(null)
       setShowAiAnalysis(false)
     }
@@ -106,16 +91,7 @@ export function useThresholdCalculation(
                     !isNaN(lt2Point.lactate)
 
     if (canSave && onSave) {
-      console.log('💾 Auto-saving thresholds:', { lt1Point, lt2Point })
       onSave(lt1Point, lt2Point)
-    } else {
-      console.log('ℹ️ Skipping auto-save:', {
-        lt1Point,
-        lt2Point,
-        lt1Missing,
-        lt2Missing,
-        canSave
-      })
     }
 
     // Calculate 5-Zone Training System (method-specific)

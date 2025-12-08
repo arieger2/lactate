@@ -58,7 +58,6 @@ class ConfigManager {
         const content = fs.readFileSync(this.configPath, 'utf-8')
         this.config = JSON.parse(content)
         this.lastModified = stat.mtimeMs
-        console.log(`✓ Configuration loaded from ${this.configPath}`)
       }
     } catch (error) {
       console.error(`Failed to load config from ${this.configPath}:`, error)
@@ -121,7 +120,6 @@ class ConfigManager {
     try {
       fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2))
       this.lastModified = fs.statSync(this.configPath).mtimeMs
-      console.log(`✓ Configuration saved to ${this.configPath}`)
     } catch (error) {
       console.error(`Failed to save config:`, error)
       throw error
@@ -146,14 +144,11 @@ class ConfigManager {
 
           // Only notify if actually changed
           if (previousConfig !== newConfig) {
-            console.log('📝 Configuration file changed, notifying listeners...')
             this.notifyListeners()
           }
         }, 100)
       }
     })
-
-    console.log('👁️ Config file watcher started')
   }
 
   /**
@@ -163,7 +158,6 @@ class ConfigManager {
     if (this.watcher) {
       this.watcher.close()
       this.watcher = null
-      console.log('👁️ Config file watcher stopped')
     }
   }
 
@@ -208,6 +202,5 @@ const configManager = new ConfigManager(
 
 // Start watching for changes in all environments (critical for production)
 configManager.startWatching()
-console.log('👁️ Config file watching enabled for environment:', process.env.NODE_ENV || 'development')
 
 export default configManager

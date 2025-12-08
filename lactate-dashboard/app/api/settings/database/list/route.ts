@@ -8,7 +8,6 @@ export async function GET(request: NextRequest) {
     
     const pool = dbPoolManager().getPool()
     if (!pool) {
-      console.warn('⚠️ Database pool not available')
       return NextResponse.json({
         success: false,
         message: 'Database pool not available - check configuration',
@@ -16,9 +15,7 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
     
-    console.log('🔄 Pool obtained successfully')
     const client = await pool.connect()
-    console.log('🔗 Client connected')
     
     try {
       // Get all databases excluding system databases
@@ -33,8 +30,6 @@ export async function GET(request: NextRequest) {
           AND d.datistemplate = false
         ORDER BY d.datname
       `)
-      
-      console.log('✅ Query executed:', result.rows.length, 'databases found')
       
       const databases = result.rows.map(row => ({
         name: row.name,
