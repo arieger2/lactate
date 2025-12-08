@@ -97,10 +97,31 @@ export function calculateTrainingZones(
   lt1: ThresholdPoint | null,
   lt2: ThresholdPoint | null,
   maxPower: number,
-  method: ThresholdMethod = 'dickhuth'
+  method: ThresholdMethod = 'dickhuth',
+  unit: string = 'watt'
 ): TrainingZone[] {
   const lt1Power = lt1?.power || maxPower * 0.65
   const lt2Power = lt2?.power || maxPower * 0.85
+
+  // Dynamically calculate Zone 1 start
+  const zone2StartDickhuth = lt1Power * 0.75;
+  const zone2StartStandard = lt1Power * 0.68;
+
+  let zone1Start = 0;
+  if (method === 'dickhuth') {
+    if (unit === 'watt') {
+      zone1Start = Math.max(0, zone2StartDickhuth - 50);
+    } else if (unit === 'kmh') {
+      zone1Start = Math.max(0, zone2StartDickhuth - 3);
+    }
+  } else {
+    if (unit === 'watt') {
+      zone1Start = Math.max(0, zone2StartStandard - 50);
+    } else if (unit === 'kmh') {
+      zone1Start = Math.max(0, zone2StartStandard - 3);
+    }
+  }
+
 
   // Method-specific zone calculation - only for valid methods
   // For dickhuth, use 5-zone model, for others use standard 5-zone
@@ -110,7 +131,7 @@ export function calculateTrainingZones(
       {
         id: 1,
         name: 'Zone 1 - Regeneration',
-        range: [0, lt1Power * 0.75],
+        range: [zone1Start, zone2StartDickhuth],
         color: 'rgba(34, 197, 94, 0.2)',
         borderColor: 'rgba(34, 197, 94, 0.8)',
         description: 'Regenerationsbereich'
@@ -118,7 +139,7 @@ export function calculateTrainingZones(
       {
         id: 2,
         name: 'Zone 2 - Aerobe Basis',
-        range: [lt1Power * 0.75, lt1Power],
+        range: [zone2StartDickhuth, lt1Power],
         color: 'rgba(59, 130, 246, 0.2)',
         borderColor: 'rgba(59, 130, 246, 0.8)',
         description: 'Aerob bis LT1 (LE)'
@@ -157,7 +178,7 @@ export function calculateTrainingZones(
     {
       id: 1,
       name: 'Zone 1 - Regeneration',
-      range: [0, lt1Power * 0.68],
+      range: [zone1Start, zone2StartStandard],
       color: 'rgba(34, 197, 94, 0.2)',
       borderColor: 'rgba(34, 197, 94, 0.8)',
       description: 'Regeneration & Fettstoffwechsel'
@@ -165,7 +186,7 @@ export function calculateTrainingZones(
     {
       id: 2,
       name: 'Zone 2 - Aerobe Basis',
-      range: [lt1Power * 0.68, lt1Power],
+      range: [zone2StartStandard, lt1Power],
       color: 'rgba(59, 130, 246, 0.2)',
       borderColor: 'rgba(59, 130, 246, 0.8)',
       description: 'Aerober Grundlagenbereich (bis LT1)'

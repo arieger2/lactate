@@ -110,7 +110,7 @@ export function useChartInteraction({
         setZoneBoundaryPositions(positions);
       }
     }
-  }, [webhookData, trainingZones, lt1, lt2, isDragging, currentUnit]);
+  }, [webhookData, trainingZones, lt1, lt2, isDragging, currentUnit])
 
   // Handle window resize
   useEffect(() => {
@@ -232,7 +232,7 @@ export function useChartInteraction({
                 const newLt2 = isDragging.type === 'LT2' ? { power, lactate } : currentLt2
                 
                 if (newLt1 && newLt2 && newLt1.power && newLt1.lactate && newLt2.power && newLt2.lactate) {
-                  const zones = calculateTrainingZones(newLt1, newLt2, maxPower, selectedMethodRef.current)
+                  const zones = calculateTrainingZones(newLt1, newLt2, maxPower, selectedMethodRef.current, currentUnit)
                   if (zones) {
                     setTrainingZones(zones)
                   }

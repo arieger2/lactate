@@ -120,7 +120,7 @@ export function useThresholdCalculation(
 
     // Calculate 5-Zone Training System (method-specific)
     const maxPower = Math.max(...data.map(d => d.power))
-    const zones = calculateTrainingZones(lt1Point, lt2Point, maxPower, method)
+    const zones = calculateTrainingZones(lt1Point, lt2Point, maxPower, method, unit)
     setTrainingZones(zones)
   }, [selectedMethod, currentUnit])
 

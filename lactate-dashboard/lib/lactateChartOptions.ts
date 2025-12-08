@@ -27,14 +27,8 @@ export function createLactateChartOptions(
   // Calculate xAxis min value based on the first zone's start
   let xAxisMin: number | undefined = undefined;
   if (trainingZones.length > 0) {
-    const firstZoneStart = trainingZones[0].range[0];
-    if (unit === 'kmh') {
-      // Ensure the axis starts at least 2 units before the first zone begins
-      xAxisMin = Math.max(0, firstZoneStart - 2);
-    } else if (unit === 'watt') {
-      // Ensure the axis starts at least 30 units before the first zone begins
-      xAxisMin = Math.max(0, firstZoneStart - 30);
-    }
+    // Start the axis exactly at the beginning of the first zone
+    xAxisMin = trainingZones[0].range[0];
   } else if (webhookData.length > 0) {
     // Fallback if zones are not yet calculated
     const minPower = Math.min(...webhookData.map(d => d.power));
