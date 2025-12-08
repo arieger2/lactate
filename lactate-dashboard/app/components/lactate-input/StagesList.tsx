@@ -69,7 +69,7 @@ export default function StagesList({
               )}
               <span className="mx-2 text-green-700 dark:text-green-300">•</span>
               <span className="text-green-700 dark:text-green-300">
-                {stage.load} {unit}
+                {typeof stage.load === 'number' ? stage.load.toFixed(2) : stage.load}{' '}{unit}
               </span>
               {stage.theoreticalLoad && (
                 <>

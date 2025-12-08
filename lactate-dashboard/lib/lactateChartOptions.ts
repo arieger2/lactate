@@ -24,6 +24,12 @@ export function createLactateChartOptions(
   const tooltipLabel = unit === 'kmh' ? 'Geschwindigkeit' : 'Leistung'
   const tooltipUnit = unit === 'kmh' ? 'km/h' : 'W'
   
+  // Determine a sensible maximum for the x-axis based on data
+  const lastDataPointPower = webhookData.length > 0 
+    ? Math.max(...webhookData.map(d => d.power)) 
+    : 20;
+  const xAxisMax = Math.ceil(lastDataPointPower * 1.1); // Add 10% buffer and round up
+
   // Calculate xAxis min value based on the first zone's start
   let xAxisMin: number | undefined = undefined;
   if (trainingZones.length > 0) {
@@ -32,11 +38,8 @@ export function createLactateChartOptions(
   } else if (webhookData.length > 0) {
     // Fallback if zones are not yet calculated
     const minPower = Math.min(...webhookData.map(d => d.power));
-    if (unit === 'kmh') {
-      xAxisMin = Math.max(0, minPower - 2);
-    } else if (unit === 'watt') {
-      xAxisMin = Math.max(0, minPower - 30);
-    }
+    const offset = unit === 'kmh' ? 2 : 30;
+    xAxisMin = Math.max(0, minPower - offset);
   }
   
   // Check if last stage is interpolated
@@ -128,7 +131,8 @@ export function createLactateChartOptions(
       name: xAxisLabel,
       nameLocation: 'middle',
       nameGap: 30,
-      ...(xAxisMin !== undefined && { min: xAxisMin })
+      ...(xAxisMin !== undefined && { min: xAxisMin }),
+      max: xAxisMax // Set the calculated maximum for the x-axis
     },
     yAxis: [
       {

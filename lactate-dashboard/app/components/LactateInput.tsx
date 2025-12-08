@@ -292,7 +292,7 @@ export default function LactateInput() {
     const defaultDuration = formatDurationDisplay(parseFloat(selectedTestInfo.stageDuration_min))
     
     setCurrentStage({
-      stage: currentStage.stage + 1,
+      stage: parseInt(String(currentStage.stage), 10) + 1,
       load: nextLoad.toString(),
       lactate: '',
       heartRate: '',
@@ -309,94 +309,53 @@ export default function LactateInput() {
 
   const handleSaveStage = async () => {
     if (!selectedTestInfo || !currentStage.load || !currentStage.lactate) {
-      showErrorMessage('Load and Lactate are required fields')
-      return
+      showErrorMessage('Load and Lactate are required fields');
+      return;
     }
+
+    const newLoad = parseFloat(currentStage.load);
+    if (isNaN(newLoad)) {
+      showErrorMessage('Invalid Load value');
+      return;
+    }
+
+    // Determine if the stage being edited already exists.
+    const isExisting = stages.some(s => s.stage === currentStage.stage);
     
-    const targetDuration = parseInt(selectedTestInfo.stageDuration_min)
-    const actualDuration = currentStage.duration ? parseInt(currentStage.duration) : targetDuration
-    const isLast = isLastStage(currentStage.stage)
-    const isExisting = isExistingStage(currentStage.stage)
-    
+    const stageToSave: CurrentStage = { ...currentStage };
+    const actualDuration = parseDurationToDecimal(stageToSave.duration || selectedTestInfo.stageDuration_min);
+
     try {
-      // CASE 1: Editing an existing stage
-      if (isExisting) {
-        // NEW LOGIC: If this is the last stage AND time is 100% AND load INCREASED
-        // Then create a NEW stage instead of updating
-        const maxStage = Math.max(...stages.map(s => s.stage))
-        const isLastStage = currentStage.stage === maxStage
-        const isFullDuration = actualDuration >= targetDuration
+      const payload = buildStagePayload(stageToSave, actualDuration, isExisting);
+      const result = await saveStageToDatabase(payload);
+
+      if (result.success) {
+        updateLocalStagesArray(stageToSave, actualDuration, result.theoreticalLoad);
+        setHasUnsavedChanges(false);
+
+        // After a successful save, always prepare the form for the next logical stage number.
+        const maxStage = Math.max(0, ...stages.map(s => s.stage), stageToSave.stage);
+        const nextStageNumber = maxStage + 1;
         
-        if (isLastStage && isFullDuration) {
-          // Get the existing stage's load
-          const existingStage = stages.find(s => s.stage === currentStage.stage)
-          const currentLoad = parseFloat(currentStage.load)
-          const existingLoad = existingStage?.load || 0
-          
-          // Check if load INCREASED (new load > existing load)
-          if (currentLoad > existingLoad) {
-            // Create NEW stage (user progressed to next level)
-            const payload = buildStagePayload(currentStage, actualDuration, false) // New stage
-            const result = await saveStageToDatabase(payload)
-            
-            if (result.success) {
-              updateLocalStagesArray(currentStage, actualDuration, result.theoreticalLoad)
-              setHasUnsavedChanges(false)
-              prepareNextStage()
-            }
-            return
-          }
-        }
-        
-        // Default: Update existing stage (load same or decreased, or not last stage, or time < 100%)
-        const payload = buildStagePayload(currentStage, actualDuration, true) // Pass isExisting=true
-        const result = await saveStageToDatabase(payload)
-      
-        if (result.success) {
-          updateLocalStagesArray(currentStage, actualDuration, result.theoreticalLoad)
-          setHasUnsavedChanges(false)
-          
-          // Check if this was the last existing stage AND time is 100%
-          // If so, prepare next stage to allow continuing
-          if (isLastStage && isFullDuration) {
-            prepareNextStage()
-          }
-          // Otherwise, user stays on this stage to continue editing
-        }
-        return
-      }
-      
-      // CASE 2: Creating a new stage (isLast should be true)
-      // Check if time 100% reached
-      if (actualDuration >= targetDuration) {
-        // 2.1) Time 100% reached: save
-        const payload = buildStagePayload(currentStage, actualDuration, false) // New stage
-        const result = await saveStageToDatabase(payload)
-        
-        if (result.success) {
-          updateLocalStagesArray(currentStage, actualDuration, result.theoreticalLoad)
-          setHasUnsavedChanges(false)
-          // 2.1.1) New stage completed: prepare next stage
-          prepareNextStage()
-        }
-      } else {
-        // 2.2) Time < 100% for new stage
-        // Only allowed for the last/new stage with approximation
-        // This means the test is FINISHED (user couldn't complete the stage)
-        const payload = buildStagePayload(currentStage, actualDuration, false) // New incomplete stage
-        const result = await saveStageToDatabase(payload)
-        
-        if (result.success) {
-          updateLocalStagesArray(currentStage, actualDuration, result.theoreticalLoad)
-          setHasUnsavedChanges(false)
-          // DO NOT prepare next stage - test is finished with incomplete last stage
-        }
+        const nextLoad = parseFloat(selectedTestInfo.startLoad) + ((nextStageNumber - 1) * parseFloat(selectedTestInfo.increment));
+        const defaultDuration = formatDurationDisplay(parseFloat(selectedTestInfo.stageDuration_min));
+
+        setCurrentStage({
+          stage: nextStageNumber,
+          load: nextLoad.toString(),
+          lactate: '',
+          heartRate: '',
+          rrSystolic: '',
+          rrDiastolic: '',
+          duration: defaultDuration,
+          notes: ''
+        });
       }
     } catch (error) {
-      console.error('Error in handleSaveStage:', error)
-      showErrorMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error('Error in handleSaveStage:', error);
+      showErrorMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }
+  };
 
   const handleStageClick = (stage: Stage) => {
     const formattedDuration = stage.duration ? formatDurationDisplay(stage.duration) : ''
