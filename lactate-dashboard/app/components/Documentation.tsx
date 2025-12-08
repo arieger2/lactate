@@ -156,79 +156,148 @@ function QuickStartSection() {
           🚀 Schritt-für-Schritt Anleitung
         </h2>
         <p className="text-zinc-600 dark:text-zinc-400 mb-6">
-          Komplette Anleitung zum Einrichten und Verwenden des Lactate Dashboards - 
-          von der Datenbankerstellung bis zur Performance-Analyse.
+          Komplette Anleitung zum Verwenden des Lactate Dashboards - 
+          vom Anlegen eines Athleten bis zur Performance-Analyse.
         </p>
 
-        {/* Step 1: Database Setup */}
+        {/* Step 1: Create Customer */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <span className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-500 text-white font-bold text-lg">1</span>
-            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Datenbank einrichten</h3>
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Benutzer/Athleten anlegen</h3>
           </div>
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-5 ml-13">
-            <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-3">Automatische Datenbankerstellung (empfohlen)</h4>
+            <div className="bg-blue-100 dark:bg-blue-900 p-4 rounded-lg mb-4">
+              <div className="text-sm text-blue-900 dark:text-blue-100 mb-2">
+                <strong>📸 Screenshot 1: Benutzer-Suche und Anlegen</strong>
+              </div>
+              <img 
+                src="/docs/screenshot-1-customer-search.png" 
+                alt="Benutzer suchen und anlegen"
+                className="w-full rounded border border-blue-200 dark:border-blue-700 mb-2"
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Suchfeld zum Finden bestehender Kunden und Button zum Anlegen neuer Kunden
+              </p>
+            </div>
+            
             <ol className="list-decimal list-inside space-y-2 text-sm text-blue-700 dark:text-blue-300 mb-4">
-              <li>Öffnen Sie die <strong>Settings</strong> (⚙️ oben rechts)</li>
-              <li>Wählen Sie den Tab <strong>&quot;Database&quot;</strong></li>
-              <li>Geben Sie Ihre PostgreSQL-Verbindungsdaten ein:
+              <li>Gehen Sie zum Tab <strong>&quot;✏️ Lactate Input&quot;</strong></li>
+              <li>Klicken Sie auf <strong>&quot;+ Create New Customer&quot;</strong></li>
+              <li>Füllen Sie die Kundendaten aus:
                 <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
-                  <li>Host: z.B. <code className="bg-blue-100 dark:bg-blue-900 px-1">localhost</code></li>
-                  <li>Port: Standard <code className="bg-blue-100 dark:bg-blue-900 px-1">5432</code></li>
-                  <li>Database Name: z.B. <code className="bg-blue-100 dark:bg-blue-900 px-1">laktat</code></li>
-                  <li>Username: Ihr PostgreSQL-User (z.B. <code className="bg-blue-100 dark:bg-blue-900 px-1">postgres</code>)</li>
-                  <li>Password: Ihr PostgreSQL-Passwort</li>
+                  <li><strong>First Name</strong> (Pflicht) - z.B. &quot;Max&quot;</li>
+                  <li><strong>Last Name</strong> (Pflicht) - z.B. &quot;Mustermann&quot;</li>
+                  <li><strong>Profile ID</strong> - wird automatisch generiert (z.B. 100)</li>
+                  <li>Optional: Birth Date, Height (cm), Weight (kg)</li>
+                  <li>Optional: Email, Phone</li>
                 </ul>
               </li>
-              <li>Klicken Sie auf <strong>&quot;Test Connection&quot;</strong> zur Überprüfung</li>
-              <li>Klicken Sie auf <strong>&quot;Create Database&quot;</strong></li>
-              <li>✅ Alle Tabellen werden automatisch angelegt!</li>
             </ol>
+            
+            <h4 className="font-semibold text-blue-800 dark:text-blue-200 mb-3 mt-4">
+              Bestehenden Kunden wiederfinden
+            </h4>
             <div className="bg-blue-100 dark:bg-blue-900 p-3 rounded text-xs text-blue-900 dark:text-blue-100">
-              <strong>💡 Hinweis:</strong> Keine manuelle SQL-Ausführung nötig! Die Anwendung erstellt automatisch:
-              patient_profiles, test_infos, stages, adjusted_thresholds
+              <p className="mb-2"><strong>Nach Anlegen eines Kunden können Sie diesen jederzeit wiederfinden:</strong></p>
+              <ol className="list-decimal list-inside space-y-1 ml-3">
+                <li>Geben Sie die <strong>ersten Buchstaben</strong> des Vor- oder Nachnamens in das Suchfeld ein</li>
+                <li>z.B. &quot;Karl&quot; oder &quot;Val&quot; für &quot;Karl Valentin&quot;</li>
+                <li>Die Suche funktioniert in Echtzeit - passende Kunden erscheinen sofort</li>
+                <li>Klicken Sie auf den gewünschten Kunden, um ihn auszuwählen</li>
+              </ol>
+              <p className="mt-2 text-xs italic">
+                💡 Tipp: Die Suche ist nicht case-sensitive und findet auch Teilstrings im Namen
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Step 2: Create Customer */}
+        {/* Step 3: Create Test Protocol */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
-            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-green-500 text-white font-bold text-lg">2</span>
-            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Kunden/Athleten anlegen</h3>
+            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-500 text-white font-bold text-lg">2</span>
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Mess-Protokoll anlegen</h3>
           </div>
-          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-5 ml-13">
-            <ol className="list-decimal list-inside space-y-2 text-sm text-green-700 dark:text-green-300 mb-4">
-              <li>Gehen Sie zum Tab <strong>&quot;Lactate Input&quot;</strong></li>
-              <li>Scrollen Sie zu <strong>&quot;New Customer Information&quot;</strong></li>
-              <li>Füllen Sie die Pflichtfelder aus:
+          <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-5 ml-13">
+            <div className="bg-indigo-100 dark:bg-indigo-900 p-4 rounded-lg mb-4">
+              <div className="text-sm text-indigo-900 dark:text-indigo-100 mb-2">
+                <strong>📸 Screenshot 3: Protokoll-Auswahl und Anlegen</strong>
+              </div>
+              <img 
+                src="/docs/screenshot-3-protocol.png" 
+                alt="Protokoll auswählen und anlegen"
+                className="w-full rounded border border-indigo-200 dark:border-indigo-700 mb-2"
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+              <p className="text-xs text-indigo-700 dark:text-indigo-300">
+                Test-Protokoll Liste mit Button &quot;+ New Protocol&quot; zum Anlegen weiterer Protokolle
+              </p>
+            </div>
+            <h4 className="font-semibold text-indigo-800 dark:text-indigo-200 mb-3">
+              Was ist ein Mess-Protokoll?
+            </h4>
+            <p className="text-sm text-indigo-700 dark:text-indigo-300 mb-4">
+              Das Mess-Protokoll gibt die <strong>Vorgaben für den Test</strong> an: Testgerät, Einheit, 
+              Startbelastung, Steigerung pro Stufe und Stufendauer. Diese Werte definieren die Struktur 
+              des Laktat-Stufentests.
+            </p>
+            
+            <ol className="list-decimal list-inside space-y-3 text-sm text-indigo-700 dark:text-indigo-300 mb-4">
+              <li>
+                <strong>Testdatum und -zeit eingeben</strong>
                 <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
-                  <li><strong>First Name</strong> (erforderlich)</li>
-                  <li><strong>Last Name</strong> (erforderlich)</li>
-                  <li>Profile ID (wird automatisch generiert, wenn leer)</li>
+                  <li>Date: z.B. 08.12.2025</li>
+                  <li>Time: z.B. 13:58</li>
                 </ul>
               </li>
-              <li>Optional: Ergänzen Sie weitere Daten:
+              <li>
+                <strong>Testgerät wählen (Device)</strong>
                 <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
-                  <li>Birth Date, Height (cm), Weight (kg)</li>
-                  <li>Email, Phone</li>
-                  <li>Additional Notes</li>
+                  <li><strong>Treadmill (Laufband)</strong> - für Lauftests → Einheit: <code className="bg-indigo-100 dark:bg-indigo-900 px-1">km/h</code></li>
+                  <li><strong>Bike (Fahrrad-Ergometer)</strong> - für Radtests → Einheit: <code className="bg-indigo-100 dark:bg-indigo-900 px-1">Watt (W)</code></li>
                 </ul>
               </li>
-              <li>Optional aber empfohlen: <strong>Test Protocol</strong> hinzufügen:
+              <li>
+                <strong>Test-Parameter festlegen</strong>
+                <div className="mt-2 bg-indigo-100 dark:bg-indigo-900 p-3 rounded">
+                  <strong>Beispiel Rad-Test (Watt):</strong>
+                  <ul className="list-disc list-inside ml-3 mt-1 space-y-1">
+                    <li>Start Load: <code className="bg-white dark:bg-indigo-950 px-2">50</code> Watt</li>
+                    <li>Increment: <code className="bg-white dark:bg-indigo-950 px-2">50</code> Watt (Steigerung pro Stufe)</li>
+                    <li>Duration: <code className="bg-white dark:bg-indigo-950 px-2">3</code> min (Stufendauer)</li>
+                  </ul>
+                  <p className="text-xs mt-2">→ Stufen: 50W, 100W, 150W, 200W, ... (jeweils 3 min)</p>
+                </div>
+                <div className="mt-2 bg-indigo-100 dark:bg-indigo-900 p-3 rounded">
+                  <strong>Beispiel Lauf-Test (km/h):</strong>
+                  <ul className="list-disc list-inside ml-3 mt-1 space-y-1">
+                    <li>Start Load: <code className="bg-white dark:bg-indigo-950 px-2">6</code> km/h</li>
+                    <li>Increment: <code className="bg-white dark:bg-indigo-950 px-2">2</code> km/h (Steigerung pro Stufe)</li>
+                    <li>Duration: <code className="bg-white dark:bg-indigo-950 px-2">3</code> min (Stufendauer)</li>
+                  </ul>
+                  <p className="text-xs mt-2">→ Stufen: 6 km/h, 8 km/h, 10 km/h, 12 km/h, ... (jeweils 3 min)</p>
+                </div>
+              </li>
+              <li>
+                <strong>Protokoll hinzufügen</strong>
                 <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
-                  <li>Date & Time: Testdatum und -zeit</li>
-                  <li>Device: <code className="bg-green-100 dark:bg-green-900 px-1">bike</code> oder <code className="bg-green-100 dark:bg-green-900 px-1">treadmill</code></li>
-                  <li>Unit: <code className="bg-green-100 dark:bg-green-900 px-1">Watt (W)</code> oder <code className="bg-green-100 dark:bg-green-900 px-1">km/h</code></li>
-                  <li>Start Load: Anfangsbelastung (z.B. 50)</li>
-                  <li>Increment: Steigerung pro Stufe (z.B. 50)</li>
-                  <li>Duration: Stufendauer in Minuten (z.B. 3)</li>
+                  <li>Klicken Sie <strong>&quot;+ Add Protocol&quot;</strong></li>
+                  <li>Das Protokoll erscheint unterhalb als Zeile (z.B. &quot;2025-12-08 • treadmill (kmh) • 6 + 2 / 3min&quot;)</li>
                 </ul>
               </li>
-              <li>Klicken Sie auf <strong>&quot;Create Customer&quot;</strong></li>
+              <li>
+                <strong>Kunde mit Protokoll erstellen</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Klicken Sie auf <strong>&quot;Create Customer&quot;</strong></li>
+                  <li>✅ Kunde und Test-Protokoll werden gemeinsam angelegt</li>
+                </ul>
+              </li>
             </ol>
-            <div className="bg-green-100 dark:bg-green-900 p-3 rounded text-xs text-green-900 dark:text-green-100">
-              <strong>✅ Erfolgreich:</strong> Kunde ist angelegt und kann ausgewählt werden
+            
+            <div className="bg-indigo-100 dark:bg-indigo-900 p-3 rounded text-xs text-indigo-900 dark:text-indigo-100">
+              <strong>💡 Das Protokoll erscheint in der Liste und kann später für weitere Tests wiederverwendet werden</strong>
             </div>
           </div>
         </div>
@@ -237,44 +306,173 @@ function QuickStartSection() {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <span className="flex items-center justify-center w-10 h-10 rounded-full bg-purple-500 text-white font-bold text-lg">3</span>
-            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Laktatdaten eingeben</h3>
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Messwerte als Stages eingeben</h3>
           </div>
           <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-5 ml-13">
-            <ol className="list-decimal list-inside space-y-2 text-sm text-purple-700 dark:text-purple-300 mb-4">
-              <li>Stellen Sie sicher, dass ein Kunde ausgewählt ist (blaue Info-Box oben)</li>
-              <li>Geben Sie für jede Stufe ein:
+            <h4 className="font-semibold text-purple-800 dark:text-purple-200 mb-3">
+              Stage-by-Stage Dateneingabe
+            </h4>
+            <p className="text-sm text-purple-700 dark:text-purple-300 mb-4">
+              Nach Anlegen des Kunden und Protokolls können Sie die <strong>gemessenen Werte für jede Stufe</strong> eingeben.
+              Die Eingabemaske erscheint automatisch und führt Sie durch den Test.
+            </p>
+            
+            <ol className="list-decimal list-inside space-y-3 text-sm text-purple-700 dark:text-purple-300 mb-4">
+              <li>
+                <strong>Kunde auswählen</strong>
                 <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
-                  <li><strong>Load</strong> (erforderlich): Leistung in Watt oder km/h</li>
-                  <li><strong>Lactate</strong> (erforderlich): Laktatwert in mmol/L</li>
-                  <li><strong>Duration</strong>: Stufendauer in Minuten</li>
-                  <li>Optional: Heart Rate, Blood Pressure, Notes</li>
+                  <li>Wählen Sie Ihren zuvor angelegten Kunden aus dem Dropdown</li>
+                  <li>Die blaue Info-Box zeigt die Kundendaten an</li>
+                  <li>Das Test-Protokoll wird automatisch geladen</li>
                 </ul>
               </li>
-              <li>Klicken Sie <strong>&quot;+ Add Stage&quot;</strong> nach jeder Stufe</li>
-              <li>Wiederholen Sie für alle Teststufen (typisch: 5-8 Stufen)</li>
-              <li>Klicken Sie <strong>&quot;💾 Save Test Data&quot;</strong></li>
+              <li>
+                <strong>Werte für jede Stufe eingeben</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li><strong>Load</strong> (Pflicht) - Belastung in Watt oder km/h (vorausgefüllt aus Protokoll)</li>
+                  <li><strong>Lactate</strong> (Pflicht) - Laktatwert in mmol/L</li>
+                  <li><strong>Heart Rate</strong> (Optional) - Herzfrequenz in bpm</li>
+                  <li><strong>Duration</strong> - Stufendauer (vorausgefüllt mit Protokoll-Vorgabe, z.B. 3:00 min)</li>
+                  <li>Optional: Blood Pressure (Systolic/Diastolic), Notes</li>
+                </ul>
+              </li>
+              <li>
+                <strong>⚠️ WICHTIG: Unvollständige letzte Stufe</strong>
+                <div className="mt-2 bg-purple-100 dark:bg-purple-900 p-3 rounded">
+                  <p className="font-medium mb-2">Bei den meisten Tests erreicht der Athlet die letzte Stufe nicht komplett!</p>
+                  <p className="text-xs mb-2"><strong>Beispiel:</strong></p>
+                  <ul className="list-disc list-inside ml-3 text-xs space-y-1">
+                    <li>Stufe 7: 18 km/h → 3:00 min geschafft</li>
+                    <li>Stufe 8: 20 km/h → <strong>nur 0:50 min</strong> geschafft (statt 3:00 min)</li>
+                  </ul>
+                  <p className="text-xs mt-2"><strong>→ Geben Sie die tatsächliche Zeit ein: <code className="bg-white dark:bg-purple-950 px-1">0:50</code></strong></p>
+                  <p className="text-xs mt-2 font-semibold">
+                    ✨ Das System berechnet automatisch die <strong>theoretische Load</strong> (z.B. 18.6 km/h)
+                  </p>
+                  <p className="text-xs mt-1">
+                    Die theoretische Load ist die Belastung, die der Athlet bei voller Stufendauer erreicht hätte.
+                    Sie wird für die Schwellenberechnungen verwendet.
+                  </p>
+                </div>
+              </li>
+              <li>
+                <strong>Stufe hinzufügen</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Klicken Sie <strong>&quot;✓ Continue to Next Stage&quot;</strong></li>
+                  <li>Die Stufe wird gespeichert und erscheint in der Liste unten</li>
+                  <li>Die Eingabemaske springt automatisch zur nächsten Stufe</li>
+                  <li>Load, Duration und Stage-Nummer werden automatisch hochgezählt</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Alle Stufen eingeben und Test abschließen</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Wiederholen Sie Schritt 2-4 für alle Teststufen (typisch: 5-9 Stufen)</li>
+                  <li>Letzte Stufe mit tatsächlicher Zeit eingeben (siehe Wichtig oben)</li>
+                  <li>Test ist automatisch gespeichert</li>
+                </ul>
+              </li>
             </ol>
             
             <div className="bg-purple-100 dark:bg-purple-900 p-3 rounded text-xs text-purple-900 dark:text-purple-100 mb-3">
-              <strong>📊 Beispiel-Test:</strong>
-              <table className="mt-2 text-xs w-full">
+              <strong>📊 Beispiel vollständiger Test (Laufband):</strong>
+              <table className="mt-2 text-xs w-full border-collapse">
                 <thead>
                   <tr className="border-b border-purple-200 dark:border-purple-700">
-                    <th className="text-left py-1">Stufe</th>
-                    <th className="text-left py-1">Load (W)</th>
-                    <th className="text-left py-1">Lactate</th>
-                    <th className="text-left py-1">HR</th>
+                    <th className="text-left py-1 px-2">Stage</th>
+                    <th className="text-left py-1 px-2">Duration</th>
+                    <th className="text-left py-1 px-2">Load (km/h)</th>
+                    <th className="text-left py-1 px-2">Lactate</th>
+                    <th className="text-left py-1 px-2">HR</th>
                   </tr>
                 </thead>
-                <tbody>
-                  <tr><td>1</td><td>50</td><td>1.2</td><td>120</td></tr>
-                  <tr><td>2</td><td>100</td><td>1.5</td><td>135</td></tr>
-                  <tr><td>3</td><td>150</td><td>2.1</td><td>150</td></tr>
-                  <tr><td>4</td><td>200</td><td>3.2</td><td>165</td></tr>
-                  <tr><td>5</td><td>250</td><td>4.8</td><td>178</td></tr>
-                  <tr><td>6</td><td>300</td><td>7.2</td><td>190</td></tr>
+                <tbody className="font-mono">
+                  <tr><td className="px-2">1</td><td className="px-2">3:00 min</td><td className="px-2">6.00 km/h</td><td className="px-2">0.95 mmol/L</td><td className="px-2">104 bpm</td></tr>
+                  <tr><td className="px-2">2</td><td className="px-2">3:00 min</td><td className="px-2">8.00 km/h</td><td className="px-2">1 mmol/L</td><td className="px-2">120 bpm</td></tr>
+                  <tr><td className="px-2">3</td><td className="px-2">3:00 min</td><td className="px-2">10.00 km/h</td><td className="px-2">1.12 mmol/L</td><td className="px-2">135 bpm</td></tr>
+                  <tr><td className="px-2">4</td><td className="px-2">3:00 min</td><td className="px-2">12.00 km/h</td><td className="px-2">1.45 mmol/L</td><td className="px-2">148 bpm</td></tr>
+                  <tr><td className="px-2">5</td><td className="px-2">3:00 min</td><td className="px-2">14.00 km/h</td><td className="px-2">2.07 mmol/L</td><td className="px-2">161 bpm</td></tr>
+                  <tr><td className="px-2">6</td><td className="px-2">3:00 min</td><td className="px-2">16.00 km/h</td><td className="px-2">3.49 mmol/L</td><td className="px-2">175 bpm</td></tr>
+                  <tr><td className="px-2">7</td><td className="px-2">3:00 min</td><td className="px-2">18.00 km/h</td><td className="px-2">6.45 mmol/L</td><td className="px-2">183 bpm</td></tr>
+                  <tr className="bg-purple-200 dark:bg-purple-800 font-bold">
+                    <td className="px-2">8</td>
+                    <td className="px-2 text-red-600 dark:text-red-400">0:50 min</td>
+                    <td className="px-2">20.00 km/h <span className="text-red-600 dark:text-red-400">(theoretical: 18.56 km/h)</span></td>
+                    <td className="px-2">8.24 mmol/L</td>
+                    <td className="px-2">183 bpm</td>
+                  </tr>
                 </tbody>
               </table>
+              <p className="mt-2 text-xs"><strong>→ Stufe 8:</strong> Athlet schaffte nur 50 Sekunden statt 3 Minuten. System berechnet theoretische Load von 18.56 km/h.</p>
+            </div>
+            
+            <div className="bg-purple-100 dark:bg-purple-900 p-3 rounded text-xs text-purple-900 dark:text-purple-100">
+              <strong>ℹ️ Die eingegebenen Stages werden automatisch gespeichert und erscheinen in der Liste unterhalb der Eingabemaske</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Step 5: Edit Data */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-amber-500 text-white font-bold text-lg">4</span>
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Werte nachträglich ändern</h3>
+          </div>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-5 ml-13">
+            <p className="text-sm text-amber-700 dark:text-amber-300 mb-4">
+              Eingegebene Werte können jederzeit korrigiert werden. Die Stages werden als Liste unterhalb der Eingabemaske angezeigt.
+            </p>
+            
+            <ol className="list-decimal list-inside space-y-3 text-sm text-amber-700 dark:text-amber-300 mb-4">
+              <li>
+                <strong>Stage anklicken zum Bearbeiten</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Klicken Sie auf eine Stage-Zeile in der Liste (z.B. &quot;Stage 3 • 3:00 min • 10.00 km/h • 1.12 mmol/L • 135 bpm&quot;)</li>
+                  <li>Die Werte werden in die Eingabemaske übernommen</li>
+                  <li>Die Stage-Nummer wird automatisch erkannt</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Werte ändern</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Ändern Sie Lactate, Heart Rate, Duration oder andere Werte</li>
+                  <li>Klicken Sie erneut auf <strong>&quot;✓ Continue to Next Stage&quot;</strong></li>
+                  <li>Die Stage wird aktualisiert</li>
+                </ul>
+              </li>
+              <li>
+                <strong>⚠️ ACHTUNG: Load-Änderung erstellt neue Stage!</strong>
+                <div className="mt-2 bg-amber-100 dark:bg-amber-900 p-3 rounded">
+                  <p className="font-medium mb-2">Wenn Sie die <strong>Load</strong> (Belastung) ändern:</p>
+                  <ul className="list-disc list-inside ml-3 text-xs space-y-1">
+                    <li><strong>Es wird KEINE bestehende Stage überschrieben</strong></li>
+                    <li><strong>Es wird eine NEUE Stage mit der neuen Load eingefügt</strong></li>
+                    <li>Die Stage-Nummern werden automatisch neu sortiert</li>
+                  </ul>
+                  <p className="text-xs mt-2"><strong>Beispiel:</strong></p>
+                  <ul className="list-disc list-inside ml-3 text-xs space-y-1">
+                    <li>Vorher: Stage 1 (50W), Stage 2 (100W), Stage 3 (150W)</li>
+                    <li>Sie ändern Stage 2 von 100W auf 120W</li>
+                    <li>Nachher: Stage 1 (50W), Stage 2 (100W), <strong>Stage 3 (120W - NEU)</strong>, Stage 4 (150W)</li>
+                  </ul>
+                  <p className="text-xs mt-2 font-semibold text-amber-900 dark:text-amber-100">
+                    → Zum Löschen einer Stage verwenden Sie den <strong>&quot;Remove&quot;</strong> Button!
+                  </p>
+                </div>
+              </li>
+              <li>
+                <strong>Stage löschen</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Klicken Sie auf den roten <strong>&quot;Remove&quot;</strong> Button neben der Stage</li>
+                  <li>Die Stage wird sofort gelöscht</li>
+                  <li>Die nachfolgenden Stages werden automatisch neu nummeriert</li>
+                </ul>
+              </li>
+            </ol>
+            
+            <div className="bg-amber-100 dark:bg-amber-900 p-3 rounded text-xs text-amber-900 dark:text-amber-100">
+              <strong>💡 Tipp:</strong> Zum Korrigieren von Laktat/HR-Werten: Stage anklicken → Wert ändern → Speichern<br/>
+              <strong>💡 Tipp:</strong> Zum Einfügen einer zusätzlichen Belastungsstufe: Neue Load eingeben → wird automatisch einsortiert
             </div>
           </div>
         </div>
@@ -282,35 +480,126 @@ function QuickStartSection() {
         {/* Step 4: View Dashboard */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
-            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-orange-500 text-white font-bold text-lg">4</span>
+            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-orange-500 text-white font-bold text-lg">5</span>
             <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Performance-Dashboard ansehen</h3>
           </div>
           <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-5 ml-13">
-            <ol className="list-decimal list-inside space-y-2 text-sm text-orange-700 dark:text-orange-300 mb-4">
-              <li>Wechseln Sie zum Tab <strong>&quot;Performance Curve&quot;</strong></li>
-              <li>Wählen Sie Ihren Kunden aus dem Dropdown</li>
-              <li>Die Leistungskurve wird automatisch angezeigt mit:
+            <div className="bg-orange-100 dark:bg-orange-900 p-4 rounded-lg mb-4">
+              <div className="text-sm text-orange-900 dark:text-orange-100 mb-2">
+                <strong>📸 Screenshot 2: Performance Curve Ansicht</strong>
+              </div>
+              <img 
+                src="/docs/screenshot-2-performance-curve.png" 
+                alt="Performance Curve mit Trainingszonen"
+                className="w-full rounded border border-orange-200 dark:border-orange-700 mb-2"
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+              />
+              <p className="text-xs text-orange-700 dark:text-orange-300">
+                Laktat-Leistungskurve mit Herzfrequenz, Schwellenmarkierungen (LT1/LT2) und farbigen Trainingszonen
+              </p>
+            </div>
+            <h4 className="font-semibold text-orange-800 dark:text-orange-200 mb-3">
+              Messdaten visualisieren und analysieren
+            </h4>
+            <ol className="list-decimal list-inside space-y-3 text-sm text-orange-700 dark:text-orange-300 mb-4">
+              <li>
+                <strong>Zur Performance Curve wechseln</strong>
                 <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
-                  <li>📈 Laktat-Leistungskurve</li>
-                  <li>🎯 Berechnete Schwellen (LT1 und LT2)</li>
-                  <li>🌈 5 farbige Trainingszonen</li>
+                  <li>Klicken Sie auf den Tab <strong>&quot;📈 Performance Curve&quot;</strong></li>
                 </ul>
               </li>
-              <li>Wählen Sie eine Schwellenmethode aus dem Dropdown:
+              <li>
+                <strong>Kunden auswählen</strong>
                 <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
-                  <li><strong>DMAX</strong> - Empfohlen für gut trainierte Athleten</li>
-                  <li><strong>Mader 4mmol</strong> - Klassische 4mmol/L Schwelle</li>
-                  <li><strong>Dickhuth</strong> - Individuelle Baseline-basierte Methode</li>
-                  <li>... und 5 weitere Methoden</li>
+                  <li>Wählen Sie Ihren Kunden aus dem Dropdown (z.B. &quot;Karl Valentin&quot;)</li>
+                  <li>Die Kundeninformationen werden oben angezeigt</li>
                 </ul>
               </li>
-              <li>Optional: Passen Sie Zonengrenzen per <strong>Drag & Drop</strong> an:
+              <li>
+                <strong>Mess-Protokoll/Test-Session auswählen</strong>
                 <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
-                  <li>Fahren Sie über eine blaue Zonenlinie</li>
-                  <li>Cursor wird zum ↔ Symbol</li>
-                  <li>Ziehen Sie die Linie nach links/rechts</li>
-                  <li>Änderungen werden automatisch gespeichert</li>
+                  <li>Im Dropdown <strong>&quot;Session&quot;</strong> sehen Sie alle verfügbaren Tests</li>
+                  <li>Jeder Test zeigt: Test-ID, Anzahl Stages, Datum, Uhrzeit</li>
+                  <li>z.B. &quot;TEST-28895 | 8 Punkte | 08/12/2025, 00:00:00&quot;</li>
+                  <li>Wählen Sie das gewünschte Protokoll aus</li>
+                  <li>Die Leistungskurve wird automatisch geladen</li>
                 </ul>
+              </li>
+              <li>
+                <strong>Darstellung analysieren</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>📈 <strong>Laktat-Leistungskurve</strong> (rote Linie) - zeigt die gemessenen Laktatwerte</li>
+                  <li>💙 <strong>Herzfrequenz-Kurve</strong> (blaue Linie, rechte Y-Achse) - zeigt die Herzfrequenz</li>
+                  <li>🎯 <strong>Schwellenmarkierungen</strong> - gestrichelte vertikale Linien für LT1 und LT2</li>
+                  <li>🌈 <strong>5 farbige Trainingszonen</strong> - Hintergrundfarben zeigen die Bereiche</li>
+                  <li>📊 <strong>Schwellenwerte-Tabelle</strong> - zeigt LT1 und LT2 mit Load, Lactate und HR</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Schwellenmethode wählen</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Oberhalb des Diagramms: <strong>&quot;Wissenschaftliche Schwellenmethoden&quot;</strong></li>
+                  <li>Klicken Sie auf eine der Methoden-Buttons:
+                    <ul className="list-circle list-inside ml-5 mt-1 space-y-1">
+                      <li><strong>Dickhuth IAT</strong> - Individuelle anaerobe Schwelle (Baseline + 1.5 mmol/L)</li>
+                      <li><strong>DMAX</strong> - Empfohlen für trainierte Athleten (maximale Distanz zur Baseline)</li>
+                      <li><strong>4 mmol OBLA</strong> - Klassische 4 mmol/L Schwelle nach Mader</li>
+                      <li><strong>ModDMAX</strong> - Modifizierte DMAX-Methode</li>
+                    </ul>
+                  </li>
+                  <li>Die Schwellenlinien und Zonen werden automatisch neu berechnet</li>
+                </ul>
+              </li>
+              <li>
+                <strong>🎯 Schwellen manuell anpassen (LT1 und LT2)</strong>
+                <div className="mt-2 bg-orange-100 dark:bg-orange-900 p-3 rounded">
+                  <p className="font-medium mb-2 text-orange-900 dark:text-orange-100">Sie können die Schwellenlinien individuell verschieben:</p>
+                  <ol className="list-decimal list-inside ml-3 text-xs space-y-1 text-orange-800 dark:text-orange-200">
+                    <li>Fahren Sie mit der <strong>Maus über eine gestrichelte Linie</strong> (LT1 grün-gestrichelt oder LT2 orange-gestrichelt)</li>
+                    <li>Der <strong>Cursor ändert sich zu ↔</strong> (Verschiebe-Symbol)</li>
+                    <li><strong>Klicken und ziehen</strong> Sie die Linie nach links oder rechts</li>
+                    <li>Die Position wird in Echtzeit aktualisiert</li>
+                    <li>Automatisch erscheint ein zusätzlicher Button: <strong>&quot;Manuell (Laden)&quot;</strong></li>
+                    <li>Ihre manuelle Anpassung wird <strong>automatisch in der Datenbank gespeichert</strong></li>
+                  </ol>
+                  <p className="text-xs mt-2 font-semibold text-orange-900 dark:text-orange-100">
+                    📱 Touch-Geräte: Tippen und halten Sie die gestrichelte Linie, dann ziehen
+                  </p>
+                </div>
+              </li>
+              <li>
+                <strong>🌈 Trainingszonen manuell anpassen</strong>
+                <div className="mt-2 bg-orange-100 dark:bg-orange-900 p-3 rounded">
+                  <p className="font-medium mb-2 text-orange-900 dark:text-orange-100">Zonengrenzen können unabhängig von den Schwellen verschoben werden:</p>
+                  <ol className="list-decimal list-inside ml-3 text-xs space-y-1 text-orange-800 dark:text-orange-200">
+                    <li>Fahren Sie mit der Maus über ein <strong>schwarzes Rechteck an der X-Achse</strong> (unten im Diagramm)</li>
+                    <li>Der <strong>Cursor ändert sich zu ↔</strong></li>
+                    <li><strong>Klicken und ziehen</strong> Sie das Rechteck nach links oder rechts</li>
+                    <li>Die Zonengrenzen (vertikale schwarze Linien) verschieben sich entsprechend</li>
+                    <li>Die Änderung wird ebenfalls automatisch gespeichert</li>
+                    <li>Der Button <strong>&quot;Manuell (Laden)&quot;</strong> wird eingeblendet/aktualisiert</li>
+                  </ol>
+                  <p className="text-xs mt-2 italic text-orange-800 dark:text-orange-200">
+                    💡 Unterschied: Schwellenlinien (LT1/LT2) beeinflussen die Berechnung, Zonengrenzen nur die Visualisierung der 5 Zonen
+                  </p>
+                </div>
+              </li>
+              <li>
+                <strong>↔️ Zwischen Manuell und Methoden wechseln</strong>
+                <div className="mt-2 bg-orange-100 dark:bg-orange-900 p-3 rounded">
+                  <p className="font-medium mb-2 text-orange-900 dark:text-orange-100">Vergleichen Sie Ihre manuelle Anpassung mit wissenschaftlichen Methoden:</p>
+                  <ul className="list-disc list-inside ml-3 text-xs space-y-1 text-orange-800 dark:text-orange-200">
+                    <li>Nach manueller Anpassung: Klicken Sie <strong>&quot;Manuell (Laden)&quot;</strong> um Ihre Einstellungen anzuzeigen</li>
+                    <li>Zum Vergleich: Wählen Sie eine wissenschaftliche Methode (z.B. <strong>&quot;DMAX&quot;</strong>)</li>
+                    <li>Die Kurve zeigt die automatisch berechneten Schwellen</li>
+                    <li>Wechseln Sie zurück zu <strong>&quot;Manuell (Laden)&quot;</strong> um Ihre Anpassungen wieder zu sehen</li>
+                    <li><strong>Ihre manuellen Werte bleiben gespeichert</strong>, auch wenn Sie zwischen Methoden wechseln</li>
+                    <li>So können Sie verschiedene Ansätze direkt vergleichen</li>
+                  </ul>
+                  <p className="text-xs mt-2 font-semibold text-orange-900 dark:text-orange-100">
+                    ⚡ Anwendungsfall: Erfahrene Trainer können die automatischen Berechnungen mit ihrer Expertise verfeinern und individuell anpassen
+                  </p>
+                </div>
               </li>
             </ol>
             
@@ -318,11 +607,77 @@ function QuickStartSection() {
               <strong>🎨 Trainingszonenfarben:</strong><br/>
               <div className="mt-2 flex gap-2 flex-wrap">
                 <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(144, 238, 144)'}}>Zone 1: Regeneration</span>
-                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(0, 200, 83)', color: 'white'}}>Zone 2: Aerobe Basis</span>
+                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(135, 206, 250)'}}>Zone 2: Aerobe Basis</span>
                 <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(255, 235, 59)'}}>Zone 3: Aerobe Schwelle</span>
-                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(255, 152, 0)'}}>Zone 4: Laktatschwelle</span>
-                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(244, 67, 54)', color: 'white'}}>Zone 5: VO₂max</span>
+                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(255, 192, 203)'}}>Zone 4: Anaerober Bereich</span>
+                <span className="px-2 py-1 rounded" style={{backgroundColor: 'rgb(221, 160, 221)'}}>Zone 5: Power</span>
               </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Step 6: Additional Protocol */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="flex items-center justify-center w-10 h-10 rounded-full bg-cyan-500 text-white font-bold text-lg">6</span>
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Zusätzliches Mess-Protokoll anlegen</h3>
+          </div>
+          <div className="bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 rounded-lg p-5 ml-13">
+            <h4 className="font-semibold text-cyan-800 dark:text-cyan-200 mb-3">
+              Weitere Tests für bestehende Kunden
+            </h4>
+            <p className="text-sm text-cyan-700 dark:text-cyan-300 mb-4">
+              Sie können für jeden Kunden <strong>mehrere Mess-Protokolle</strong> anlegen, um verschiedene Tests 
+              zu vergleichen (z.B. Rad-Test und Lauf-Test, oder Tests zu verschiedenen Zeitpunkten).
+            </p>
+            
+            <ol className="list-decimal list-inside space-y-3 text-sm text-cyan-700 dark:text-cyan-300 mb-4">
+              <li>
+                <strong>Kunden auswählen</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Gehen Sie zum Tab <strong>&quot;✏️ Lactate Input&quot;</strong></li>
+                  <li>Suchen und wählen Sie den bestehenden Kunden (z.B. &quot;Karl Valentin&quot;)</li>
+                  <li>Die Kundeninformationen werden in der blauen Box angezeigt</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Neues Protokoll erstellen</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Im Bereich <strong>&quot;Select Test Protocol&quot;</strong> klicken Sie auf <strong>&quot;+ New Protocol&quot;</strong></li>
+                  <li>Ein neues Protokoll-Formular erscheint</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Protokoll-Daten eingeben</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Date & Time: Neues Testdatum und -zeit</li>
+                  <li>Device: z.B. &quot;Treadmill&quot; wenn vorher &quot;Bike&quot; verwendet wurde</li>
+                  <li>Unit: entsprechend dem Device (km/h oder Watt)</li>
+                  <li>Start Load, Increment, Duration: gemäß neuem Testprotokoll</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Protokoll speichern und Daten eingeben</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>Das neue Protokoll wird in der Liste angezeigt</li>
+                  <li>Es ist automatisch ausgewählt</li>
+                  <li>Geben Sie die Messwerte wie in Schritt 4 beschrieben ein</li>
+                </ul>
+              </li>
+              <li>
+                <strong>Zwischen Protokollen wechseln</strong>
+                <ul className="list-disc list-inside ml-5 mt-1 space-y-1">
+                  <li>In der <strong>&quot;Select Test Protocol&quot;</strong> Liste sehen Sie alle Protokolle</li>
+                  <li>Jedes zeigt: Test-ID, Datum, Zeit, Device, Unit, Parameter</li>
+                  <li>Klicken Sie auf ein Protokoll, um es auszuwählen</li>
+                  <li>Die bestehenden Stages werden geladen</li>
+                  <li><strong>Vergleichstests:</strong> Mit/ohne Höhentraining, verschiedene Jahreszeiten</li>
+                </ul>
+              </li>
+            </ol>
+            
+            <div className="bg-cyan-100 dark:bg-cyan-900 p-3 rounded text-xs text-cyan-900 dark:text-cyan-100">
+              <strong>ℹ️ Alle Protokolle eines Kunden sind in der Session-Auswahl verfügbar und können jederzeit zwischen ihnen gewechselt werden</strong>
             </div>
           </div>
         </div>
@@ -334,15 +689,9 @@ function QuickStartSection() {
           </h3>
           <div className="space-y-3 text-sm">
             <div>
-              <strong className="text-amber-900 dark:text-amber-100">Fehler: &quot;Database table not found&quot;</strong><br/>
-              <span className="text-amber-700 dark:text-amber-300">
-                → Gehen Sie zu Settings → Database → Klicken Sie &quot;Create Database&quot;
-              </span>
-            </div>
-            <div>
               <strong className="text-amber-900 dark:text-amber-100">Kunde erscheint nicht in Performance Curve</strong><br/>
               <span className="text-amber-700 dark:text-amber-300">
-                → Stellen Sie sicher, dass Sie Test-Daten gespeichert haben (💾 Save Test Data)
+                → Stellen Sie sicher, dass Sie mindestens eine Stage eingegeben und gespeichert haben
               </span>
             </div>
             <div>
@@ -352,9 +701,9 @@ function QuickStartSection() {
               </span>
             </div>
             <div>
-              <strong className="text-amber-900 dark:text-amber-100">Verbindungsfehler zu PostgreSQL</strong><br/>
+              <strong className="text-amber-900 dark:text-amber-100">Theoretische Load wird nicht berechnet</strong><br/>
               <span className="text-amber-700 dark:text-amber-300">
-                → Prüfen Sie, ob PostgreSQL läuft: <code className="bg-amber-100 dark:bg-amber-900 px-1">pg_isready</code>
+                → Stellen Sie sicher, dass die Duration unter der Zielzeit liegt (z.B. 0:50 statt 3:00)
               </span>
             </div>
           </div>
