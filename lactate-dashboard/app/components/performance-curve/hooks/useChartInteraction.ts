@@ -48,6 +48,10 @@ export function useChartInteraction({
   const lastMouseMoveTime = useRef<number>(0)
   const smoothingBuffer = useRef<{power: number, lactate: number}[]>([])
   const [zoneBoundaryPositions, setZoneBoundaryPositions] = useState<{id: number, x: number, y: number}[]>([])
+  const tooltipRef = useRef<HTMLDivElement | null>(null)
+  const [customTooltip, setCustomTooltip] = useState<{ visible: boolean; x: number; y: number; content: string }>({ 
+    visible: false, x: 0, y: 0, content: '' 
+  })
 
   // Update refs when values change
   useEffect(() => {
@@ -56,6 +60,75 @@ export function useChartInteraction({
     currentZonesRef.current = trainingZones
     selectedMethodRef.current = selectedMethod
   }, [lt1, lt2, trainingZones, selectedMethod])
+
+  // Create custom tooltip element
+  useEffect(() => {
+    const tooltip = document.createElement('div')
+    tooltip.style.position = 'fixed'
+    tooltip.style.backgroundColor = 'rgba(50, 50, 50, 0.95)'
+    tooltip.style.color = 'white'
+    tooltip.style.padding = '8px 12px'
+    tooltip.style.borderRadius = '4px'
+    tooltip.style.fontSize = '12px'
+    tooltip.style.pointerEvents = 'none'
+    tooltip.style.zIndex = '9999'
+    tooltip.style.display = 'none'
+    tooltip.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)'
+    tooltip.style.whiteSpace = 'nowrap'
+    document.body.appendChild(tooltip)
+    tooltipRef.current = tooltip
+    
+    return () => {
+      if (tooltipRef.current) {
+        document.body.removeChild(tooltipRef.current)
+        tooltipRef.current = null
+      }
+    }
+  }, [])
+
+  // Update custom tooltip visibility and content
+  useEffect(() => {
+    if (tooltipRef.current) {
+      if (customTooltip.visible) {
+        tooltipRef.current.style.display = 'block'
+        tooltipRef.current.style.left = `${customTooltip.x}px`
+        tooltipRef.current.style.top = `${customTooltip.y}px`
+        tooltipRef.current.innerHTML = customTooltip.content
+      } else {
+        tooltipRef.current.style.display = 'none'
+      }
+    }
+  }, [customTooltip])
+
+  // Helper function to interpolate lactate value from the curve at a given power
+  const interpolateLactateFromCurve = (power: number): number => {
+    if (webhookData.length < 2) return 0
+
+    // Find the two data points that bracket the power value
+    let lowerPoint = webhookData[0]
+    let upperPoint = webhookData[webhookData.length - 1]
+
+    for (let i = 0; i < webhookData.length - 1; i++) {
+      if (webhookData[i].power <= power && webhookData[i + 1].power >= power) {
+        lowerPoint = webhookData[i]
+        upperPoint = webhookData[i + 1]
+        break
+      }
+    }
+
+    // If power is outside the range, return the nearest point
+    if (power <= webhookData[0].power) return webhookData[0].lactate
+    if (power >= webhookData[webhookData.length - 1].power) return webhookData[webhookData.length - 1].lactate
+
+    // Linear interpolation between the two points
+    const powerRange = upperPoint.power - lowerPoint.power
+    if (powerRange === 0) return lowerPoint.lactate
+
+    const ratio = (power - lowerPoint.power) / powerRange
+    const lactate = lowerPoint.lactate + ratio * (upperPoint.lactate - lowerPoint.lactate)
+    
+    return Math.round(lactate * 100) / 100 // Round to 2 decimal places
+  }
 
   // Chart initialization
   useEffect(() => {
@@ -212,7 +285,19 @@ export function useChartInteraction({
           
           // Handle LT threshold dragging
           if (isDragging.type === 'LT1' || isDragging.type === 'LT2') {
-            const newThreshold = { power, lactate }
+            // Enforce constraints: LT1 must be before LT2
+            if (isDragging.type === 'LT1' && currentLt2Ref.current) {
+              // LT1 cannot go beyond LT2
+              power = Math.min(power, currentLt2Ref.current.power - 0.1)
+            } else if (isDragging.type === 'LT2' && currentLt1Ref.current) {
+              // LT2 cannot go before LT1
+              power = Math.max(power, currentLt1Ref.current.power + 0.1)
+            }
+            
+            // Interpolate the lactate value from the curve at this power level
+            const interpolatedLactate = interpolateLactateFromCurve(power)
+            const newThreshold = { power, lactate: interpolatedLactate }
+            
             if (isDragging.type === 'LT1') {
               setLt1(newThreshold)
               currentLt1Ref.current = newThreshold
@@ -221,6 +306,16 @@ export function useChartInteraction({
               currentLt2Ref.current = newThreshold
             }
             
+            // Show custom tooltip while dragging
+            const unitLabel = currentUnit === 'watt' ? 'W' : currentUnit === 'kmh' ? 'km/h' : currentUnit
+            const tooltipContent = `<strong>${isDragging.type}</strong><br/>${power.toFixed(2)}${unitLabel}<br/>${interpolatedLactate.toFixed(2)} mmol/L`
+            setCustomTooltip({ 
+              visible: true, 
+              x: clientX + 15, 
+              y: clientY - 40, 
+              content: tooltipContent 
+            })
+            
             // Only recalculate zones if NOT in manual/adjusted mode
             if (selectedMethodRef.current !== 'adjusted') {
               // Recalculate training zones using current refs
@@ -228,8 +323,8 @@ export function useChartInteraction({
                 const maxPower = Math.max(...webhookData.map(d => d.power), 400)
                 const currentLt1 = currentLt1Ref.current
                 const currentLt2 = currentLt2Ref.current
-                const newLt1 = isDragging.type === 'LT1' ? { power, lactate } : currentLt1
-                const newLt2 = isDragging.type === 'LT2' ? { power, lactate } : currentLt2
+                const newLt1 = isDragging.type === 'LT1' ? { power, lactate: interpolateLactateFromCurve(power) } : currentLt1
+                const newLt2 = isDragging.type === 'LT2' ? { power, lactate: interpolateLactateFromCurve(power) } : currentLt2
                 
                 if (newLt1 && newLt2 && newLt1.power && newLt1.lactate && newLt2.power && newLt2.lactate) {
                   const zones = calculateTrainingZones(newLt1, newLt2, maxPower, selectedMethodRef.current, currentUnit)
@@ -290,6 +385,7 @@ export function useChartInteraction({
         if (!isDragging.type) return
         
         setIsDragging({ type: null })
+        setCustomTooltip({ visible: false, x: 0, y: 0, content: '' })
       }
       
       // Mouse event handlers

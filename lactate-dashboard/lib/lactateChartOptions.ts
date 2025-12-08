@@ -105,6 +105,10 @@ export function createLactateChartOptions(
     },
     tooltip: {
       trigger: 'item',
+      showDelay: 0,
+      hideDelay: 0,
+      enterable: true,
+      confine: true,
       formatter: (params: any) => {
         if (params.seriesName === 'Laktat' || params.seriesName === 'Laktat (quadratisch)' || params.seriesName === 'Laktat (interpoliert)') {
           return `${tooltipLabel}: ${params.value[0]} ${tooltipUnit}<br/>${params.seriesName}: ${params.value[1].toFixed(2)} mmol/L`
@@ -273,6 +277,14 @@ export function createLactateChartOptions(
           padding: [2, 4],
           borderRadius: 3
         },
+        tooltip: {
+          show: true,
+          formatter: (params: any) => {
+            const power = params.data[0].toFixed(2)
+            const lactate = params.data[1].toFixed(2)
+            return `<strong>LT1</strong><br/>${power}${tooltipUnit}<br/>${lactate} mmol/L`
+          }
+        },
         ...(isDragging ? {} : {
           emphasis: {
             scale: 1.3
@@ -285,7 +297,7 @@ export function createLactateChartOptions(
             label: {
               show: true,
               position: 'insideEndTop' as const,
-              formatter: 'LT1\n{c}W',
+              formatter: `LT1\n{c}${tooltipUnit}`,
               fontSize: 11,
               fontWeight: 'bold' as const,
               color: '#10b981',
@@ -320,6 +332,14 @@ export function createLactateChartOptions(
           padding: [2, 4],
           borderRadius: 3
         },
+        tooltip: {
+          show: true,
+          formatter: (params: any) => {
+            const power = params.data[0].toFixed(2)
+            const lactate = params.data[1].toFixed(2)
+            return `<strong>LT2</strong><br/>${power}${tooltipUnit}<br/>${lactate} mmol/L`
+          }
+        },
         ...(isDragging ? {} : {
           emphasis: {
             scale: 1.3
@@ -332,7 +352,7 @@ export function createLactateChartOptions(
             label: {
               show: true,
               position: 'insideEndTop' as const,
-              formatter: 'LT2\n{c}W',
+              formatter: `LT2\n{c}${tooltipUnit}`,
               fontSize: 11,
               fontWeight: 'bold' as const,
               color: '#f59e0b',

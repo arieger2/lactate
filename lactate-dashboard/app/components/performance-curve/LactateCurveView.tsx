@@ -48,6 +48,9 @@ export default function LactateCurveView({
   onZoneDragEnd
 }: LactateCurveViewProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
+
+  // Convert unit string to display format
+  const unitLabel = currentUnit === 'watt' ? 'W' : currentUnit === 'kmh' ? 'km/h' : currentUnit
   
   if (webhookData.length === 0) {
     return (
@@ -104,17 +107,17 @@ export default function LactateCurveView({
               LT1 (Aerobe Schwelle)
             </h3>
             <p className="text-green-700 dark:text-green-300">
-              {lt1?.power}W @ {(typeof lt1?.lactate === 'number' ? lt1.lactate.toFixed(2) : parseFloat(lt1?.lactate || '0').toFixed(2))} mmol/L
+              {lt1?.power}{unitLabel} @ {(typeof lt1?.lactate === 'number' ? lt1.lactate.toFixed(2) : parseFloat(lt1?.lactate || '0').toFixed(2))} mmol/L
             </p>
           </div>
         )}
         {lt2 && (
           <div className="p-6 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
             <h3 className="font-semibold text-orange-800 dark:text-orange-200">
-              LT2 (Anaerobe Schwelle - OBLA)
+              LT2 (Anaerobe Schwelle)
             </h3>
             <p className="text-orange-700 dark:text-orange-300">
-              {lt2?.power}W @ {(typeof lt2?.lactate === 'number' ? lt2.lactate.toFixed(2) : parseFloat(lt2?.lactate || '0').toFixed(2))} mmol/L
+              {lt2?.power}{unitLabel} @ {(typeof lt2?.lactate === 'number' ? lt2.lactate.toFixed(2) : parseFloat(lt2?.lactate || '0').toFixed(2))} mmol/L
             </p>
           </div>
         )}
