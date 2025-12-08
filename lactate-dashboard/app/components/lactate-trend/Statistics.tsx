@@ -16,19 +16,19 @@ const Statistics: React.FC<StatisticsProps> = ({ data, unit }) => {
           <div className="p-4 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
             <h3 className="text-md font-semibold text-zinc-600 dark:text-zinc-300">Latest LT1</h3>
             <p className="text-2xl font-bold text-green-500">
-              {latestPoint.lt1_load.toFixed(2)} {unit}
+              {latestPoint.lt1_load?.toFixed(2) ?? 'N/A'} {unit}
             </p>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              @ {latestPoint.lt1_lactate.toFixed(2)} mmol/L
+              @ {latestPoint.lt1_lactate?.toFixed(2) ?? 'N/A'} mmol/L
             </p>
           </div>
           <div className="p-4 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
             <h3 className="text-md font-semibold text-zinc-600 dark:text-zinc-300">Latest LT2</h3>
             <p className="text-2xl font-bold text-red-500">
-              {latestPoint.lt2_load.toFixed(2)} {unit}
+              {latestPoint.lt2_load?.toFixed(2) ?? 'N/A'} {unit}
             </p>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              @ {latestPoint.lt2_lactate.toFixed(2)} mmol/L
+              @ {latestPoint.lt2_lactate?.toFixed(2) ?? 'N/A'} mmol/L
             </p>
           </div>
         </div>
