@@ -203,8 +203,6 @@ export default function LactateInput() {
   }
 
   const buildStagePayload = (stageData: CurrentStage, duration: number, isExisting: boolean = false) => {
-    const durationDecimal = parseDurationToDecimal(stageData.duration || '3')
-    
     // Validate and parse numeric fields
     const load = parseFloat(stageData.load)
     const lactate = parseFloat(stageData.lactate)
@@ -231,7 +229,7 @@ export default function LactateInput() {
       heartRate: heartRate,
       rrSystolic: rrSystolic,
       rrDiastolic: rrDiastolic,
-      duration: durationDecimal,
+      duration: duration, // Use the passed parameter, not recalculate
       notes: stageData.notes || undefined,
       isExistingStage: isExisting // Flag to prevent backend re-interpolation
     }
@@ -323,38 +321,97 @@ export default function LactateInput() {
       return;
     }
 
-    // Determine if the stage being edited already exists.
+    const targetDuration = parseFloat(selectedTestInfo.stageDuration_min);
+    const actualDuration = parseDurationToDecimal(currentStage.duration || selectedTestInfo.stageDuration_min);
     const isExisting = stages.some(s => s.stage === currentStage.stage);
-    
-    const stageToSave: CurrentStage = { ...currentStage };
-    const actualDuration = parseDurationToDecimal(stageToSave.duration || selectedTestInfo.stageDuration_min);
+    const isFullDuration = actualDuration >= targetDuration;
 
     try {
-      const payload = buildStagePayload(stageToSave, actualDuration, isExisting);
-      const result = await saveStageToDatabase(payload);
-
-      if (result.success) {
-        updateLocalStagesArray(stageToSave, actualDuration, result.theoreticalLoad);
-        setHasUnsavedChanges(false);
-        refreshData(); // Explicitly signal that data has changed
-
-        // After a successful save, always prepare the form for the next logical stage number.
-        const maxStage = Math.max(0, ...stages.map(s => s.stage), stageToSave.stage);
-        const nextStageNumber = maxStage + 1;
+      // CASE 1: Editing an existing stage
+      if (isExisting) {
+        const maxStage = Math.max(...stages.map(s => s.stage));
+        const isLastStage = currentStage.stage === maxStage;
         
-        const nextLoad = parseFloat(selectedTestInfo.startLoad) + ((nextStageNumber - 1) * parseFloat(selectedTestInfo.increment));
-        const defaultDuration = formatDurationDisplay(parseFloat(selectedTestInfo.stageDuration_min));
-
-        setCurrentStage({
-          stage: nextStageNumber,
-          load: nextLoad.toString(),
-          lactate: '',
-          heartRate: '',
-          rrSystolic: '',
-          rrDiastolic: '',
-          duration: defaultDuration,
-          notes: ''
-        });
+        // If editing last stage AND time is 100% AND load INCREASED
+        // Then create a NEW stage instead of updating
+        if (isLastStage && isFullDuration) {
+          const existingStage = stages.find(s => s.stage === currentStage.stage);
+          const currentLoad = parseFloat(currentStage.load);
+          const existingLoad = existingStage?.load || 0;
+          
+          // Check if load INCREASED (user progressed to next level)
+          if (currentLoad > existingLoad) {
+            const payload = buildStagePayload(currentStage, actualDuration, false);
+            const result = await saveStageToDatabase(payload);
+            
+            if (result.success) {
+              // Reload stages from database to ensure we have the complete data including theoretical load
+              if (selectedTestInfo?.testId) {
+                const response = await fetch(`/api/lactate-webhook?testId=${selectedTestInfo.testId}`);
+                if (response.ok) {
+                  const data = await response.json();
+                  const stages = data.data || data.stages || [];
+                  setStages(stages);
+                }
+              }
+              
+              setHasUnsavedChanges(false);
+              refreshData();
+              prepareNextStage();
+            }
+            return;
+          }
+        }
+        
+        // Default: Update existing stage
+        const payload = buildStagePayload(currentStage, actualDuration, true);
+        const result = await saveStageToDatabase(payload);
+      
+        if (result.success) {
+          // Reload stages from database to ensure we have the complete data including theoretical load
+          if (selectedTestInfo?.testId) {
+            const response = await fetch(`/api/lactate-webhook?testId=${selectedTestInfo.testId}`);
+            if (response.ok) {
+              const data = await response.json();
+              const stages = data.data || data.stages || [];
+              setStages(stages);
+            }
+          }
+          
+          setHasUnsavedChanges(false);
+          refreshData();
+          
+          // If this was the last stage AND time is 100%, prepare next stage
+          if (isLastStage && isFullDuration) {
+            prepareNextStage();
+          }
+        }
+        return;
+      }
+      
+      // CASE 2: Creating a new stage
+      const payload = buildStagePayload(currentStage, actualDuration, false);
+      const result = await saveStageToDatabase(payload);
+      
+      if (result.success) {
+        // Reload stages from database to ensure we have the complete data including theoretical load
+        if (selectedTestInfo?.testId) {
+          const response = await fetch(`/api/lactate-webhook?testId=${selectedTestInfo.testId}`);
+          if (response.ok) {
+            const data = await response.json();
+            const stages = data.data || data.stages || [];
+            setStages(stages);
+          }
+        }
+        
+        setHasUnsavedChanges(false);
+        refreshData();
+        
+        // Only prepare next stage if time was 100% reached
+        // If time < 100%, the test is finished (incomplete last stage)
+        if (isFullDuration) {
+          prepareNextStage();
+        }
       }
     } catch (error) {
       console.error('Error in handleSaveStage:', error);
