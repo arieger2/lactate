@@ -57,7 +57,7 @@ export default function PerformanceCurveOrchestrator() {
     selectedCustomerId: selectedCustomer?.customer_id || null
   })
 
-  const { chartRef, chartInstance, isDragging, zoneBoundaryPositions } = useChartInteraction({
+  const { chartRef, chartInstance, isDragging, zoneBoundaryPositions, onZoneDragStart, onZoneDragEnd } = useChartInteraction({
     webhookData,
     trainingZones,
     lt1,
@@ -77,13 +77,12 @@ export default function PerformanceCurveOrchestrator() {
     }
   }, [webhookData, selectedMethod, currentUnit, calculateThresholdsWrapper])
 
-  // Save on drag end - detects when dragging stops
+  // Save on drag end
   useEffect(() => {
     if (isDragging.type) {
       wasDraggingRef.current = true
     } else if (wasDraggingRef.current) {
       wasDraggingRef.current = false
-      
       if (lt1 && lt2 && trainingZones.length > 0) {
         saveThresholds(lt1, lt2)
         saveZones(trainingZones)
@@ -126,8 +125,6 @@ export default function PerformanceCurveOrchestrator() {
         timestamp: new Date().toISOString()
       }
 
-      console.log('🤖 Sending data to AI analysis webhook:', analysisData)
-
       const response = await fetch('/api/ai-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -142,7 +139,6 @@ export default function PerformanceCurveOrchestrator() {
         alert(`Fehler: ${error.message || 'AI-Analyse konnte nicht gestartet werden.'}`)
       }
     } catch (error) {
-      console.error('Error triggering AI analysis:', error)
       alert('Fehler beim Aufruf der AI-Analyse.')
     }
   }
@@ -152,10 +148,7 @@ export default function PerformanceCurveOrchestrator() {
     const thresholds = await loadThresholds()
     const zones = await loadZones()
     
-    if (!thresholds && !zones) {
-      console.warn('No manual adjustments found')
-      return
-    }
+    if (!thresholds && !zones) return
 
     setSelectedMethod('adjusted')
     
@@ -245,9 +238,33 @@ export default function PerformanceCurveOrchestrator() {
         trainingZones={trainingZones}
         onZoneBoundaryDrag={(zoneId, newPower) => {
           const currentZones = [...trainingZones]
+          const lastZoneId = currentZones[currentZones.length - 1]?.id
+
+          // Left outer edge: id 0 -> adjust start of first zone only
+          if (zoneId === 0) {
+            if (currentZones.length > 0) {
+              currentZones[0].range[0] = newPower
+              setTrainingZones(currentZones)
+              setSelectedMethod('adjusted')
+            }
+            return
+          }
+
+          // Right outer edge: id lastZoneId + 1 -> adjust end of last zone only
+          if (typeof lastZoneId === 'number' && zoneId === lastZoneId + 1) {
+            const lastIndex = currentZones.length - 1
+            if (lastIndex >= 0) {
+              currentZones[lastIndex].range[1] = newPower
+              setTrainingZones(currentZones)
+              setSelectedMethod('adjusted')
+            }
+            return
+          }
+
+          // Internal boundaries: adjust adjacent zones
           const zoneIndex = currentZones.findIndex(z => z.id === zoneId)
           const prevZoneIndex = currentZones.findIndex(z => z.id === zoneId - 1)
-          
+
           if (zoneIndex >= 0 && prevZoneIndex >= 0) {
             currentZones[prevZoneIndex].range[1] = newPower
             currentZones[zoneIndex].range[0] = newPower
@@ -255,6 +272,9 @@ export default function PerformanceCurveOrchestrator() {
             setSelectedMethod('adjusted')
           }
         }}
+        onZoneDragStart={onZoneDragStart}
+        onZoneDragEnd={onZoneDragEnd}
+      
       />
 
       {/* 1.4 Training Zones Description (5-Zonen Trainingssystem) */}

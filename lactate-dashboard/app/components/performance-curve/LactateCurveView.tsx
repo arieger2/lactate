@@ -23,6 +23,8 @@ interface LactateCurveViewProps {
   zoneBoundaryPositions?: {id: number, x: number, y: number}[]
   trainingZones?: TrainingZone[]
   onZoneBoundaryDrag?: (zoneId: number, newPower: number) => void
+  onZoneDragStart?: (zoneId: number) => void
+  onZoneDragEnd?: () => void
 }
 
 export default function LactateCurveView({
@@ -41,7 +43,9 @@ export default function LactateCurveView({
   onAiAnalysisRequest,
   zoneBoundaryPositions = [],
   trainingZones = [],
-  onZoneBoundaryDrag
+  onZoneBoundaryDrag,
+  onZoneDragStart,
+  onZoneDragEnd
 }: LactateCurveViewProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   
@@ -87,6 +91,8 @@ export default function LactateCurveView({
             zoneBoundaryPositions={zoneBoundaryPositions}
             trainingZones={trainingZones}
             onZoneBoundaryDrag={onZoneBoundaryDrag}
+            onZoneDragStart={onZoneDragStart}
+            onZoneDragEnd={onZoneDragEnd}
           />
         )}
       </div>

@@ -22,6 +22,8 @@ interface UseChartInteractionReturn {
   chartInstance: echarts.ECharts | null
   isDragging: { type: 'LT1' | 'LT2' | 'ZONE' | null; zoneId?: number }
   zoneBoundaryPositions: {id: number, x: number, y: number}[]
+  onZoneDragStart: (zoneId: number) => void
+  onZoneDragEnd: () => void
 }
 
 export function useChartInteraction({
@@ -75,21 +77,32 @@ export function useChartInteraction({
 
       chartInstanceRef.current.setOption(options, true)
       
-      // Calculate pixel positions for zone boundaries
-      if (trainingZones.length > 1) {
-        // Get x-axis Y position (bottom of chart grid)
-        const xAxisPixel = chartInstanceRef.current!.convertToPixel('grid', [0, 0])
+      // Calculate pixel positions for zone boundaries including outer edges (6 markers for 5 zones)
+      if (trainingZones.length > 0) {
+        const chart = chartInstanceRef.current!
+        const xAxisPixel = chart.convertToPixel('grid', [0, 0])
         const yPosition = Array.isArray(xAxisPixel) ? xAxisPixel[1] : 0
-        
-        const positions = trainingZones.slice(1).map(zone => {
-          const pixelPoint = chartInstanceRef.current!.convertToPixel('grid', [zone.range[0], 0])
-          return { 
-            id: zone.id, 
+
+        // Create a marker for the start of each zone
+        const boundaryMarkers = trainingZones.map(zone => {
+          const pixelPoint = chart.convertToPixel('grid', [zone.range[0], 0])
+          return {
+            id: zone.id, // Use the zone's ID
             x: Array.isArray(pixelPoint) ? pixelPoint[0] : 0,
             y: yPosition
           }
         })
-        setZoneBoundaryPositions(positions)
+
+        // Add a final marker for the end of the last zone
+        const lastZone = trainingZones[trainingZones.length - 1]
+        const rightEdgePixel = chart.convertToPixel('grid', [lastZone.range[1], 0])
+        boundaryMarkers.push({
+          id: lastZone.id + 1, // A unique ID for the last marker
+          x: Array.isArray(rightEdgePixel) ? rightEdgePixel[0] : 0,
+          y: yPosition
+        })
+
+        setZoneBoundaryPositions(boundaryMarkers)
       }
     }
   }, [webhookData, trainingZones, lt1, lt2, isDragging, currentUnit])
@@ -225,23 +238,44 @@ export function useChartInteraction({
           else if (isDragging.type === 'ZONE' && isDragging.zoneId !== undefined) {
             const zoneId = isDragging.zoneId
             const currentZones = [...currentZonesRef.current]
-            
-            // Find the zone being dragged (it's the start of this zone)
-            const zoneIndex = currentZones.findIndex(z => z.id === zoneId)
-            const prevZoneIndex = currentZones.findIndex(z => z.id === zoneId - 1)
-            
-            if (zoneIndex >= 0 && prevZoneIndex >= 0) {
-              // Update both zones: end of previous zone and start of current zone
-              currentZones[prevZoneIndex].range[1] = power
-              currentZones[zoneIndex].range[0] = power
-              
-              setTrainingZones(currentZones)
-              currentZonesRef.current = currentZones
+            const lastZone = currentZones[currentZones.length - 1]
+
+            // Case 1: Dragging the very first marker (start of zone 1)
+            if (zoneId === 1) {
+              const firstZone = currentZones[0]
+              if (power < firstZone.range[1]) { // Prevent dragging past the next marker
+                firstZone.range[0] = power
+              }
+            } 
+            // Case 2: Dragging the very last marker (end of the last zone)
+            else if (zoneId === lastZone.id + 1) {
+              const finalZone = currentZones[currentZones.length - 1]
+              if (power > finalZone.range[0]) { // Prevent dragging before the previous marker
+                finalZone.range[1] = power
+              }
             }
+            // Case 3: Dragging an internal marker
+            else {
+              const zoneIndex = currentZones.findIndex(z => z.id === zoneId)
+              const prevZoneIndex = zoneIndex - 1
+
+              if (zoneIndex > 0 && prevZoneIndex >= 0) {
+                const prevZone = currentZones[prevZoneIndex]
+                const currentZone = currentZones[zoneIndex]
+                // Prevent dragging past adjacent markers
+                if (power > prevZone.range[0] && power < currentZone.range[1]) {
+                  prevZone.range[1] = power
+                  currentZone.range[0] = power
+                }
+              }
+            }
+            
+            setTrainingZones(currentZones)
+            currentZonesRef.current = currentZones
           }
           
         } catch (error) {
-          console.warn('⚠️ Error during drag conversion:', error)
+          // Swallow conversion errors silently to avoid noisy logs
         }
       }
 
@@ -296,6 +330,18 @@ export function useChartInteraction({
     chartRef,
     chartInstance: chartInstanceRef.current,
     isDragging,
-    zoneBoundaryPositions
+    zoneBoundaryPositions,
+    onZoneDragStart: (zoneId: number) => {
+      setIsDragging({ type: 'ZONE', zoneId })
+      if (selectedMethodRef.current !== 'adjusted') {
+        setSelectedMethod('adjusted')
+      }
+    },
+    onZoneDragEnd: () => {
+      // Mouseup listener will reset, but allow explicit end for component-driven drags
+      if (isDragging.type === 'ZONE') {
+        setIsDragging({ type: null })
+      }
+    }
   }
 }
