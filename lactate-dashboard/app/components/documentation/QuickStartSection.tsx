@@ -74,21 +74,6 @@ export default function QuickStartSection() {
             <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Benutzer/Athleten anlegen</h3>
           </div>
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-5 ml-13">
-            <div className="bg-blue-100 dark:bg-blue-900 p-4 rounded-lg mb-4">
-              <div className="text-sm text-blue-900 dark:text-blue-100 mb-2">
-                <strong>📸 Screenshot 1: Benutzer-Suche und Anlegen</strong>
-              </div>
-              <img 
-                src="/docs/screenshot-1-customer-search.png" 
-                alt="Benutzer suchen und anlegen"
-                className="w-full rounded border border-blue-200 dark:border-blue-700 mb-2"
-                onError={(e) => { e.currentTarget.style.display = 'none' }}
-              />
-              <p className="text-xs text-blue-700 dark:text-blue-300">
-                Suchfeld zum Finden bestehender Kunden und Button zum Anlegen neuer Kunden
-              </p>
-            </div>
-            
             <ol className="list-decimal list-inside space-y-2 text-sm text-blue-700 dark:text-blue-300 mb-4">
               <li>Gehen Sie zum Tab <strong>&quot;✏️ Lactate Input&quot;</strong></li>
               <li>Klicken Sie auf <strong>&quot;+ Create New Customer&quot;</strong></li>
