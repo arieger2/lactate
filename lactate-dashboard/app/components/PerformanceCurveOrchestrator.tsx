@@ -16,7 +16,7 @@ import { useManualZones } from './performance-curve/hooks/useManualZones'
 import { useChartInteraction } from './performance-curve/hooks/useChartInteraction'
 
 export default function PerformanceCurveOrchestrator() {
-  const { selectedCustomer, selectedSessionId, setSelectedSessionId } = useCustomer()
+  const { selectedCustomer, selectedSessionId, setSelectedSessionId, dataVersion } = useCustomer()
   const wasDraggingRef = useRef(false)
   
   // Custom hooks for data and logic
@@ -28,7 +28,8 @@ export default function PerformanceCurveOrchestrator() {
   } = useSessionData({ 
     selectedCustomer, 
     selectedSessionId, 
-    setSelectedSessionId 
+    setSelectedSessionId,
+    dataVersion
   })
 
   const {

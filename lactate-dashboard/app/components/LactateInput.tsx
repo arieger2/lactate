@@ -78,7 +78,11 @@ interface CurrentStage {
 }
 
 export default function LactateInput() {
-  const { selectedCustomer: globalCustomer, setSelectedCustomer: setGlobalCustomer } = useCustomer()
+  const { 
+    selectedCustomer: globalCustomer, 
+    setSelectedCustomer: setGlobalCustomer,
+    refreshData 
+  } = useCustomer()
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(globalCustomer)
   const [testInfos, setTestInfos] = useState<TestInfo[]>([])
   const [selectedTestInfo, setSelectedTestInfo] = useState<TestInfo | null>(null)
@@ -332,6 +336,7 @@ export default function LactateInput() {
       if (result.success) {
         updateLocalStagesArray(stageToSave, actualDuration, result.theoreticalLoad);
         setHasUnsavedChanges(false);
+        refreshData(); // Explicitly signal that data has changed
 
         // After a successful save, always prepare the form for the next logical stage number.
         const maxStage = Math.max(0, ...stages.map(s => s.stage), stageToSave.stage);

@@ -12,7 +12,7 @@ type TrendDataByUnit = {
 };
 
 export default function LactateGraph() {
-  const { selectedCustomer } = useCustomer();
+  const { selectedCustomer, dataVersion } = useCustomer();
   const [data, setData] = useState<TrendDataByUnit>({ watt: [], kmh: [] });
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d' | 'all'>('all');
@@ -42,7 +42,7 @@ export default function LactateGraph() {
     };
 
     fetchData();
-  }, [selectedCustomer]);
+  }, [selectedCustomer, dataVersion]);
 
   const filterDataByTimeRange = (data: LactateTrendData[]) => {
     return data.filter(point => {

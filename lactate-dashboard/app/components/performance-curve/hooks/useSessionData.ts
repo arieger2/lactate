@@ -5,6 +5,7 @@ interface UseSessionDataProps {
   selectedCustomer: any
   selectedSessionId: string | null
   setSelectedSessionId: (id: string) => void
+  dataVersion: number
 }
 
 interface UseSessionDataReturn {
@@ -18,7 +19,8 @@ interface UseSessionDataReturn {
 export function useSessionData({
   selectedCustomer,
   selectedSessionId,
-  setSelectedSessionId
+  setSelectedSessionId,
+  dataVersion
 }: UseSessionDataProps): UseSessionDataReturn {
   const [availableSessions, setAvailableSessions] = useState<any[]>([])
   const [webhookData, setWebhookData] = useState<LactateDataPoint[]>([])
@@ -50,7 +52,7 @@ export function useSessionData({
     }
 
     loadSessions()
-  }, [selectedCustomer, selectedSessionId, setSelectedSessionId])
+  }, [selectedCustomer, dataVersion, setSelectedSessionId])
 
   // Load lactate data when session changes
   useEffect(() => {
@@ -106,7 +108,32 @@ export function useSessionData({
     }
 
     loadData()
-  }, [selectedSessionId])
+  }, [selectedSessionId, dataVersion])
+
+  // Load test info when session changes
+  useEffect(() => {
+    if (!selectedSessionId) {
+      setTestInfo(null)
+      return
+    }
+
+    const loadTestInfo = async () => {
+      try {
+        const response = await fetch(`/api/session-info?sessionId=${selectedSessionId}`)
+        if (response.ok) {
+          const data = await response.json()
+          setTestInfo(data || null)
+        } else {
+          console.error('❌ API response not ok:', response.status, response.statusText)
+        }
+      } catch (error) {
+        console.error('❌ Error fetching test info:', error)
+        setTestInfo(null)
+      }
+    }
+
+    loadTestInfo()
+  }, [selectedSessionId, dataVersion])
 
   return {
     availableSessions,

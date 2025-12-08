@@ -16,17 +16,26 @@ interface Customer {
 }
 
 interface CustomerContextType {
-  selectedCustomer: Customer | null
-  setSelectedCustomer: (customer: Customer | null) => void
-  selectedSessionId: string | null
-  setSelectedSessionId: (sessionId: string | null) => void
+  selectedCustomer: Customer | null;
+  setSelectedCustomer: (customer: Customer | null) => void;
+  selectedSessionId: string | null;
+  setSelectedSessionId: (sessionId: string | null) => void;
+  dataVersion: number;
+  refreshData: () => void;
 }
 
-const CustomerContext = createContext<CustomerContextType | undefined>(undefined)
+const CustomerContext = createContext<CustomerContextType | undefined>(
+  undefined
+);
 
 export function CustomerProvider({ children }: { children: ReactNode }) {
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+    null
+  );
+  const [dataVersion, setDataVersion] = useState(0);
+
+  const refreshData = () => setDataVersion((prevVersion) => prevVersion + 1);
 
   // Reset session when customer changes
   const handleSetSelectedCustomer = (customer: Customer | null) => {
@@ -34,18 +43,22 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
     if (!customer || customer.customer_id !== selectedCustomer?.customer_id) {
       setSelectedSessionId(null)
     }
-  }
+  };
 
   return (
-    <CustomerContext.Provider value={{ 
-      selectedCustomer, 
-      setSelectedCustomer: handleSetSelectedCustomer,
-      selectedSessionId,
-      setSelectedSessionId
-    }}>
+    <CustomerContext.Provider
+      value={{
+        selectedCustomer,
+        setSelectedCustomer: handleSetSelectedCustomer,
+        selectedSessionId,
+        setSelectedSessionId,
+        dataVersion,
+        refreshData,
+      }}
+    >
       {children}
     </CustomerContext.Provider>
-  )
+  );
 }
 
 export function useCustomer() {
