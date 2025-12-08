@@ -104,6 +104,14 @@ export interface TrainingZone {
   description: string
 }
 
+export interface LactateTrendData {
+  created_at: string;
+  lt1_load: number | null;
+  lt1_lactate: number | null;
+  lt2_load: number | null;
+  lt2_lactate: number | null;
+}
+
 // ===== API RESPONSE TYPES =====
 
 export interface ApiResponse<T> {
