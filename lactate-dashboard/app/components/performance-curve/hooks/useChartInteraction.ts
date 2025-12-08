@@ -77,35 +77,40 @@ export function useChartInteraction({
 
       chartInstanceRef.current.setOption(options, true)
       
-      // Calculate pixel positions for zone boundaries including outer edges (6 markers for 5 zones)
-      if (trainingZones.length > 0) {
-        const chart = chartInstanceRef.current!
-        const xAxisPixel = chart.convertToPixel('grid', [0, 0])
-        const yPosition = Array.isArray(xAxisPixel) ? xAxisPixel[1] : 0
+            // Calculate pixel positions for zone boundaries
+      if (chartInstanceRef.current && trainingZones.length > 0) {
+        const chart = chartInstanceRef.current;
+        const yPosition = chart.convertToPixel('grid', [0, 0])[1];
 
-        // Create a marker for the start of each zone
-        const boundaryMarkers = trainingZones.map(zone => {
-          const pixelPoint = chart.convertToPixel('grid', [zone.range[0], 0])
-          return {
-            id: zone.id, // Use the zone's ID
-            x: Array.isArray(pixelPoint) ? pixelPoint[0] : 0,
-            y: yPosition
+        const positions = [];
+
+        // Add a marker for the start of each of the 5 zones
+        for (const zone of trainingZones) {
+          const pixelPoint = chart.convertToPixel('grid', [zone.range[0], 0]);
+          if (pixelPoint) {
+            positions.push({
+              id: zone.id,
+              x: pixelPoint[0],
+              y: yPosition,
+            });
           }
-        })
+        }
 
-        // Add a final marker for the end of the last zone
-        const lastZone = trainingZones[trainingZones.length - 1]
-        const rightEdgePixel = chart.convertToPixel('grid', [lastZone.range[1], 0])
-        boundaryMarkers.push({
-          id: lastZone.id + 1, // A unique ID for the last marker
-          x: Array.isArray(rightEdgePixel) ? rightEdgePixel[0] : 0,
-          y: yPosition
-        })
-
-        setZoneBoundaryPositions(boundaryMarkers)
+        // Add the final marker for the end of the last zone
+        const lastZone = trainingZones[trainingZones.length - 1];
+        const rightEdgePixel = chart.convertToPixel('grid', [lastZone.range[1], 0]);
+        if (rightEdgePixel) {
+          positions.push({
+            id: lastZone.id + 1,
+            x: rightEdgePixel[0],
+            y: yPosition,
+          });
+        }
+        
+        setZoneBoundaryPositions(positions);
       }
     }
-  }, [webhookData, trainingZones, lt1, lt2, isDragging, currentUnit])
+  }, [webhookData, trainingZones, lt1, lt2, isDragging, currentUnit]);
 
   // Handle window resize
   useEffect(() => {
@@ -114,9 +119,7 @@ export function useChartInteraction({
     }
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
-  // Cleanup chart on unmount
+  }, [])  // Cleanup chart on unmount
   useEffect(() => {
     return () => {
       if (chartInstanceRef.current) {
@@ -218,18 +221,21 @@ export function useChartInteraction({
               currentLt2Ref.current = newThreshold
             }
             
-            // Recalculate training zones using current refs
-            if (webhookData.length > 0) {
-              const maxPower = Math.max(...webhookData.map(d => d.power), 400)
-              const currentLt1 = currentLt1Ref.current
-              const currentLt2 = currentLt2Ref.current
-              const newLt1 = isDragging.type === 'LT1' ? { power, lactate } : currentLt1
-              const newLt2 = isDragging.type === 'LT2' ? { power, lactate } : currentLt2
-              
-              if (newLt1 && newLt2 && newLt1.power && newLt1.lactate && newLt2.power && newLt2.lactate) {
-                const zones = calculateTrainingZones(newLt1, newLt2, maxPower, selectedMethodRef.current)
-                if (zones) {
-                  setTrainingZones(zones)
+            // Only recalculate zones if NOT in manual/adjusted mode
+            if (selectedMethodRef.current !== 'adjusted') {
+              // Recalculate training zones using current refs
+              if (webhookData.length > 0) {
+                const maxPower = Math.max(...webhookData.map(d => d.power), 400)
+                const currentLt1 = currentLt1Ref.current
+                const currentLt2 = currentLt2Ref.current
+                const newLt1 = isDragging.type === 'LT1' ? { power, lactate } : currentLt1
+                const newLt2 = isDragging.type === 'LT2' ? { power, lactate } : currentLt2
+                
+                if (newLt1 && newLt2 && newLt1.power && newLt1.lactate && newLt2.power && newLt2.lactate) {
+                  const zones = calculateTrainingZones(newLt1, newLt2, maxPower, selectedMethodRef.current)
+                  if (zones) {
+                    setTrainingZones(zones)
+                  }
                 }
               }
             }

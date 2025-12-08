@@ -24,14 +24,24 @@ export function createLactateChartOptions(
   const tooltipLabel = unit === 'kmh' ? 'Geschwindigkeit' : 'Leistung'
   const tooltipUnit = unit === 'kmh' ? 'km/h' : 'W'
   
-  // Calculate xAxis min value: for km/h start 2 km/h before, for watt start 30W before first data point
-  let xAxisMin: number | undefined = undefined
-  if (webhookData.length > 0) {
-    const minPower = Math.min(...webhookData.map(d => d.power))
+  // Calculate xAxis min value based on the first zone's start
+  let xAxisMin: number | undefined = undefined;
+  if (trainingZones.length > 0) {
+    const firstZoneStart = trainingZones[0].range[0];
     if (unit === 'kmh') {
-      xAxisMin = Math.max(0, minPower - 2)
+      // Ensure the axis starts at least 2 units before the first zone begins
+      xAxisMin = Math.max(0, firstZoneStart - 2);
     } else if (unit === 'watt') {
-      xAxisMin = Math.max(0, minPower - 30)
+      // Ensure the axis starts at least 30 units before the first zone begins
+      xAxisMin = Math.max(0, firstZoneStart - 30);
+    }
+  } else if (webhookData.length > 0) {
+    // Fallback if zones are not yet calculated
+    const minPower = Math.min(...webhookData.map(d => d.power));
+    if (unit === 'kmh') {
+      xAxisMin = Math.max(0, minPower - 2);
+    } else if (unit === 'watt') {
+      xAxisMin = Math.max(0, minPower - 30);
     }
   }
   
