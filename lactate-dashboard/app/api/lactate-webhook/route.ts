@@ -148,7 +148,11 @@ export async function POST(request: NextRequest) {
           
           // NEW: Calculate theoretical load for incomplete stages
           // Always check if theoretical load is needed, regardless of whether stage is new or existing
+          console.log(`🔍 Checking theoretical load: stageNumber=${stageNumber}, actualDuration=${actualDuration}, targetDuration=${targetDuration}`)
+          console.log(`needsTheoreticalLoad result: ${needsTheoreticalLoad(actualDuration, targetDuration)}`)
+          
           if (stageNumber > 1 && needsTheoreticalLoad(actualDuration, targetDuration)) {
+            console.log(`✅ Calculating theoretical load for stage ${stageNumber}`)
             // Get previous stage
             const prevStage = await client.query(`
               SELECT load, lactate_mmol as lactate, heart_rate_bpm as "heartRate"
@@ -198,7 +202,12 @@ export async function POST(request: NextRequest) {
               
               theoreticalLoad = theoretical.theoreticalLoad
               isFinalApproximation = true // Mark this as a final approximation
+              console.log(`🎯 Theoretical load calculated: ${theoreticalLoad}`)
+            } else {
+              console.log(`⚠️ No previous stage found for theoretical load calculation`)
             }
+          } else {
+            console.log(`❌ Skipped theoretical load: stageNumber=${stageNumber} (needs >1), needsCalc=${needsTheoreticalLoad(actualDuration, targetDuration)}`)
           }
           
           // If stage is new, use INSERT. If existing, use UPDATE.
