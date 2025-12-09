@@ -103,6 +103,7 @@ export function useSessionData({
               heartRate: point.heartRate,
               vo2: point.vo2,
               timestamp: point.timestamp,
+              duration: point.duration,
               theoreticalLoad: point.theoreticalLoad,
               measuredLoad: point.power || point.load,  // Keep original measured value
               isInterpolated: point.isFinalApproximation === true || !!point.theoreticalLoad

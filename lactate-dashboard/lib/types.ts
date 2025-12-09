@@ -78,6 +78,7 @@ export interface LactateDataPoint {
   vo2?: number
   timestamp?: string
   stage?: number
+  duration?: number
   /** Flag indicating this value was interpolated from an incomplete stage */
   isInterpolated?: boolean
   interpolationInfo?: {

@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
 import { useCustomer } from '@/lib/CustomerContext'
 import { getMethodDisplayName } from '@/lib/lactateCalculations'
+import { exportLactateAnalysisToPDF } from '@/lib/pdfExport'
 import SessionSelection from './performance-curve/SessionSelection'
 import ThresholdMethodSelector from './performance-curve/ThresholdMethodSelector'
 import LactateCurveView from './performance-curve/LactateCurveView'
@@ -93,20 +92,21 @@ export default function PerformanceCurveOrchestrator() {
 
   // PDF Export
   const exportToPDF = async () => {
-    if (!chartRef.current) return
-    
     try {
-      const canvas = await html2canvas(chartRef.current)
-      const imgData = canvas.toDataURL('image/png')
-      
-      const pdf = new jsPDF('landscape', 'mm', 'a4')
-      const imgWidth = 280
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-      
-      pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight)
-      pdf.save(`lactate-analysis-${selectedCustomer?.name || 'unknown'}.pdf`)
+      await exportLactateAnalysisToPDF({
+        chartRef,
+        selectedCustomer,
+        selectedMethod,
+        currentUnit,
+        webhookData,
+        trainingZones,
+        lt1,
+        lt2,
+        getMethodDisplayName
+      })
     } catch (error) {
       console.error('Error exporting PDF:', error)
+      alert('Fehler beim Exportieren der PDF. Bitte versuchen Sie es erneut.')
     }
   }
 
