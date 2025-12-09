@@ -669,12 +669,23 @@ export default function Settings() {
                     </div>
 
                     {selectedBackupFile && !showRestoreConfirm && (
-                      <button
-                        onClick={() => setShowRestoreConfirm(true)}
-                        className="mt-4 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-md font-medium flex items-center gap-2"
-                      >
-                        🔄 Restore from &quot;{selectedBackupFile}&quot;
-                      </button>
+                      <div className="mt-4 flex gap-3">
+                        <button
+                          onClick={() => setShowRestoreConfirm(true)}
+                          className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-md font-medium flex items-center gap-2"
+                        >
+                          🔄 Restore from &quot;{selectedBackupFile}&quot;
+                        </button>
+                        <button
+                          onClick={() => {
+                            const downloadUrl = `/api/settings/database/backup/download?backupDir=${encodeURIComponent(backupDir)}&filename=${encodeURIComponent(selectedBackupFile)}`
+                            window.open(downloadUrl, '_blank')
+                          }}
+                          className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md font-medium flex items-center gap-2"
+                        >
+                          💾 Download
+                        </button>
+                      </div>
                     )}
 
                     {showRestoreConfirm && selectedBackupFile && (
