@@ -5,6 +5,7 @@ import { useCustomer, Customer } from '@/lib/CustomerContext'
 import CustomerManagement from './lactate-input/CustomerManagement'
 import TestProtocolManager from './lactate-input/TestProtocolManager'
 import StageInputForm from './lactate-input/StageInputForm'
+import FastStageInput from './lactate-input/FastStageInput'
 import StagesList from './lactate-input/StagesList'
 
 // ========== DURATION HELPERS ==========
@@ -88,6 +89,7 @@ export default function LactateInput() {
   const [selectedTestInfo, setSelectedTestInfo] = useState<TestInfo | null>(null)
   const [stages, setStages] = useState<Stage[]>([])
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [inputStyle, setInputStyle] = useState<'measurement_by_measurement' | 'fast_input'>('measurement_by_measurement')
   const [currentStage, setCurrentStage] = useState<CurrentStage>({
     stage: 1,
     load: '',
@@ -98,6 +100,24 @@ export default function LactateInput() {
     duration: '3',
     notes: ''
   })
+
+  // Load input style setting
+  useEffect(() => {
+    const loadInputStyle = async () => {
+      try {
+        const response = await fetch('/api/settings/general')
+        if (response.ok) {
+          const data = await response.json()
+          if (data.settings?.measurement_input_style) {
+            setInputStyle(data.settings.measurement_input_style)
+          }
+        }
+      } catch (error) {
+        console.error('Error loading input style setting:', error)
+      }
+    }
+    loadInputStyle()
+  }, [])
 
   // Sync with global customer context
   useEffect(() => {
@@ -543,6 +563,61 @@ export default function LactateInput() {
     }
   }
 
+  // Fast Input: Batch save all stages
+  const handleFastSaveStages = async (stages: Array<{
+    stage: number
+    load: string
+    lactate: string
+    heartRate?: string
+    rrSystolic?: string
+    rrDiastolic?: string
+    duration: string
+    notes?: string
+  }>) => {
+    if (!selectedTestInfo?.testId) return
+
+    try {
+      // Save each stage to database
+      for (const stage of stages) {
+        const stageDurationValue = stage.duration || selectedTestInfo.stageDuration_min
+        const duration = parseFloat(stageDurationValue)
+        const targetDuration = parseFloat(selectedTestInfo.stageDuration_min)
+        const isFinalApproximation = duration < targetDuration
+
+        await fetch('/api/lactate-webhook', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            testId: selectedTestInfo.testId,
+            stage: stage.stage,
+            duration_min: duration,
+            load: parseFloat(stage.load),
+            theoretical_load: isFinalApproximation ? parseFloat(stage.load) : undefined,
+            heart_rate_bpm: stage.heartRate ? parseInt(stage.heartRate) : undefined,
+            lactate_mmol: parseFloat(stage.lactate),
+            rr_systolic: stage.rrSystolic ? parseInt(stage.rrSystolic) : undefined,
+            rr_diastolic: stage.rrDiastolic ? parseInt(stage.rrDiastolic) : undefined,
+            is_final_approximation: isFinalApproximation,
+            notes: stage.notes || undefined
+          })
+        })
+      }
+
+      // Reload stages from database
+      const response = await fetch(`/api/lactate-webhook?testId=${selectedTestInfo.testId}`)
+      if (response.ok) {
+        const data = await response.json()
+        const loadedStages = data.data || data.stages || []
+        setStages(loadedStages)
+      }
+      
+      refreshData()
+    } catch (error) {
+      console.error('Error saving stages:', error)
+      throw error
+    }
+  }
+
   return (
     <div className="space-y-6">
       <CustomerManagement
@@ -569,35 +644,65 @@ export default function LactateInput() {
 
       {selectedCustomer && selectedTestInfo && (
         <>
-          <StageInputForm
-            currentStage={currentStage}
-            selectedTestInfo={{
-              testId: selectedTestInfo.testId!,
-              unit: selectedTestInfo.unit,
-              stageDuration_min: selectedTestInfo.stageDuration_min,
-              device: selectedTestInfo.device,
-              startLoad: selectedTestInfo.startLoad,
-              increment: selectedTestInfo.increment
-            }}
-            onStageChange={(updates) => {
-              setCurrentStage(prev => ({ ...prev, ...updates }))
-              setHasUnsavedChanges(true)
-            }}
-            onSave={handleSaveStage}
-            hasUnsavedChanges={hasUnsavedChanges}
-            onChangeProtocol={() => {
-              setSelectedTestInfo(null)
-              setStages([])
-            }}
-          />
+          {inputStyle === 'measurement_by_measurement' ? (
+            <>
+              <StageInputForm
+                currentStage={currentStage}
+                selectedTestInfo={{
+                  testId: selectedTestInfo.testId!,
+                  unit: selectedTestInfo.unit,
+                  stageDuration_min: selectedTestInfo.stageDuration_min,
+                  device: selectedTestInfo.device,
+                  startLoad: selectedTestInfo.startLoad,
+                  increment: selectedTestInfo.increment
+                }}
+                onStageChange={(updates) => {
+                  setCurrentStage(prev => ({ ...prev, ...updates }))
+                  setHasUnsavedChanges(true)
+                }}
+                onSave={handleSaveStage}
+                hasUnsavedChanges={hasUnsavedChanges}
+                onChangeProtocol={() => {
+                  setSelectedTestInfo(null)
+                  setStages([])
+                }}
+              />
 
-          <StagesList
-            stages={stages}
-            currentStageNumber={currentStage.stage}
-            unit={selectedTestInfo.unit}
-            onStageClick={handleStageClick}
-            onStageRemove={handleRemoveStage}
-          />
+              <StagesList
+                stages={stages}
+                currentStageNumber={currentStage.stage}
+                unit={selectedTestInfo.unit}
+                onStageClick={handleStageClick}
+                onStageRemove={handleRemoveStage}
+              />
+            </>
+          ) : (
+            <FastStageInput
+              selectedTestInfo={{
+                testId: selectedTestInfo.testId!,
+                unit: selectedTestInfo.unit,
+                stageDuration_min: selectedTestInfo.stageDuration_min,
+                device: selectedTestInfo.device,
+                startLoad: selectedTestInfo.startLoad,
+                increment: selectedTestInfo.increment
+              }}
+              existingStages={stages.map(s => ({
+                stage: s.stage,
+                load: String(s.load),
+                lactate: String(s.lactate),
+                heartRate: s.heartRate ? String(s.heartRate) : undefined,
+                rrSystolic: s.rrSystolic ? String(s.rrSystolic) : undefined,
+                rrDiastolic: s.rrDiastolic ? String(s.rrDiastolic) : undefined,
+                duration: s.duration ? String(s.duration) : '',
+                notes: s.notes
+              }))}
+              onSave={handleFastSaveStages}
+              onChangeProtocol={() => {
+                setSelectedTestInfo(null)
+                setStages([])
+              }}
+            />
+          )}
         </>
       )}
     </div>
