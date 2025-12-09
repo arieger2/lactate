@@ -363,7 +363,7 @@ export default function FastStageInput({
             <tr className="bg-teal-700 dark:bg-teal-800 text-white">
               <th className="border border-teal-600 dark:border-teal-700 px-3 py-2 text-left">Stage</th>
               <th className="border border-teal-600 dark:border-teal-700 px-3 py-2 text-left">
-                Load ({selectedTestInfo.unit === 'watt' ? 'km/h' : 'Watt'})
+                Load ({selectedTestInfo.unit === 'watt' ? 'Watt' : 'km/h'})
               </th>
               <th className="border border-teal-600 dark:border-teal-700 px-3 py-2 text-left">Laktat</th>
               <th className="border border-teal-600 dark:border-teal-700 px-3 py-2 text-left">HF</th>
