@@ -90,6 +90,20 @@ CREATE TABLE manual_zones (
     UNIQUE(test_id, zone_id)
 );
 
+-- Create general_settings table
+CREATE TABLE general_settings (
+    id SERIAL PRIMARY KEY,
+    setting_key VARCHAR(255) UNIQUE NOT NULL,
+    setting_value TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default settings
+INSERT INTO general_settings (setting_key, setting_value) 
+VALUES ('measurement_input_style', 'measurement_by_measurement')
+ON CONFLICT (setting_key) DO NOTHING;
+
 -- Create indexes for better performance
 CREATE INDEX idx_patient_profiles_name ON patient_profiles(last_name, first_name);
 CREATE INDEX idx_patient_profiles_email ON patient_profiles(email);

@@ -190,13 +190,14 @@ export default function CustomerManagement({
 
     try {
       const payload = {
-        name: `${newCustomer.firstName} ${newCustomer.lastName}`,
+        firstName: newCustomer.firstName,
+        lastName: newCustomer.lastName,
         email: newCustomer.email || undefined,
         phone: newCustomer.phone || undefined,
-        date_of_birth: newCustomer.birthDate || undefined,
+        birthDate: newCustomer.birthDate || undefined,
         height_cm: newCustomer.height_cm ? parseFloat(newCustomer.height_cm) : undefined,
         weight_kg: newCustomer.weight_kg ? parseFloat(newCustomer.weight_kg) : undefined,
-        notes: newCustomer.additionalNotes || undefined
+        additionalNotes: newCustomer.additionalNotes || undefined
       }
 
       const response = await fetch(`/api/customers/${selectedCustomer.customer_id}`, {

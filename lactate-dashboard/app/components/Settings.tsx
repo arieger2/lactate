@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import GeneralSettings from './settings/GeneralSettings'
 
 type SettingsTab = 'database' | 'backup' | 'general' | 'appearance' | 'integrations'
 
@@ -1044,17 +1045,8 @@ export default function Settings() {
             </div>
           )}
 
-          {/* General Settings - Placeholder */}
-          {activeTab === 'general' && (
-            <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">
-                General Settings
-              </h3>
-              <div className="p-8 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg text-center text-zinc-500 dark:text-zinc-500">
-                🚧 Coming Soon
-              </div>
-            </div>
-          )}
+          {/* General Settings */}
+          {activeTab === 'general' && <GeneralSettings />}
 
           {/* Appearance Settings - Placeholder */}
           {activeTab === 'appearance' && (
