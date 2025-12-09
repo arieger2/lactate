@@ -38,6 +38,7 @@ interface Stage {
   rrSystolic?: string
   rrDiastolic?: string
   duration: string
+  theoreticalLoad?: string | number
   notes?: string
 }
 
@@ -162,7 +163,7 @@ export default function FastStageInput({
       const targetDuration = parseFloat(selectedTestInfo.stageDuration_min)
       const isFinalApproximation = duration < targetDuration
 
-      await fetch('/api/lactate-webhook', {
+      const response = await fetch('/api/lactate-webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -170,7 +171,6 @@ export default function FastStageInput({
           stage: stage.stage,
           duration: duration,
           load: parseFloat(stage.load),
-          theoreticalLoad: isFinalApproximation ? parseFloat(stage.load) : undefined,
           heartRate: stage.heartRate ? parseInt(stage.heartRate) : undefined,
           lactate: parseFloat(stage.lactate),
           rrSystolic: stage.rrSystolic ? parseInt(stage.rrSystolic) : undefined,
@@ -179,6 +179,16 @@ export default function FastStageInput({
           notes: stage.notes || undefined
         })
       })
+
+      // Update stage with theoretical load from backend
+      if (response.ok) {
+        const data = await response.json()
+        if (data.data?.theoreticalLoad) {
+          const newStages = [...stages]
+          newStages[index] = { ...newStages[index], theoreticalLoad: data.data.theoreticalLoad }
+          setStages(newStages)
+        }
+      }
 
       lastSavedValues.current[key] = value
       checkProtocolStatus()
@@ -385,8 +395,10 @@ export default function FastStageInput({
               const duration = minSecToDecimal(stage.duration || '0:00')
               const targetDuration = parseFloat(selectedTestInfo.stageDuration_min)
               const isIncomplete = duration < targetDuration
-              const calculatedLoad = isIncomplete && stage.load
-                ? (parseFloat(stage.load) * (duration / targetDuration)).toFixed(2)
+              const theoreticalLoad = stage.theoreticalLoad 
+                ? (typeof stage.theoreticalLoad === 'number' 
+                    ? stage.theoreticalLoad.toFixed(2) 
+                    : parseFloat(stage.theoreticalLoad).toFixed(2))
                 : null
 
               return (
@@ -409,9 +421,9 @@ export default function FastStageInput({
                         isIncomplete ? 'border-red-500 bg-red-50 dark:bg-red-900/20' : 'border-zinc-300 dark:border-zinc-600'
                       }`}
                     />
-                    {isIncomplete && calculatedLoad && (
+                    {isIncomplete && theoreticalLoad && (
                       <div className="text-xs text-red-600 dark:text-red-400 mt-1">
-                        {calculatedLoad} ({stage.load})
+                        {theoreticalLoad} ({stage.load})
                       </div>
                     )}
                   </td>
