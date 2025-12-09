@@ -119,3 +119,60 @@ export async function GET(request: NextRequest) {
     if (client) client.release()
   }
 }
+
+// DELETE - Delete test protocol and all associated stages
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const testId = searchParams.get('testId')
+  
+  if (!testId) {
+    return NextResponse.json({
+      success: false,
+      error: 'testId parameter is required'
+    }, { status: 400 })
+  }
+  
+  let client
+  try {
+    client = await pool.connect()
+    
+    // Start transaction
+    await client.query('BEGIN')
+    
+    // Delete all stages associated with this test
+    await client.query('DELETE FROM stages WHERE test_id = $1', [testId])
+    
+    // Delete the test info
+    const result = await client.query(
+      'DELETE FROM test_infos WHERE test_id = $1 RETURNING test_id',
+      [testId]
+    )
+    
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK')
+      return NextResponse.json({
+        success: false,
+        error: 'Test protocol not found'
+      }, { status: 404 })
+    }
+    
+    // Commit transaction
+    await client.query('COMMIT')
+    
+    return NextResponse.json({
+      success: true,
+      message: `Test protocol ${testId} and all associated stages deleted successfully`
+    })
+    
+  } catch (error) {
+    if (client) await client.query('ROLLBACK')
+    console.error('❌ Error deleting test protocol:', error)
+    return NextResponse.json({
+      success: false,
+      error: 'Failed to delete test protocol',
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 })
+  } finally {
+    if (client) client.release()
+  }
+}

@@ -27,6 +27,9 @@ export default function TestProtocolManager({
   onTestSelected
 }: TestProtocolManagerProps) {
   const [showNewTestProtocolForm, setShowNewTestProtocolForm] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteTargetTestId, setDeleteTargetTestId] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [currentTestInfo, setCurrentTestInfo] = useState<TestInfo>({
     testDate: new Date().toISOString().split('T')[0],
     testTime: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
@@ -71,6 +74,33 @@ export default function TestProtocolManager({
       }
     } catch (error) {
       console.error('Error creating test protocol:', error)
+    }
+  }
+
+  const handleDeleteProtocol = async () => {
+    if (!deleteTargetTestId) return
+    
+    setIsDeleting(true)
+    try {
+      const response = await fetch(`/api/test-infos?testId=${encodeURIComponent(deleteTargetTestId)}`, {
+        method: 'DELETE'
+      })
+      
+      if (response.ok) {
+        // Remove from local state
+        onTestInfosChange(testInfos.filter(ti => ti.testId !== deleteTargetTestId))
+        setShowDeleteConfirm(false)
+        setDeleteTargetTestId(null)
+      } else {
+        const error = await response.json()
+        console.error('Failed to delete test protocol:', error)
+        alert('Failed to delete test protocol: ' + (error.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Error deleting test protocol:', error)
+      alert('Error deleting test protocol')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -203,24 +233,82 @@ export default function TestProtocolManager({
         ) : !showNewTestProtocolForm ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {testInfos.map((ti, idx) => (
-              <button
+              <div
                 key={ti.testId || `test-${idx}`}
-                type="button"
-                onClick={() => onTestSelected(ti)}
-                className="w-full p-4 text-left border border-blue-300 dark:border-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors cursor-pointer"
+                className="relative w-full p-4 border border-blue-300 dark:border-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
               >
-                <div className="font-medium text-blue-900 dark:text-blue-100">{ti.testId}</div>
-                <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                  {ti.testDate} • {ti.device} • {ti.unit === 'watt' ? 'Power (W)' : 'Speed (km/h)'}
-                </div>
-                <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                  Start: {ti.startLoad} {ti.unit} • Increment: +{ti.increment} • Duration: {ti.stageDuration_min} min
-                </div>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onTestSelected(ti)}
+                  className="w-full text-left"
+                >
+                  <div className="font-medium text-blue-900 dark:text-blue-100">{ti.testId}</div>
+                  <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    {ti.testDate} • {ti.device} • {ti.unit === 'watt' ? 'Power (W)' : 'Speed (km/h)'}
+                  </div>
+                  <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                    Start: {ti.startLoad} {ti.unit} • Increment: +{ti.increment} • Duration: {ti.stageDuration_min} min
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setDeleteTargetTestId(ti.testId || null)
+                    setShowDeleteConfirm(true)
+                  }}
+                  className="absolute top-3 right-3 px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded-md font-medium"
+                  title="Delete Protocol"
+                >
+                  🗑️ Delete
+                </button>
+              </div>
             ))}
           </div>
         ) : null}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && deleteTargetTestId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-3">
+              ⚠️ Delete Test Protocol?
+            </h3>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
+              Are you sure you want to delete protocol <strong>{deleteTargetTestId}</strong>?
+            </p>
+            <p className="text-sm text-red-600 dark:text-red-400 mb-6">
+              This will permanently delete the protocol and all associated stage data. This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false)
+                  setDeleteTargetTestId(null)
+                }}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-zinc-300 hover:bg-zinc-400 disabled:bg-zinc-200 disabled:cursor-not-allowed text-zinc-700 rounded-md font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteProtocol}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-md font-medium flex items-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <span className="animate-spin">⏳</span> Deleting...
+                  </>
+                ) : (
+                  <>🗑️ Delete Protocol</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
