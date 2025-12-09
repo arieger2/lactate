@@ -411,7 +411,7 @@ export default function FastStageInput({
                       ref={(el) => { inputRefs.current[`${index}-load`] = el }}
                       type="number"
                       step="0.1"
-                      value={stage.load}
+                      value={isIncomplete && theoreticalLoad ? theoreticalLoad : stage.load}
                       onChange={(e) => updateStage(index, 'load', e.target.value)}
                       onBlur={(e) => handleBlur(index, 'load', e.target.value)}
                       onKeyDown={(e) => handleKeyDown(e, index, 'load')}
@@ -422,8 +422,8 @@ export default function FastStageInput({
                       }`}
                     />
                     {isIncomplete && theoreticalLoad && (
-                      <div className="text-xs text-red-600 dark:text-red-400 mt-1">
-                        {theoreticalLoad} ({stage.load})
+                      <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                        (actual: {stage.load})
                       </div>
                     )}
                   </td>

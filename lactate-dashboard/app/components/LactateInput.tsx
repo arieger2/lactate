@@ -694,6 +694,7 @@ export default function LactateInput() {
                 rrSystolic: s.rrSystolic ? String(s.rrSystolic) : undefined,
                 rrDiastolic: s.rrDiastolic ? String(s.rrDiastolic) : undefined,
                 duration: s.duration ? String(s.duration) : '',
+                theoreticalLoad: s.theoreticalLoad,
                 notes: s.notes
               }))}
               onSave={handleFastSaveStages}
