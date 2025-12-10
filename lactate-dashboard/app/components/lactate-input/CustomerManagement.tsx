@@ -395,9 +395,21 @@ export default function CustomerManagement({
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md p-6">
-      <h2 className="text-xl font-semibold mb-4 text-zinc-900 dark:text-zinc-100">
-        👤 Customer / Patient
-      </h2>
+      <div className="flex justify-between items-start mb-4">
+        <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+          👤 Customer / Patient
+        </h2>
+        
+        {/* AI Coming Soon Card */}
+        <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border border-purple-200 dark:border-purple-700 rounded-lg p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-2xl">🤖</span>
+            <h3 className="font-semibold text-purple-900 dark:text-purple-100">AI Analysis</h3>
+          </div>
+          <p className="text-sm text-purple-700 dark:text-purple-300">Coming Soon</p>
+          <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Intelligent performance insights</p>
+        </div>
+      </div>
       
       <div>
         {/* Customer Search */}
