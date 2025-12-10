@@ -412,6 +412,7 @@ export default function CustomerManagement({
             placeholder="Search by name or ID..."
             className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md focus:ring-2 focus:ring-blue-500 dark:bg-zinc-800 dark:text-zinc-100"
           />
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Hint: Type a space to show all customers</p>
           {isSearching && <p className="text-sm text-zinc-500 mt-1">Searching...</p>}
           {customerResults.length > 0 && (
             <div className="mt-2 border border-zinc-200 dark:border-zinc-700 rounded-md max-h-48 overflow-y-auto">
