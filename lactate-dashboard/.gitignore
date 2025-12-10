@@ -1,3 +1,4 @@
 *.log
 server.log
 .next/
+.config/app.config.json
