@@ -27,13 +27,13 @@ export default function ZoneBoundaryMarkers({
   useEffect(() => {
     if (!dragState || !chartInstance || !chartRef.current) return
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (e.clientX > 0 && chartRef.current) {
+    const handleMove = (clientX: number) => {
+      if (clientX > 0 && chartRef.current) {
         const chartDOM = chartInstance.getDom()
         if (!chartDOM) return
         
         const rect = chartDOM.getBoundingClientRect()
-        const pixelX = e.clientX - rect.left
+        const pixelX = clientX - rect.left
         
         if (pixelX < 0 || pixelX > rect.width) return
         
@@ -44,17 +44,32 @@ export default function ZoneBoundaryMarkers({
       }
     }
 
-    const handleMouseUp = () => {
+    const handleMouseMove = (e: MouseEvent) => {
+      handleMove(e.clientX)
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        e.preventDefault()
+        handleMove(e.touches[0].clientX)
+      }
+    }
+
+    const handleEnd = () => {
       setDragState(null)
       if (onZoneDragEnd) onZoneDragEnd()
     }
 
     window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
+    window.addEventListener('mouseup', handleEnd)
+    window.addEventListener('touchmove', handleTouchMove, { passive: false })
+    window.addEventListener('touchend', handleEnd)
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
+      window.removeEventListener('mouseup', handleEnd)
+      window.removeEventListener('touchmove', handleTouchMove)
+      window.removeEventListener('touchend', handleEnd)
     }
   }, [dragState, chartInstance, onZoneBoundaryDrag, onZoneDragEnd, chartRef])
 
@@ -68,6 +83,13 @@ export default function ZoneBoundaryMarkers({
             setDragState({zoneId: id, startX: e.clientX})
             if (onZoneDragStart) onZoneDragStart(id)
           }}
+          onTouchStart={(e) => {
+            e.preventDefault()
+            if (e.touches.length > 0) {
+              setDragState({zoneId: id, startX: e.touches[0].clientX})
+              if (onZoneDragStart) onZoneDragStart(id)
+            }
+          }}
           style={{
             position: 'absolute',
             left: `${x - 8}px`, // Center the marker
@@ -80,7 +102,8 @@ export default function ZoneBoundaryMarkers({
             opacity: 0.7,
             border: '1px solid #fff',
             userSelect: 'none',
-            borderRadius: '3px'
+            borderRadius: '3px',
+            touchAction: 'none'
           }}
         />
       ))}
