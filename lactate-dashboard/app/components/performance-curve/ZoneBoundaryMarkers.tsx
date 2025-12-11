@@ -70,10 +70,10 @@ export default function ZoneBoundaryMarkers({
           }}
           style={{
             position: 'absolute',
-            left: `${x - 6}px`, // Center the marker
-            top: `${y - 15}px`, // Center the marker
-            width: '12px',
-            height: '30px',
+            left: `${x - 8}px`, // Center the marker
+            top: `${y - 8}px`, // Center the marker
+            width: '16px',
+            height: '16px',
             backgroundColor: '#000',
             cursor: 'ew-resize',
             zIndex: 1000,
