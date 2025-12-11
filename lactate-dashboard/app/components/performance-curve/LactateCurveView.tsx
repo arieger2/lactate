@@ -20,6 +20,7 @@ interface LactateCurveViewProps {
   selectedCustomer: any
   currentUnit: string
   onAiAnalysisRequest: () => Promise<void>
+  onOpenInputPopup?: () => void
   zoneBoundaryPositions?: {id: number, x: number, y: number}[]
   trainingZones?: TrainingZone[]
   onZoneBoundaryDrag?: (zoneId: number, newPower: number) => void
@@ -41,8 +42,9 @@ export default function LactateCurveView({
   selectedCustomer,
   currentUnit,
   onAiAnalysisRequest,
-  zoneBoundaryPositions = [],
-  trainingZones = [],
+  onOpenInputPopup,
+  zoneBoundaryPositions,
+  trainingZones,
   onZoneBoundaryDrag,
   onZoneDragStart,
   onZoneDragEnd
@@ -87,7 +89,7 @@ export default function LactateCurveView({
         />
         
         {/* Zone Boundary Markers */}
-        {onZoneBoundaryDrag && (
+        {onZoneBoundaryDrag && zoneBoundaryPositions && trainingZones && (
           <ZoneBoundaryMarkers
             chartInstance={chartInstance}
             chartRef={chartRef}
@@ -153,6 +155,18 @@ export default function LactateCurveView({
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Button to open stage input popup */}
+      {onOpenInputPopup && (
+        <div className="mt-4 text-center">
+          <button
+            onClick={onOpenInputPopup}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+          >
+            📝 Daten in separatem Fenster ändern
+          </button>
         </div>
       )}
     </div>

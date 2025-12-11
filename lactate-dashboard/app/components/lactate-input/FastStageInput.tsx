@@ -381,12 +381,6 @@ export default function FastStageInput({
               <th className="border border-teal-600 dark:border-teal-700 px-3 py-2 text-left">BP Diastolic</th>
               <th className="border border-teal-600 dark:border-teal-700 px-3 py-2 text-left">Dauer (min:sec)</th>
               <th className="border border-teal-600 dark:border-teal-700 px-3 py-2 text-center">
-                <button
-                  onClick={addNewRow}
-                  className="bg-white dark:bg-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-600 text-teal-700 dark:text-teal-300 rounded px-2 py-1 text-sm font-medium"
-                >
-                  + Add
-                </button>
               </th>
             </tr>
           </thead>

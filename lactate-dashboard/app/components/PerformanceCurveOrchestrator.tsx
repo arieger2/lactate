@@ -15,8 +15,9 @@ import { useManualZones } from './performance-curve/hooks/useManualZones'
 import { useChartInteraction } from './performance-curve/hooks/useChartInteraction'
 
 export default function PerformanceCurveOrchestrator() {
-  const { selectedCustomer, selectedSessionId, setSelectedSessionId, dataVersion } = useCustomer()
+  const { selectedCustomer, selectedSessionId, setSelectedSessionId, dataVersion, refreshData } = useCustomer()
   const wasDraggingRef = useRef(false)
+  const popupWindowRef = useRef<Window | null>(null)
   
   // Custom hooks for data and logic
   const { 
@@ -69,6 +70,46 @@ export default function PerformanceCurveOrchestrator() {
     setTrainingZones,
     setSelectedMethod
   })
+
+  // Listen for updates from popup window
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      if (event.data?.type === 'STAGES_UPDATED' && event.data?.testId === selectedSessionId) {
+        console.log('Received STAGES_UPDATED from popup, refreshing data...')
+        refreshData()
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [selectedSessionId, refreshData])
+
+  // Close popup when component unmounts
+  useEffect(() => {
+    return () => {
+      if (popupWindowRef.current && !popupWindowRef.current.closed) {
+        popupWindowRef.current.close()
+      }
+    }
+  }, [])
+
+  // Open popup for stage input
+  const openInputPopup = () => {
+    if (!selectedSessionId) return
+    if (popupWindowRef.current && !popupWindowRef.current.closed) {
+      popupWindowRef.current.focus()
+      return
+    }
+    const width = 1400
+    const height = 900
+    const left = (window.screen.width - width) / 2
+    const top = (window.screen.height - height) / 2
+    popupWindowRef.current = window.open(
+      `/stage-input-popup?testId=${selectedSessionId}`,
+      'StageInputPopup',
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    )
+  }
 
   // Calculate thresholds when data loads
   useEffect(() => {
@@ -235,6 +276,7 @@ export default function PerformanceCurveOrchestrator() {
         selectedCustomer={selectedCustomer}
         currentUnit={currentUnit}
         onAiAnalysisRequest={handleAiAnalysisRequest}
+        onOpenInputPopup={openInputPopup}
         zoneBoundaryPositions={zoneBoundaryPositions}
         trainingZones={trainingZones}
         onZoneBoundaryDrag={(zoneId, newPower) => {
