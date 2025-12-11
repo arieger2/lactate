@@ -198,7 +198,31 @@ export function createLactateChartOptions(
             color: '#333',
             fontWeight: 'bold',
             overflow: 'truncate',
-            width: 120
+            width: 120,
+            formatter: (params: any) => {
+              const zoneName = params.name
+              const zones = trainingZones
+              const zoneIndex = zones.findIndex(z => 
+                z.name === zoneName || z.name.startsWith(zoneName.replace('...', ''))
+              )
+              
+              if (zoneIndex === -1) return zoneName
+              
+              const zone = zones[zoneIndex]
+              const isFirst = zoneIndex === 0
+              const isLast = zoneIndex === zones.length - 1
+              
+              let rangeText = ''
+              if (isFirst) {
+                rangeText = `- ${Math.round(zone.range[1])}`
+              } else if (isLast) {
+                rangeText = `${Math.round(zone.range[0])} -`
+              } else {
+                rangeText = `${Math.round(zone.range[0])} - ${Math.round(zone.range[1])}`
+              }
+              
+              return `${zoneName}\n${rangeText}`
+            }
           },
           data: trainingZones.map(zone => [{
             name: zone.name.length > 15 ? zone.name.substring(0, 15) + '...' : zone.name,
