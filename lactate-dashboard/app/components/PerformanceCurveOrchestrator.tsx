@@ -286,7 +286,9 @@ export default function PerformanceCurveOrchestrator() {
           // Left outer edge: id 0 -> adjust start of first zone only
           if (zoneId === 0) {
             if (currentZones.length > 0) {
-              currentZones[0].range[0] = newPower
+              // Ensure it doesn't exceed the end of first zone
+              const maxValue = currentZones[0].range[1] - 1
+              currentZones[0].range[0] = Math.min(newPower, maxValue)
               setTrainingZones(currentZones)
               setSelectedMethod('adjusted')
             }
@@ -297,7 +299,9 @@ export default function PerformanceCurveOrchestrator() {
           if (typeof lastZoneId === 'number' && zoneId === lastZoneId + 1) {
             const lastIndex = currentZones.length - 1
             if (lastIndex >= 0) {
-              currentZones[lastIndex].range[1] = newPower
+              // Ensure it doesn't go below the start of last zone
+              const minValue = currentZones[lastIndex].range[0] + 1
+              currentZones[lastIndex].range[1] = Math.max(newPower, minValue)
               setTrainingZones(currentZones)
               setSelectedMethod('adjusted')
             }
@@ -309,8 +313,16 @@ export default function PerformanceCurveOrchestrator() {
           const prevZoneIndex = currentZones.findIndex(z => z.id === zoneId - 1)
 
           if (zoneIndex >= 0 && prevZoneIndex >= 0) {
-            currentZones[prevZoneIndex].range[1] = newPower
-            currentZones[zoneIndex].range[0] = newPower
+            // Get constraints from surrounding zones
+            const minPower = currentZones[prevZoneIndex].range[0] + 1
+            const maxPower = currentZones[zoneIndex].range[1] - 1
+            
+            // Clamp the new power value between constraints
+            const clampedPower = Math.max(minPower, Math.min(newPower, maxPower))
+            
+            // Update both adjacent zones with the clamped value
+            currentZones[prevZoneIndex].range[1] = clampedPower
+            currentZones[zoneIndex].range[0] = clampedPower
             setTrainingZones(currentZones)
             setSelectedMethod('adjusted')
           }
