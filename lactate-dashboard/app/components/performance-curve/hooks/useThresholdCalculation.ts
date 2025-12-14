@@ -3,7 +3,8 @@ import { LactateDataPoint, ThresholdPoint, TrainingZone } from '@/lib/types'
 import { 
   calculateThresholds, 
   calculateTrainingZones,
-  ThresholdMethod
+  ThresholdMethod,
+  ZoneModel
 } from '@/lib/lactateCalculations'
 
 interface UseThresholdCalculationReturn {
@@ -13,16 +14,19 @@ interface UseThresholdCalculationReturn {
   selectedMethod: ThresholdMethod
   thresholdMessage: string | null
   showAiAnalysis: boolean
+  zoneModel: ZoneModel
   setLt1: (threshold: ThresholdPoint | null) => void
   setLt2: (threshold: ThresholdPoint | null) => void
   setTrainingZones: (zones: TrainingZone[]) => void
   setSelectedMethod: (method: ThresholdMethod) => void
   setThresholdMessage: (message: string | null) => void
   setShowAiAnalysis: (show: boolean) => void
+  setZoneModel: (model: ZoneModel) => void
   calculateThresholdsWrapper: (
     data: LactateDataPoint[], 
     method?: ThresholdMethod, 
     unit?: string,
+    zoneModel?: ZoneModel,
     onSave?: (lt1: ThresholdPoint, lt2: ThresholdPoint) => Promise<void>
   ) => void
 }
@@ -36,11 +40,13 @@ export function useThresholdCalculation(
   const [selectedMethod, setSelectedMethod] = useState<ThresholdMethod>('dickhuth')
   const [thresholdMessage, setThresholdMessage] = useState<string | null>(null)
   const [showAiAnalysis, setShowAiAnalysis] = useState(false)
+  const [zoneModel, setZoneModel] = useState<ZoneModel>('5-zones')
 
   const calculateThresholdsWrapper = useCallback((
     data: LactateDataPoint[], 
     method: ThresholdMethod = selectedMethod, 
     unit: string = currentUnit,
+    currentZoneModel: ZoneModel = zoneModel,
     onSave?: (lt1: ThresholdPoint, lt2: ThresholdPoint) => Promise<void>
   ) => {
     if (data.length === 0) {
@@ -94,11 +100,11 @@ export function useThresholdCalculation(
       onSave(lt1Point, lt2Point)
     }
 
-    // Calculate 5-Zone Training System (method-specific)
+    // Calculate Training Zones (method-specific and zone-model-specific)
     const maxPower = Math.max(...data.map(d => d.power))
-    const zones = calculateTrainingZones(lt1Point, lt2Point, maxPower, method, unit)
+    const zones = calculateTrainingZones(lt1Point, lt2Point, maxPower, method, unit, currentZoneModel)
     setTrainingZones(zones)
-  }, [selectedMethod, currentUnit])
+  }, [selectedMethod, currentUnit, zoneModel])
 
   return {
     lt1,
@@ -107,12 +113,14 @@ export function useThresholdCalculation(
     selectedMethod,
     thresholdMessage,
     showAiAnalysis,
+    zoneModel,
     setLt1,
     setLt2,
     setTrainingZones,
     setSelectedMethod,
     setThresholdMessage,
     setShowAiAnalysis,
+    setZoneModel,
     calculateThresholdsWrapper
   }
 }

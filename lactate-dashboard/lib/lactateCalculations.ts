@@ -82,14 +82,18 @@ export function getMethodDisplayName(method: ThresholdMethod): string {
 // Re-export interpolateThreshold for backward compatibility
 export { interpolateThreshold } from './threshold-methods'
 
-// ===== 5-ZONE TRAINING SYSTEM =====
+// ===== TRAINING ZONE MODELS =====
+
+export type ZoneModel = '5-zones' | '3-zones-a' | '3-zones-b'
 
 /**
- * Calculate training zones based on LT1/LT2 and selected method
+ * Calculate training zones based on LT1/LT2 and selected model
  * @param lt1 - LT1 threshold point
  * @param lt2 - LT2 threshold point
  * @param maxPower - Maximum measured load (Watt for cycling, km/h for running)
  * @param method - Selected threshold method
+ * @param unit - Unit of measurement ('watt' or 'kmh')
+ * @param zoneModel - Zone model: '5-zones', '3-zones-a', or '3-zones-b'
  * @returns Array of training zones
  * @remarks Zone ranges work for both units (Watt/km/h)
  */
@@ -98,11 +102,22 @@ export function calculateTrainingZones(
   lt2: ThresholdPoint | null,
   maxPower: number,
   method: ThresholdMethod = 'dickhuth',
-  unit: string = 'watt'
+  unit: string = 'watt',
+  zoneModel: ZoneModel = '5-zones'
 ): TrainingZone[] {
   const lt1Power = lt1?.power || maxPower * 0.65
   const lt2Power = lt2?.power || maxPower * 0.85
 
+  // Handle 3-Zone Models
+  if (zoneModel === '3-zones-a') {
+    return calculate3ZonesModelA(lt1Power, lt2Power, maxPower)
+  }
+  
+  if (zoneModel === '3-zones-b') {
+    return calculate3ZonesModelB(lt1Power, lt2Power, maxPower)
+  }
+
+  // 5-Zone Model calculation
   // Dynamically calculate Zone 1 start
   const zone2StartDickhuth = lt1Power * 0.75;
   const zone2StartStandard = lt1Power * 0.68;
@@ -214,6 +229,89 @@ export function calculateTrainingZones(
       color: 'rgba(147, 51, 234, 0.2)',
       borderColor: 'rgba(147, 51, 234, 0.8)',
       description: 'Maximale anaerobe Leistung (>LT2)'
+    }
+  ]
+}
+
+// ===== 3-ZONE MODEL A =====
+/**
+ * 3-Zone Model A: Simple division by LT1 and LT2
+ * - Zone 1: bis LT1 (aerobe Basis)
+ * - Zone 2: LT1 bis LT2 (Schwellenbereich)
+ * - Zone 3: ab LT2 (anaerober Bereich)
+ */
+function calculate3ZonesModelA(
+  lt1Power: number,
+  lt2Power: number,
+  maxPower: number
+): TrainingZone[] {
+  return [
+    {
+      id: 1,
+      name: 'Zone 1 - Aerobe Basis',
+      range: [0, lt1Power],
+      color: 'rgba(34, 197, 94, 0.2)',
+      borderColor: 'rgba(34, 197, 94, 0.8)',
+      description: 'Aerober Grundlagenbereich (bis LT1)'
+    },
+    {
+      id: 2,
+      name: 'Zone 2 - Schwellenbereich',
+      range: [lt1Power, lt2Power],
+      color: 'rgba(251, 191, 36, 0.2)',
+      borderColor: 'rgba(251, 191, 36, 0.8)',
+      description: 'Tempobereich (LT1 bis LT2)'
+    },
+    {
+      id: 3,
+      name: 'Zone 3 - Anaerober Bereich',
+      range: [lt2Power, maxPower * 1.1],
+      color: 'rgba(239, 68, 68, 0.2)',
+      borderColor: 'rgba(239, 68, 68, 0.8)',
+      description: 'Anaerober Bereich (ab LT2)'
+    }
+  ]
+}
+
+// ===== 3-ZONE MODEL B (Polarized Training / Seiler) =====
+/**
+ * 3-Zone Model B: Polarized training model
+ * - Zone 1: bis ~80% von LT1 (niedrige Intensität)
+ * - Zone 2: ~80% LT1 bis ~105% LT2 (Schwellenbereich)
+ * - Zone 3: ab ~105% LT2 (hohe Intensität)
+ */
+function calculate3ZonesModelB(
+  lt1Power: number,
+  lt2Power: number,
+  maxPower: number
+): TrainingZone[] {
+  const zone1End = lt1Power * 0.80  // 80% of LT1
+  const zone2End = lt2Power * 1.05  // 105% of LT2
+  
+  return [
+    {
+      id: 1,
+      name: 'Zone 1 - Niedrige Intensität',
+      range: [0, zone1End],
+      color: 'rgba(34, 197, 94, 0.2)',
+      borderColor: 'rgba(34, 197, 94, 0.8)',
+      description: 'Niedrige Intensität, hoher Umfang (bis ~80% LT1)'
+    },
+    {
+      id: 2,
+      name: 'Zone 2 - Schwellenbereich',
+      range: [zone1End, zone2End],
+      color: 'rgba(251, 191, 36, 0.2)',
+      borderColor: 'rgba(251, 191, 36, 0.8)',
+      description: 'Schwellenbereich (~80% LT1 bis ~105% LT2)'
+    },
+    {
+      id: 3,
+      name: 'Zone 3 - Hohe Intensität',
+      range: [zone2End, maxPower * 1.1],
+      color: 'rgba(239, 68, 68, 0.2)',
+      borderColor: 'rgba(239, 68, 68, 0.8)',
+      description: 'Hohe Intensität, kurze Intervalle (ab ~105% LT2)'
     }
   ]
 }
