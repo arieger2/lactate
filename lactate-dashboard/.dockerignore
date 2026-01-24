@@ -1,7 +1,34 @@
 # Docker-specific files
 .env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# GitHub Actions (nicht im Image nötig)
+.github
+
+# Node modules (werden im Container installiert)
+node_modules
+
+# Next.js build output (wird im Container gebaut)
+.next
+
+# IDE und Editor
+.vscode
+*.code-workspace
+
+# Documentation (nicht zur Runtime nötig)
+*.md
+docs/
 
 # Data directories
 data/
 backups/*.sql
 !backups/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*

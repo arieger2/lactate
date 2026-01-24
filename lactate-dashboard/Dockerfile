@@ -1,5 +1,10 @@
 FROM node:20-alpine AS base
 
+# OCI Labels für ghcr.io - verknüpft Image mit GitHub Repository
+LABEL org.opencontainers.image.source="https://github.com/arieger2/lactate"
+LABEL org.opencontainers.image.description="Lactate Dashboard - Scientific lactate diagnostics for endurance athletes"
+LABEL org.opencontainers.image.licenses="MIT"
+
 # Install dependencies only when needed
 FROM base AS deps
 RUN apk add --no-cache libc6-compat

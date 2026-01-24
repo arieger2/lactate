@@ -1,4 +1,12 @@
-version: '3.8'
+# Docker Compose für Production Deployment
+# Verwendet das vorgefertigte Image von ghcr.io statt lokal zu bauen
+#
+# Verwendung auf anderen Servern:
+# 1. Diese Datei auf den Server kopieren
+# 2. .env Datei mit Passwörtern erstellen
+# 3. docker login ghcr.io -u USERNAME --password-stdin < token.txt
+# 4. docker compose -f docker-compose.prod.yml pull
+# 5. docker compose -f docker-compose.prod.yml up -d
 
 services:
   postgres:
@@ -8,12 +16,12 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-laktat}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-LisgumuM20251!}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/02-schema.sql
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -25,26 +33,23 @@ services:
       - lactate-network
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Image von ghcr.io (private registry)
+    image: ghcr.io/arieger2/lactate:latest
     container_name: lactate-dashboard
     restart: unless-stopped
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: production
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB:-laktat}
       DB_USER: ${POSTGRES_USER:-postgres}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-LisgumuM20251!}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DB_SSL: ${DB_SSL:-false}
-      APP_PORT: ${APP_PORT:-3000}
     volumes:
       - ./config:/app/config
       - ./backups:/app/backups
     ports:
       - "${APP_PORT:-3000}:3000"
-      #Change Port conflict with grafana
     depends_on:
       postgres:
         condition: service_healthy
