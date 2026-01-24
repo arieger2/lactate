@@ -2,11 +2,14 @@
 # Verwendet das vorgefertigte Image von ghcr.io statt lokal zu bauen
 #
 # Verwendung auf anderen Servern:
-# 1. Diese Datei auf den Server kopieren
-# 2. .env Datei mit Passwörtern erstellen
-# 3. docker login ghcr.io -u USERNAME --password-stdin < token.txt
-# 4. docker compose -f docker-compose.prod.yml pull
-# 5. docker compose -f docker-compose.prod.yml up -d
+# 1. mkdir lactate && cd lactate
+# 2. curl -O https://raw.githubusercontent.com/arieger2/lactate/joel1.0/lactate-dashboard/docker-compose.prod.yml
+# 3. curl -O https://raw.githubusercontent.com/arieger2/lactate/joel1.0/lactate-dashboard/.env.example
+# 4. cp .env.example .env && nano .env  # Passwort ändern!
+# 5. mkdir -p db && curl -o db/init.sql https://raw.githubusercontent.com/arieger2/lactate/joel1.0/lactate-dashboard/db/init.sql
+# 6. curl -o db/schema.sql https://raw.githubusercontent.com/arieger2/lactate/joel1.0/lactate-dashboard/db/schema.sql
+# 7. echo "YOUR_GHCR_TOKEN" | docker login ghcr.io -u arieger2 --password-stdin
+# 8. docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 
 services:
   postgres:
@@ -22,8 +25,9 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./db/schema.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    # Port nur intern - nicht nach außen exposen
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
@@ -50,6 +54,12 @@ services:
       - ./backups:/app/backups
     ports:
       - "${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy

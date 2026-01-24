@@ -1,16 +1,21 @@
 name: Build and Push Docker Image
 
 # Wann der Workflow läuft:
-# - Bei Push auf joel1.0 Branch
-# - Bei Tags die mit 'v' beginnen (z.B. v1.0.0)
-# - Manuell über GitHub UI (workflow_dispatch)
+# - Bei Git Tags die mit 'v' beginnen (z.B. v1.0.0) → Für Releases
+# - Manuell über GitHub UI (Actions → Run workflow) → Für Tests
+# 
+# NICHT bei normalem Push auf Branches!
+# So kannst du während Development frei pushen ohne dass jedes Mal ein Image gebaut wird.
 on:
   push:
-    branches:
-      - joel1.0
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag (default: dev)'
+        required: false
+        default: 'dev'
 
 env:
   REGISTRY: ghcr.io
@@ -49,14 +54,12 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Bei Push auf Branch: latest Tag
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/joel1.0' }}
-            # Bei Git Tag: Version Tag (v1.0.0 -> 1.0.0)
+            # Bei Git Tag: Version Tags (v1.0.0 -> 1.0.0, latest)
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            # Branch Name als Tag
-            type=ref,event=branch
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Bei manuellem Trigger: custom tag oder 'dev'
+            type=raw,value=${{ github.event.inputs.tag || 'dev' }},enable=${{ github.event_name == 'workflow_dispatch' }}
             # SHA für eindeutige Identifikation
             type=sha,prefix=sha-
       

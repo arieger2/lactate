@@ -46,11 +46,18 @@ COPY --from=builder /app/db ./db
 RUN mkdir -p /app/config /app/backups && \
     chown -R nextjs:nodejs /app/config /app/backups
 
+# Install wget for healthcheck
+RUN apk add --no-cache wget
+
 USER nextjs
 
 EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+# Healthcheck für Container-Orchestration
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/status || exit 1
 
 CMD ["node", "server.js"]
