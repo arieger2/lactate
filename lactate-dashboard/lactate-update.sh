@@ -44,7 +44,11 @@ echo ""
 
 # Restart the Next.js service
 echo "Step 4: Restarting Next.js service..."
-echo "LisgumuM20251!" | sudo -S systemctl restart nextjs
+if [[ -n "${SUDO_PASSWORD}" ]]; then
+	echo "${SUDO_PASSWORD}" | sudo -S systemctl restart nextjs
+else
+	sudo systemctl restart nextjs
+fi
 echo "✓ Service restarted"
 echo ""
 

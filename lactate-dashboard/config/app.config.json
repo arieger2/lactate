@@ -4,7 +4,7 @@
     "port": 5432,
     "database": "laktat",
     "user": "postgres",
-    "password": "LisgumuM20251!",
+    "password": "",
     "ssl": false,
     "pool": {
       "min": 2,
