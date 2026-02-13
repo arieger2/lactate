@@ -3,3 +3,4 @@ server.log
 .next/
 .config/app.config.json
 dockerImages/*
+.env.local

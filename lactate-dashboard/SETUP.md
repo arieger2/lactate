@@ -48,7 +48,7 @@ DB_HOST=192.168.5.220
 DB_PORT=5432
 DB_NAME=laktat
 DB_USER=arieger
-DB_PASSWORD=LisgumuM20251!
+DB_PASSWORD=YOUR_DB_PASSWORD
 DB_SSL=true
 DB_READY=false
 
@@ -73,7 +73,7 @@ const pool = new Pool({
   port: 5432,
   database: 'laktat',
   user: 'arieger',
-  password: 'LisgumuM20251!',
+  password: 'YOUR_DB_PASSWORD',
   ssl: { rejectUnauthorized: false }
 });
 

@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-laktat}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-LisgumuM20251!}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
@@ -36,7 +36,7 @@ services:
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB:-laktat}
       DB_USER: ${POSTGRES_USER:-postgres}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-LisgumuM20251!}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_SSL: ${DB_SSL:-false}
       APP_PORT: ${APP_PORT:-3000}
     volumes:
