@@ -6,6 +6,7 @@ import { getMethodDisplayName } from '@/lib/lactateCalculations'
 import { exportLactateAnalysisToPDF } from '@/lib/pdfExport'
 import SessionSelection from './performance-curve/SessionSelection'
 import ThresholdMethodSelector from './performance-curve/ThresholdMethodSelector'
+import ZoneModelSelector from './performance-curve/ZoneModelSelector'
 import LactateCurveView from './performance-curve/LactateCurveView'
 import TrainingZonesDescription from './performance-curve/TrainingZonesDescription'
 import { useSessionData } from './performance-curve/hooks/useSessionData'
@@ -39,12 +40,14 @@ export default function PerformanceCurveOrchestrator() {
     selectedMethod,
     thresholdMessage,
     showAiAnalysis,
+    zoneModel,
     setLt1,
     setLt2,
     setTrainingZones,
     setSelectedMethod,
     setThresholdMessage,
     setShowAiAnalysis,
+    setZoneModel,
     calculateThresholdsWrapper
   } = useThresholdCalculation(currentUnit)
 
@@ -114,9 +117,9 @@ export default function PerformanceCurveOrchestrator() {
   // Calculate thresholds when data loads
   useEffect(() => {
     if (webhookData.length > 0 && selectedMethod !== 'adjusted') {
-      calculateThresholdsWrapper(webhookData, selectedMethod, currentUnit)
+      calculateThresholdsWrapper(webhookData, selectedMethod, currentUnit, zoneModel)
     }
-  }, [webhookData, selectedMethod, currentUnit, calculateThresholdsWrapper])
+  }, [webhookData, selectedMethod, currentUnit, zoneModel, calculateThresholdsWrapper])
 
   // Save on drag end
   useEffect(() => {
@@ -254,15 +257,27 @@ export default function PerformanceCurveOrchestrator() {
             selectedMethod={selectedMethod}
             onMethodChange={(method) => {
               setSelectedMethod(method)
-              calculateThresholdsWrapper(webhookData, method, currentUnit)
+              calculateThresholdsWrapper(webhookData, method, currentUnit, zoneModel)
             }}
             onManualLoad={handleManualLoad}
           />
         </div>
+
+        {/* 1.3 Zone Model Selection */}
+        <div className="mt-4">
+          <ZoneModelSelector
+            selectedZoneModel={zoneModel}
+            onZoneModelChange={(model) => {
+              setZoneModel(model)
+              calculateThresholdsWrapper(webhookData, selectedMethod, currentUnit, model)
+            }}
+          />
+        </div>
       </div>
 
-      {/* 1.3 Laktat Kurve View */}
+      {/* 1.4 Laktat Kurve View */}
       <LactateCurveView
+
         chartRef={chartRef}
         chartInstance={chartInstance}
         isDragging={isDragging.type !== null}
@@ -332,7 +347,7 @@ export default function PerformanceCurveOrchestrator() {
       
       />
 
-      {/* 1.4 Training Zones Description (5-Zonen Trainingssystem) */}
+      {/* 1.5 Training Zones Description (dynamisch basierend auf Zonenmodell) */}
       <TrainingZonesDescription trainingZones={trainingZones} unit={currentUnit} />
     </div>
   )

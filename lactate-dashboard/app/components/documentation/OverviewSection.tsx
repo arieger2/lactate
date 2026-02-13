@@ -55,12 +55,12 @@ export default function OverviewSection({ setActiveSection }: OverviewSectionPro
           <button
             onClick={() => setActiveSection('training-zones')}
             className="text-left hover:shadow-lg transition-shadow"
-            title="Details zu den 5 Trainingszonen anzeigen"
+            title="Details zu den Trainingszonenmodellen anzeigen"
           >
             <InteractiveFeatureCard
               icon="🎯"
-              title="5 Trainingszonen"
-              description="Automatische Berechnung und Visualisierung: Regeneration, Aerobe Basis, Aerobe Schwelle, Anaerob, Power"
+              title="3 Trainingszonenmodelle"
+              description="5-Zonen, 3-Zonen Klassisch, 3-Zonen Seiler (Polarisiert) - umschaltbar und wissenschaftlich fundiert"
             />
           </button>
           <button
@@ -88,6 +88,10 @@ export default function OverviewSection({ setActiveSection }: OverviewSectionPro
             <li className="flex items-start gap-2">
               <span className="text-green-600 dark:text-green-400 font-bold">✓</span>
               <span><strong>8 Schwellenmethoden:</strong> Wissenschaftlich validierte Berechnungen für LT1 und LT2</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-green-600 dark:text-green-400 font-bold">✓</span>
+              <span><strong>3 Trainingszonenmodelle:</strong> 5-Zonen (detailliert), 3-Zonen Klassisch (einfach), 3-Zonen Seiler (polarisiert)</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-green-600 dark:text-green-400 font-bold">✓</span>
