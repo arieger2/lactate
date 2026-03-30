@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useCustomer } from '@/lib/CustomerContext'
 import { getMethodDisplayName } from '@/lib/lactateCalculations'
 import { exportLactateAnalysisToPDF } from '@/lib/pdfExport'
@@ -18,6 +18,7 @@ import { useChartInteraction } from './performance-curve/hooks/useChartInteracti
 export default function PerformanceCurveOrchestrator() {
   const { selectedCustomer, selectedSessionId, setSelectedSessionId, dataVersion, refreshData } = useCustomer()
   const wasDraggingRef = useRef(false)
+  const [isAILoading, setIsAILoading] = useState(false)
   const popupWindowRef = useRef<Window | null>(null)
   
   // Custom hooks for data and logic
@@ -207,6 +208,53 @@ export default function PerformanceCurveOrchestrator() {
     }
   }
 
+  const handleAIAdjust = async () => {
+    if (!webhookData.length) return
+    setIsAILoading(true)
+    try {
+      const response = await fetch('/api/ai-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method: selectedMethod,
+          unit: currentUnit,
+          testData: webhookData.map(d => ({
+            power: d.power,
+            lactate: d.lactate,
+            heartRate: d.heartRate
+          })),
+          sessionId: selectedSessionId,
+          customerId: selectedCustomer?.customer_id,
+          customerName: selectedCustomer?.name,
+          currentLt1: lt1,
+          currentLt2: lt2
+        })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        alert(`AI-Analyse Fehler: ${result.message || 'Unbekannter Fehler'}`)
+        return
+      }
+
+      if (result.lt1 || result.lt2) {
+        setSelectedMethod('adjusted')
+        if (result.lt1) setLt1(result.lt1)
+        if (result.lt2) setLt2(result.lt2)
+        if (result.zones) setTrainingZones(result.zones)
+      } else {
+        // AI responded with reasoning only — show it to the user
+        alert(result.reasoning || 'AI-Analyse abgeschlossen, keine Schwellenwerte zurückgegeben.')
+      }
+    } catch (error) {
+      alert('Verbindungsfehler bei der AI-Analyse.')
+      console.error('handleAIAdjust error:', error)
+    } finally {
+      setIsAILoading(false)
+    }
+  }
+
   // Render
   if (!selectedCustomer) {
     return (
@@ -260,6 +308,8 @@ export default function PerformanceCurveOrchestrator() {
               calculateThresholdsWrapper(webhookData, method, currentUnit, zoneModel)
             }}
             onManualLoad={handleManualLoad}
+            onAIAdjust={handleAIAdjust}
+            isAILoading={isAILoading}
           />
         </div>
 
