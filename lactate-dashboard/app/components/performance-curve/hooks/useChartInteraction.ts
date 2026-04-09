@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import * as echarts from 'echarts'
-import { LactateDataPoint, ThresholdPoint, TrainingZone } from '@/lib/types'
-import { createLactateChartOptions } from '@/lib/lactateChartOptions'
+import { LactateDataPoint, ThresholdPoint, TrainingZone, VentilatorThreshold } from '@/lib/types'
+import { createLactateChartOptions, AiChartExtras } from '@/lib/lactateChartOptions'
 import { calculateTrainingZones, ThresholdMethod } from '@/lib/lactateCalculations'
 
 interface UseChartInteractionProps {
@@ -15,6 +15,7 @@ interface UseChartInteractionProps {
   setLt2: (threshold: ThresholdPoint | null) => void
   setTrainingZones: (zones: TrainingZone[]) => void
   setSelectedMethod: (method: ThresholdMethod) => void
+  aiExtras?: AiChartExtras
 }
 
 interface UseChartInteractionReturn {
@@ -36,7 +37,8 @@ export function useChartInteraction({
   setLt1,
   setLt2,
   setTrainingZones,
-  setSelectedMethod
+  setSelectedMethod,
+  aiExtras
 }: UseChartInteractionProps): UseChartInteractionReturn {
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstanceRef = useRef<echarts.ECharts | null>(null)
@@ -145,7 +147,8 @@ export function useChartInteraction({
         lt1,
         lt2,
         isDragging.type !== null,
-        currentUnit
+        currentUnit,
+        aiExtras
       )
 
       chartInstanceRef.current.setOption(options, true)
@@ -183,7 +186,7 @@ export function useChartInteraction({
         setZoneBoundaryPositions(positions);
       }
     }
-  }, [webhookData, trainingZones, lt1, lt2, isDragging, currentUnit])
+  }, [webhookData, trainingZones, lt1, lt2, isDragging, currentUnit, aiExtras])
 
   // Handle window resize
   useEffect(() => {

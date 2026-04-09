@@ -26,6 +26,12 @@ interface LactateCurveViewProps {
   onZoneBoundaryDrag?: (zoneId: number, newPower: number) => void
   onZoneDragStart?: (zoneId: number) => void
   onZoneDragEnd?: () => void
+  // AI analysis results
+  aiCurve?: Array<{ power: number; lactate: number }> | null
+  aiVt1?: { power: number; heartRate?: number; vo2?: number } | null
+  aiVt2?: { power: number; heartRate?: number; vo2?: number } | null
+  aiVo2max?: number | null
+  aiReasoning?: string | null
 }
 
 export default function LactateCurveView({
@@ -47,7 +53,12 @@ export default function LactateCurveView({
   trainingZones,
   onZoneBoundaryDrag,
   onZoneDragStart,
-  onZoneDragEnd
+  onZoneDragEnd,
+  aiCurve,
+  aiVt1,
+  aiVt2,
+  aiVo2max,
+  aiReasoning,
 }: LactateCurveViewProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
 
@@ -142,6 +153,7 @@ export default function LactateCurveView({
                 {thresholdMessage}
               </p>
               <button
+                type="button"
                 onClick={onAiAnalysisRequest}
                 className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
               >
@@ -158,10 +170,64 @@ export default function LactateCurveView({
         </div>
       )}
 
+      {/* AI Analysis Results */}
+      {(aiVt1 || aiVt2 || aiVo2max != null || aiReasoning) && (
+        <div className="mt-6 p-6 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-300 dark:border-purple-700">
+          <h3 className="font-semibold text-purple-800 dark:text-purple-200 mb-3">AI-Analyse Ergebnis</h3>
+
+          {/* VT1 / VT2 / VO2max info cards */}
+          {(aiVt1 || aiVt2 || aiVo2max != null) && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              {aiVt1 && (
+                <div className="p-3 bg-purple-100 dark:bg-purple-800/30 rounded-lg">
+                  <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wide mb-1">VT1</p>
+                  <p className="text-purple-900 dark:text-purple-100 font-medium">
+                    {aiVt1.power} {unitLabel}
+                  </p>
+                  {aiVt1.heartRate && <p className="text-sm text-purple-700 dark:text-purple-300">{aiVt1.heartRate} bpm</p>}
+                  {aiVt1.vo2 && <p className="text-sm text-purple-700 dark:text-purple-300">VO2: {aiVt1.vo2} ml/min/kg</p>}
+                </div>
+              )}
+              {aiVt2 && (
+                <div className="p-3 bg-pink-100 dark:bg-pink-800/30 rounded-lg">
+                  <p className="text-xs font-semibold text-pink-700 dark:text-pink-300 uppercase tracking-wide mb-1">VT2</p>
+                  <p className="text-pink-900 dark:text-pink-100 font-medium">
+                    {aiVt2.power} {unitLabel}
+                  </p>
+                  {aiVt2.heartRate && <p className="text-sm text-pink-700 dark:text-pink-300">{aiVt2.heartRate} bpm</p>}
+                  {aiVt2.vo2 && <p className="text-sm text-pink-700 dark:text-pink-300">VO2: {aiVt2.vo2} ml/min/kg</p>}
+                </div>
+              )}
+              {aiVo2max != null && (
+                <div className="p-3 bg-indigo-100 dark:bg-indigo-800/30 rounded-lg">
+                  <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 uppercase tracking-wide mb-1">VO2max</p>
+                  <p className="text-indigo-900 dark:text-indigo-100 font-medium">{aiVo2max} ml/min/kg</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* AI curve note */}
+          {aiCurve && aiCurve.length > 0 && (
+            <p className="text-xs text-purple-600 dark:text-purple-400 mb-3">
+              AI-Fitkurve ({aiCurve.length} Punkte) im Diagramm als gestrichelte Linie dargestellt.
+            </p>
+          )}
+
+          {/* Reasoning */}
+          {aiReasoning && (
+            <div className="mt-2 text-sm text-purple-800 dark:text-purple-200 whitespace-pre-wrap leading-relaxed">
+              {aiReasoning}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Button to open stage input popup */}
       {onOpenInputPopup && (
         <div className="mt-4 text-center">
           <button
+            type="button"
             onClick={onOpenInputPopup}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
           >

@@ -1,23 +1,21 @@
 import * as echarts from 'echarts'
-import { LactateDataPoint, ThresholdPoint, TrainingZone } from './types'
+import { LactateDataPoint, ThresholdPoint, TrainingZone, VentilatorThreshold } from './types'
 
-/**
- * Generiert ECharts-Optionen für die Laktat-Leistungskurve
- * @param webhookData - Laktat-Messpunkte
- * @param trainingZones - Berechnete Trainingszonen
- * @param lt1 - LT1 Schwellenpunkt
- * @param lt2 - LT2 Schwellenpunkt
- * @param isDragging - Ob gerade ein Marker gezogen wird
- * @param unit - Einheit: 'watt', 'kmh' oder 'other'
- * @returns ECharts-Optionen Objekt
- */
+export interface AiChartExtras {
+  curve?:  Array<{ power: number; lactate: number }> | null
+  vt1?:    VentilatorThreshold | null
+  vt2?:    VentilatorThreshold | null
+  vo2max?: number | null
+}
+
 export function createLactateChartOptions(
   webhookData: LactateDataPoint[],
   trainingZones: TrainingZone[],
   lt1: ThresholdPoint | null,
   lt2: ThresholdPoint | null,
   isDragging: boolean,
-  unit: string = 'watt'
+  unit: string = 'watt',
+  aiExtras?: AiChartExtras
 ): echarts.EChartsOption {
   // Determine axis label based on unit
   const xAxisLabel = unit === 'kmh' ? 'Geschwindigkeit (km/h)' : 'Leistung (W)'
@@ -134,12 +132,15 @@ export function createLactateChartOptions(
       top: 30,
       data: [
         'Laktat',
-        ...(parabolaCurveData.length > 0 ? ['Laktat (quadratisch)'] : 
-            hasInterpolatedLastStage && interpolatedSegment.length > 0 ? ['Laktat (interpoliert)'] : 
+        ...(parabolaCurveData.length > 0 ? ['Laktat (quadratisch)'] :
+            hasInterpolatedLastStage && interpolatedSegment.length > 0 ? ['Laktat (interpoliert)'] :
             []),
-        'Herzfrequenz', 
-        'LT1', 
-        'LT2'
+        ...(aiExtras?.curve?.length ? ['AI-Kurve'] : []),
+        'Herzfrequenz',
+        'LT1',
+        'LT2',
+        ...(aiExtras?.vt1 ? ['VT1'] : []),
+        ...(aiExtras?.vt2 ? ['VT2'] : []),
       ]
     },
     xAxis: {
@@ -394,6 +395,118 @@ export function createLactateChartOptions(
               fontWeight: 'bold' as const,
               color: '#f59e0b',
               backgroundColor: 'rgba(255, 255, 255, 0.9)',
+              padding: [2, 4],
+              borderRadius: 3
+            }
+          }]
+        }
+      }] : []),
+      // AI-fitted lactate curve
+      ...(aiExtras?.curve?.length ? [{
+        name: 'AI-Kurve',
+        type: 'line' as const,
+        data: aiExtras.curve.map(p => [p.power, p.lactate]),
+        smooth: true,
+        lineStyle: { color: '#8b5cf6', width: 2, type: 'dashed' as const },
+        itemStyle: { color: '#8b5cf6' },
+        yAxisIndex: 0,
+        showSymbol: false,
+        tooltip: {
+          show: true,
+          formatter: (params: any) =>
+            `AI-Kurve<br/>${tooltipLabel}: ${params.value[0]} ${tooltipUnit}<br/>Laktat: ${Number(params.value[1]).toFixed(2)} mmol/L`
+        }
+      }] : []),
+      // VT1 marker
+      ...(aiExtras?.vt1 ? [{
+        name: 'VT1',
+        type: 'scatter' as const,
+        data: [[aiExtras.vt1.power, 0]],
+        symbolSize: 18,
+        animation: false,
+        itemStyle: { color: '#a855f7', borderColor: '#fff', borderWidth: 3 },
+        yAxisIndex: 0,
+        label: {
+          show: true,
+          position: 'top' as const,
+          formatter: 'VT1',
+          fontSize: 11,
+          fontWeight: 'bold' as const,
+          color: '#a855f7',
+          backgroundColor: 'rgba(255,255,255,0.8)',
+          padding: [2, 4],
+          borderRadius: 3
+        },
+        tooltip: {
+          show: true,
+          formatter: () => {
+            const vt1 = aiExtras!.vt1!
+            const parts = [`<strong>VT1</strong>`, `${vt1.power} ${tooltipUnit}`]
+            if (vt1.heartRate) parts.push(`${vt1.heartRate} bpm`)
+            if (vt1.vo2) parts.push(`VO2: ${vt1.vo2} ml/min/kg`)
+            return parts.join('<br/>')
+          }
+        },
+        markLine: {
+          data: [{
+            xAxis: aiExtras.vt1.power,
+            lineStyle: { color: '#a855f7', type: 'dashed' as const, width: 2 },
+            label: {
+              show: true,
+              position: 'insideEndTop' as const,
+              formatter: `VT1\n{c}${tooltipUnit}`,
+              fontSize: 10,
+              fontWeight: 'bold' as const,
+              color: '#a855f7',
+              backgroundColor: 'rgba(255,255,255,0.9)',
+              padding: [2, 4],
+              borderRadius: 3
+            }
+          }]
+        }
+      }] : []),
+      // VT2 marker
+      ...(aiExtras?.vt2 ? [{
+        name: 'VT2',
+        type: 'scatter' as const,
+        data: [[aiExtras.vt2.power, 0]],
+        symbolSize: 18,
+        animation: false,
+        itemStyle: { color: '#ec4899', borderColor: '#fff', borderWidth: 3 },
+        yAxisIndex: 0,
+        label: {
+          show: true,
+          position: 'top' as const,
+          formatter: 'VT2',
+          fontSize: 11,
+          fontWeight: 'bold' as const,
+          color: '#ec4899',
+          backgroundColor: 'rgba(255,255,255,0.8)',
+          padding: [2, 4],
+          borderRadius: 3
+        },
+        tooltip: {
+          show: true,
+          formatter: () => {
+            const vt2 = aiExtras!.vt2!
+            const parts = [`<strong>VT2</strong>`, `${vt2.power} ${tooltipUnit}`]
+            if (vt2.heartRate) parts.push(`${vt2.heartRate} bpm`)
+            if (vt2.vo2) parts.push(`VO2: ${vt2.vo2} ml/min/kg`)
+            return parts.join('<br/>')
+          }
+        },
+        markLine: {
+          data: [{
+            xAxis: aiExtras.vt2.power,
+            lineStyle: { color: '#ec4899', type: 'dashed' as const, width: 2 },
+            label: {
+              show: true,
+              position: 'insideEndTop' as const,
+              formatter: `VT2\n{c}${tooltipUnit}`,
+              fontSize: 10,
+              fontWeight: 'bold' as const,
+              color: '#ec4899',
+              backgroundColor: 'rgba(255,255,255,0.9)',
               padding: [2, 4],
               borderRadius: 3
             }

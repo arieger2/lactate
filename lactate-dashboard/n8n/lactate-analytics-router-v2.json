@@ -1,0 +1,292 @@
+{
+  "name": "Lactate Analytics Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lactate-analytics",
+        "responseMode": "responseNode"
+      },
+      "id": "node-1-webhook",
+      "name": "Lactate Analytics Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "lactate-analytics"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json.data;\nif (!data || !data.lactateData || data.lactateData.length < 3) {\n  throw new Error('Zu wenig Laktat-Messpunkte (min. 3 erforderlich)');\n}\nconst methods = ['dickhuth', 'dmax', 'mader', 'moddmax'];\nreturn methods.map(method => ({\n  json: {\n    targetMethod: method,\n    sessionId: data.sessionId,\n    customerId: data.customerId,\n    customerName: data.customerName,\n    unit: data.unit || 'watt',\n    zoneModel: data.zoneModel || '5-zones',\n    stepCount: data.stepCount || data.lactateData.length,\n    testDevice: data.testDevice || 'bike',\n    lactateData: data.lactateData,\n    currentThresholds: data.currentThresholds || { lt1: null, lt2: null },\n    currentMethod: data.currentMethod\n  }\n}));"
+      },
+      "id": "node-2-fanout",
+      "name": "Validate & Fan Out Methods",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "agent": "conversationalAgent",
+        "promptType": "define",
+        "text": "=Apply the {{ $json.targetMethod }} method to this lactate step test.\n\nUnit: {{ $json.unit }}\nDevice: {{ $json.testDevice }}\nStages: {{ $json.stepCount }}\nZone model context: {{ $json.zoneModel }}\n\nLactate data (power, lactate mmol/L, heartRate bpm):\n{{ JSON.stringify($json.lactateData) }}\n\nReference thresholds (current, may be null):\nLT1: {{ JSON.stringify($json.currentThresholds.lt1) }}\nLT2: {{ JSON.stringify($json.currentThresholds.lt2) }}\n\nApply ONLY the {{ $json.targetMethod }} method. Return the JSON result.",
+        "options": {
+          "systemMessage": "You are a sports science specialist in lactate threshold analysis. Apply the specified method precisely to the measurement data.\n\nMETHODS:\n- dickhuth: Calculate lactate equivalent (lactate/power) for each stage. Find minimum ratio = LEP. LT2 = power where lactate equals LEP_lactate + 1.5 mmol/L (interpolate linearly). LT1 = point of non-linear rise before LT2. (Dickhuth et al. 1999)\n- dmax: Draw line from first to last data point. LT2 = point of maximum perpendicular distance from this line. LT1 = first clear deflection from baseline in early aerobic phase. (Cheng et al. 1992)\n- mader: LT1 = linearly interpolated power at exactly 2.0 mmol/L lactate. LT2 = linearly interpolated power at exactly 4.0 mmol/L lactate. (Heck et al. 1985)\n- moddmax: LT1 = point of minimum lactate in first half of the test stages. LT2 = point of maximum perpendicular distance from an exponential curve fit through all stages. (Bishop et al. 1998)\n\nINTERPOLATION: For thresholds between stages: power = p_low + (target_L - L_low) / (L_high - L_low) * (p_high - p_low)\n\nCONFIDENCE: Rate 0.0-1.0 based on data quality, monotonic lactate rise, number of stages (>=6=high, 4-5=medium, 3=low).\n\nReturn ONLY valid JSON, no prose:\n{\"lt1\": {\"power\": <number>, \"lactate\": <number>}, \"lt2\": {\"power\": <number>, \"lactate\": <number>}, \"method\": \"<method_name>\", \"confidence\": <0.0-1.0>, \"reasoning\": \"<one sentence>\"}\n\nIf a threshold cannot be determined for this method, set it to null."
+        }
+      },
+      "id": "node-3-specialist",
+      "name": "Method Specialist Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [680, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {}
+      },
+      "id": "node-3-openai-model",
+      "name": "OpenAI Model (Specialist)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allItems = $input.all();\nconst results = [];\n\nfor (const item of allItems) {\n  const out = item.json;\n  let parsed = null;\n  \n  if (out.lt1 !== undefined || out.lt2 !== undefined) {\n    parsed = out;\n  } else if (typeof out.output === 'string') {\n    const m = out.output.match(/\\{[\\s\\S]*\\}/);\n    if (m) {\n      try { parsed = JSON.parse(m[0]); } catch(e) {}\n    }\n  } else if (typeof out.text === 'string') {\n    const m = out.text.match(/\\{[\\s\\S]*\\}/);\n    if (m) {\n      try { parsed = JSON.parse(m[0]); } catch(e) {}\n    }\n  }\n  \n  if (parsed && (parsed.lt1 || parsed.lt2)) {\n    results.push({\n      method: parsed.method || 'unknown',\n      lt1: parsed.lt1 || null,\n      lt2: parsed.lt2 || null,\n      confidence: parsed.confidence ?? 0.5,\n      reasoning: parsed.reasoning || ''\n    });\n  }\n}\n\nif (results.length === 0) {\n  throw new Error('Alle Spezialistenagenten haben kein valides Ergebnis geliefert');\n}\n\nconst ctx = allItems[0].json;\nreturn [{\n  json: {\n    methodResults: results,\n    unit: ctx.unit,\n    zoneModel: ctx.zoneModel,\n    testDevice: ctx.testDevice,\n    lactateData: ctx.lactateData,\n    sessionId: ctx.sessionId,\n    customerId: ctx.customerId,\n    customerName: ctx.customerName\n  }\n}];"
+      },
+      "id": "node-4-aggregate",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "agent": "conversationalAgent",
+        "promptType": "define",
+        "text": "=Evaluate these lactate threshold analyses and select the best result.\n\nAthlete: {{ $json.customerName }}\nDevice: {{ $json.testDevice }}\nUnit: {{ $json.unit }}\nZone model: {{ $json.zoneModel }}\nTest stages: {{ $json.lactateData.length }}\n\nRaw lactate data: {{ JSON.stringify($json.lactateData) }}\n\nMethod results from 4 specialists:\n{{ JSON.stringify($json.methodResults, null, 2) }}\n\nSelect or compose the most scientifically appropriate LT1 and LT2. Return the JSON.",
+        "options": {
+          "systemMessage": "You are a senior sports scientist evaluating competing lactate threshold analyses. Select the most scientifically appropriate result for the athlete.\n\nEVALUATION CRITERIA (priority order):\n1. Scientific validity for the test conditions (device, zone model, data quality)\n2. Physiological plausibility: LT1 should be 55-75% of LT2 power; LT2 should occur at >=3.5 mmol/L lactate\n3. Confidence scores from each method\n4. Consensus: if >=3 methods agree within 10% power difference, prefer that consensus\n5. Zone model fit:\n   - 5-zones: prefer well-separated LT1/LT2\n   - 3-zones-a (classic): Mader fixed thresholds are defensible\n   - 3-zones-b (Seiler/polarized): DMAX or ModDMAX preferred as they capture true deflection\n\nRULES:\n- You may select one method wholesale, or average LT1 from one method and LT2 from another if scientifically justified\n- Never extrapolate beyond the measured data range\n- If only 1 valid result exists, use it\n\nReturn ONLY valid JSON:\n{\"lt1\": {\"power\": <number>, \"lactate\": <number>}, \"lt2\": {\"power\": <number>, \"lactate\": <number>}, \"method\": \"<winning_method or 'composed'>\", \"reasoning\": \"<2-3 sentences with scientific rationale>\"}"
+        }
+      },
+      "id": "node-5-compose",
+      "name": "Compose & Select Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1120, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {}
+      },
+      "id": "node-5-openai-model",
+      "name": "OpenAI Model (Compose)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [1120, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = $input.first().json;\nlet r = null;\n\nif (out.lt1 !== undefined || out.lt2 !== undefined) {\n  r = out;\n} else if (typeof out.output === 'string') {\n  const m = out.output.match(/\\{[\\s\\S]*\\}/);\n  if (m) { try { r = JSON.parse(m[0]); } catch(e) {} }\n} else if (typeof out.text === 'string') {\n  const m = out.text.match(/\\{[\\s\\S]*\\}/);\n  if (m) { try { r = JSON.parse(m[0]); } catch(e) {} }\n}\n\nif (!r || (!r.lt1 && !r.lt2)) {\n  return [{ json: {\n    success: false,\n    lt1: null, lt2: null, method: null,\n    reasoning: (typeof out.output === 'string' ? out.output : null) || (typeof out.text === 'string' ? out.text : null),\n    message: 'Compose-Agent hat keine validen Schwellenwerte zurueckgegeben'\n  }}];\n}\n\nreturn [{ json: {\n  success: true,\n  lt1: r.lt1 || null,\n  lt2: r.lt2 || null,\n  method: r.method || 'composed',\n  reasoning: r.reasoning || null\n}}];"
+      },
+      "id": "node-6-format",
+      "name": "Format Webhook Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "node-7-respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const errorMsg = $execution?.customData?.error?.message || $input.first()?.json?.error?.message || 'Unbekannter Workflow-Fehler';\nreturn [{ json: {\n  success: false,\n  lt1: null, lt2: null, method: null,\n  reasoning: null,\n  message: errorMsg\n}}];"
+      },
+      "id": "node-8-error",
+      "name": "Handle Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 520]
+    }
+  ],
+  "connections": {
+    "Lactate Analytics Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Fan Out Methods",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Fan Out Methods": {
+      "main": [
+        [
+          {
+            "node": "Method Specialist Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Handle Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Method Specialist Agent": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Handle Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model (Specialist)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Method Specialist Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Compose & Select Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Handle Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose & Select Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Handle Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model (Compose)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Compose & Select Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Webhook Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "lactate-analytics-router-v2",
+  "triggerCount": 0,
+  "tags": [
+    {
+      "name": "lactate",
+      "createdAt": "2026-04-02T00:00:00.000Z",
+      "updatedAt": "2026-04-02T00:00:00.000Z"
+    }
+  ]
+}

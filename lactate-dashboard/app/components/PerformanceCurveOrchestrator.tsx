@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCustomer } from '@/lib/CustomerContext'
 import { getMethodDisplayName } from '@/lib/lactateCalculations'
 import { exportLactateAnalysisToPDF } from '@/lib/pdfExport'
@@ -19,17 +19,23 @@ export default function PerformanceCurveOrchestrator() {
   const { selectedCustomer, selectedSessionId, setSelectedSessionId, dataVersion, refreshData } = useCustomer()
   const wasDraggingRef = useRef(false)
   const [isAILoading, setIsAILoading] = useState(false)
+  const [aiCurve, setAiCurve] = useState<Array<{ power: number; lactate: number }> | null>(null)
+  const [aiVt1, setAiVt1] = useState<{ power: number; heartRate?: number } | null>(null)
+  const [aiVt2, setAiVt2] = useState<{ power: number; heartRate?: number } | null>(null)
+  const [aiVo2max, setAiVo2max] = useState<number | null>(null)
+  const [aiReasoning, setAiReasoning] = useState<string | null>(null)
   const popupWindowRef = useRef<Window | null>(null)
   
   // Custom hooks for data and logic
-  const { 
-    availableSessions, 
-    webhookData, 
-    loading, 
-    currentUnit 
-  } = useSessionData({ 
-    selectedCustomer, 
-    selectedSessionId, 
+  const {
+    availableSessions,
+    webhookData,
+    loading,
+    currentUnit,
+    testInfo
+  } = useSessionData({
+    selectedCustomer,
+    selectedSessionId,
     setSelectedSessionId,
     dataVersion
   })
@@ -62,6 +68,13 @@ export default function PerformanceCurveOrchestrator() {
     selectedCustomerId: selectedCustomer?.customer_id || null
   })
 
+  const aiExtras = useMemo(() => ({
+    curve:  aiCurve  ?? undefined,
+    vt1:    aiVt1    ?? undefined,
+    vt2:    aiVt2    ?? undefined,
+    vo2max: aiVo2max ?? undefined,
+  }), [aiCurve, aiVt1, aiVt2, aiVo2max])
+
   const { chartRef, chartInstance, isDragging, zoneBoundaryPositions, onZoneDragStart, onZoneDragEnd } = useChartInteraction({
     webhookData,
     trainingZones,
@@ -72,7 +85,8 @@ export default function PerformanceCurveOrchestrator() {
     setLt1,
     setLt2,
     setTrainingZones,
-    setSelectedMethod
+    setSelectedMethod,
+    aiExtras,
   })
 
   // Listen for updates from popup window
@@ -211,6 +225,12 @@ export default function PerformanceCurveOrchestrator() {
   const handleAIAdjust = async () => {
     if (!webhookData.length) return
     setIsAILoading(true)
+    // Clear previous AI results
+    setAiCurve(null)
+    setAiVt1(null)
+    setAiVt2(null)
+    setAiVo2max(null)
+    setAiReasoning(null)
     try {
       const response = await fetch('/api/ai-analysis', {
         method: 'POST',
@@ -221,13 +241,21 @@ export default function PerformanceCurveOrchestrator() {
           testData: webhookData.map(d => ({
             power: d.power,
             lactate: d.lactate,
-            heartRate: d.heartRate
+            heartRate: d.heartRate,
+            vo2: d.vo2,
           })),
           sessionId: selectedSessionId,
           customerId: selectedCustomer?.customer_id,
           customerName: selectedCustomer?.name,
           currentLt1: lt1,
-          currentLt2: lt2
+          currentLt2: lt2,
+          // Optional ventilatory thresholds — pass through if already set from prior analysis
+          vt1:    aiVt1    ?? null,
+          vt2:    aiVt2    ?? null,
+          vo2max: aiVo2max ?? null,
+          zoneModel:  zoneModel,
+          stepCount:  webhookData.length,
+          testDevice: testInfo?.device ?? 'bike',
         })
       })
 
@@ -243,9 +271,13 @@ export default function PerformanceCurveOrchestrator() {
         if (result.lt1) setLt1(result.lt1)
         if (result.lt2) setLt2(result.lt2)
         if (result.zones) setTrainingZones(result.zones)
+        if (result.curve)   setAiCurve(result.curve)
+        if (result.vt1)     setAiVt1(result.vt1)
+        if (result.vt2)     setAiVt2(result.vt2)
+        if (result.vo2max != null) setAiVo2max(result.vo2max)
+        if (result.reasoning) setAiReasoning(result.reasoning)
       } else {
-        // AI responded with reasoning only — show it to the user
-        alert(result.reasoning || 'AI-Analyse abgeschlossen, keine Schwellenwerte zurückgegeben.')
+        setAiReasoning(result.reasoning ?? null)
       }
     } catch (error) {
       alert('Verbindungsfehler bei der AI-Analyse.')
@@ -284,6 +316,7 @@ export default function PerformanceCurveOrchestrator() {
             </p>
           </div>
           <button
+            type="button"
             onClick={exportToPDF}
             className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition-colors"
           >
@@ -394,7 +427,11 @@ export default function PerformanceCurveOrchestrator() {
         }}
         onZoneDragStart={onZoneDragStart}
         onZoneDragEnd={onZoneDragEnd}
-      
+        aiCurve={aiCurve}
+        aiVt1={aiVt1}
+        aiVt2={aiVt2}
+        aiVo2max={aiVo2max}
+        aiReasoning={aiReasoning}
       />
 
       {/* 1.5 Training Zones Description (dynamisch basierend auf Zonenmodell) */}

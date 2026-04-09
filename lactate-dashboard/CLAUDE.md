@@ -20,6 +20,7 @@ Always prefer the **MCP server** for actual API operations; use skills for scaff
 - **URL**: `https://n8n.arieger.net`
 - **Primary workflow**: `Lactate Analytics Router` — ID `ljNATO9oj54uhfzmTM84Z`
 - **Webhook entry point**: `POST /webhook/lactate-analytics`
+- **REST API key** (for `X-N8N-API-KEY` header): `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0N2NiMjVlMS0xY2M5LTQ4ODItYjAxMy0xZWJjNzBmMjg1MjIiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiNzEwNDU3MGYtYWZmYi00ZGE4LWE5ZGEtNmU5ZjkxOTAxMjYzIiwiaWF0IjoxNzc1MTUwNDc5fQ.uLPAfWasI5AWQhltezTZ8AzSRDLzWJ5Usv1wDilCNjs`
 
 ### Payload sent by the dashboard → n8n
 

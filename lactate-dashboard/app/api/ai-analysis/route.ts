@@ -1,58 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { AIAnalysisResponse } from '@/lib/types'
 
 /**
  * AI-Analyse Webhook Endpoint
  *
  * Forwards lactate session data to the n8n workflow:
- *   Webhook Input → AI Decision Agent → Switch → Specialist AI → Respond to Webhook
+ *   Webhook → Parse Context → Fan Out → Method Specialists → Aggregate → Compose → Respond
  *
- * The n8n webhook path is: POST /webhook/lactate-analytics
- * The payload uses { data: {...} } so n8n expressions like {{ $json.data }} work.
- *
- * Expected response from n8n specialist agents:
- * {
- *   "output": "...",           // raw AI text
- *   "lt1": { "power": 180, "lactate": 2.1 },  // optional structured
- *   "lt2": { "power": 250, "lactate": 4.0 },  // optional structured
- *   "method": "dickhuth",     // optional — which specialist handled it
- *   "zones": [...]            // optional
- * }
+ * Optional fields: vt1, vt2, vo2max
+ * Extended response: curve (fitted lactate curve), vt1, vt2, vo2max, reasoning
  */
 
-interface ThresholdPoint {
-  power: number
-  lactate: number
-}
-
-interface AIAnalysisResult {
-  lt1?: ThresholdPoint
-  lt2?: ThresholdPoint
-  method?: string
-  zones?: unknown[]
-  reasoning?: string
-  raw?: unknown
-}
-
-/**
- * Try to extract structured threshold data from the n8n agent response.
- * The agent may return JSON embedded in its text output, or a top-level object.
- */
-function parseAgentResponse(responseData: unknown): AIAnalysisResult {
+function parseAgentResponse(responseData: unknown): AIAnalysisResponse {
   if (!responseData || typeof responseData !== 'object') {
-    return { raw: responseData }
+    return { lt1: null, lt2: null, method: null, reasoning: null }
   }
 
   const data = responseData as Record<string, unknown>
 
-  // Direct structured response
+  // Direct structured response (lt1/lt2 at top level)
   if (data.lt1 || data.lt2) {
     return {
-      lt1: data.lt1 as ThresholdPoint | undefined,
-      lt2: data.lt2 as ThresholdPoint | undefined,
-      method: data.method as string | undefined,
-      zones: data.zones as unknown[] | undefined,
-      reasoning: data.output as string | undefined,
-      raw: data
+      lt1:     data.lt1     as AIAnalysisResponse['lt1'],
+      lt2:     data.lt2     as AIAnalysisResponse['lt2'],
+      vt1:     (data.vt1    as AIAnalysisResponse['vt1'])    ?? null,
+      vt2:     (data.vt2    as AIAnalysisResponse['vt2'])    ?? null,
+      vo2max:  (data.vo2max as number | null)                 ?? null,
+      curve:   (data.curve  as AIAnalysisResponse['curve'])  ?? undefined,
+      method:  data.method  as string | undefined             ?? null,
+      reasoning: (data.reasoning ?? data.output) as string | undefined ?? null,
     }
   }
 
@@ -64,29 +40,36 @@ function parseAgentResponse(responseData: unknown): AIAnalysisResult {
         const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>
         if (parsed.lt1 || parsed.lt2) {
           return {
-            lt1: parsed.lt1 as ThresholdPoint | undefined,
-            lt2: parsed.lt2 as ThresholdPoint | undefined,
-            method: parsed.method as string | undefined,
-            zones: parsed.zones as unknown[] | undefined,
+            lt1:      parsed.lt1     as AIAnalysisResponse['lt1'],
+            lt2:      parsed.lt2     as AIAnalysisResponse['lt2'],
+            vt1:     (parsed.vt1    as AIAnalysisResponse['vt1'])   ?? null,
+            vt2:     (parsed.vt2    as AIAnalysisResponse['vt2'])   ?? null,
+            vo2max:  (parsed.vo2max as number | null)                ?? null,
+            curve:   (parsed.curve  as AIAnalysisResponse['curve']) ?? undefined,
+            method:   parsed.method as string | undefined            ?? null,
             reasoning: data.output,
-            raw: data
           }
         }
       } catch {
-        // JSON parse failed — return raw output as reasoning
+        // JSON parse failed
       }
     }
-    return { reasoning: data.output, raw: data }
+    return { lt1: null, lt2: null, method: null, reasoning: data.output }
   }
 
-  return { raw: data }
+  return { lt1: null, lt2: null, method: null, reasoning: null }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    const { method, unit, testData, sessionId, customerId, customerName, currentLt1, currentLt2 } = body
+    const {
+      method, unit, testData, sessionId, customerId, customerName,
+      currentLt1, currentLt2,
+      vt1, vt2, vo2max,
+      zoneModel, stepCount, testDevice
+    } = body
 
     if (!testData || !Array.isArray(testData) || testData.length === 0) {
       return NextResponse.json(
@@ -113,9 +96,16 @@ export async function POST(request: NextRequest) {
         lactateData: testData,
         currentThresholds: {
           lt1: currentLt1 ?? null,
-          lt2: currentLt2 ?? null
+          lt2: currentLt2 ?? null,
         },
-        timestamp: new Date().toISOString()
+        // Optional ventilatory / VO2 context
+        vt1:    vt1    ?? null,
+        vt2:    vt2    ?? null,
+        vo2max: vo2max ?? null,
+        zoneModel:  zoneModel  ?? '5-zones',
+        stepCount:  stepCount  ?? testData.length,
+        testDevice: testDevice ?? 'bike',
+        timestamp: new Date().toISOString(),
       }
     }
 
@@ -123,7 +113,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(120_000) // 2 min — o1 model can be slow
+      signal: AbortSignal.timeout(180_000), // 3 min — multi-agent pipeline
     })
 
     if (!n8nResponse.ok) {
@@ -139,23 +129,24 @@ export async function POST(request: NextRequest) {
     const parsed = parseAgentResponse(rawResult)
 
     return NextResponse.json({
-      success: true,
-      lt1: parsed.lt1 ?? null,
-      lt2: parsed.lt2 ?? null,
-      method: parsed.method ?? null,
-      zones: parsed.zones ?? null,
+      success:   true,
+      lt1:       parsed.lt1       ?? null,
+      lt2:       parsed.lt2       ?? null,
+      vt1:       parsed.vt1       ?? null,
+      vt2:       parsed.vt2       ?? null,
+      vo2max:    parsed.vo2max    ?? null,
+      curve:     parsed.curve     ?? null,
+      method:    parsed.method    ?? null,
       reasoning: parsed.reasoning ?? null,
-      raw: parsed.raw
     })
 
   } catch (error) {
     if (error instanceof Error && error.name === 'TimeoutError') {
       return NextResponse.json(
-        { success: false, message: 'AI-Analyse Timeout (>2 min)' },
+        { success: false, message: 'AI-Analyse Timeout (>3 min)' },
         { status: 504 }
       )
     }
-
     console.error('Error in AI analysis endpoint:', error)
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : 'Interner Serverfehler' },

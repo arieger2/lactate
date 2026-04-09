@@ -94,6 +94,24 @@ export interface LactateDataPoint {
 export interface ThresholdPoint {
   power: number
   lactate: number
+  heartRate?: number
+}
+
+export interface VentilatorThreshold {
+  power: number
+  heartRate?: number
+  vo2?: number
+}
+
+export interface AIAnalysisResponse {
+  lt1: ThresholdPoint | null
+  lt2: ThresholdPoint | null
+  vt1?: VentilatorThreshold | null
+  vt2?: VentilatorThreshold | null
+  vo2max?: number | null
+  curve?: Array<{ power: number; lactate: number }>
+  method: string | null
+  reasoning: string | null
 }
 
 export interface TrainingZone {
