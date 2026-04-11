@@ -86,7 +86,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const msg=$input.first()?.json?.error?.message||\"Unbekannter Workflow-Fehler\";\nreturn[{json:{success:false,lt1:null,lt2:null,method:null,reasoning:null,message:msg}}];"
+        "jsCode": "const item = $input.first()?.json || {};\n// error can be a string (API error) or an object with .message\nconst err = item.error;\nconst msg = typeof err === \"string\" ? err\n          : typeof err === \"object\" && err?.message ? err.message\n          : \"Unbekannter Workflow-Fehler\";\nreturn [{ json: { success: false, lt1: null, lt2: null, method: null, reasoning: null, message: msg } }];\n"
       },
       "id": "0a004643-2a51-4f3c-9412-ec1af714fc52",
       "name": "Handle Error",

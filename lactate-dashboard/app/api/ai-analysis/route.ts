@@ -127,6 +127,15 @@ export async function POST(request: NextRequest) {
     }
 
     const rawResult = await n8nResponse.json()
+
+    // If n8n workflow returned an explicit failure (e.g. agent quota error), pass it through
+    if (rawResult && rawResult.success === false) {
+      return NextResponse.json(
+        { success: false, message: rawResult.message || 'AI-Analyse fehlgeschlagen' },
+        { status: 200 }
+      )
+    }
+
     const parsed = parseAgentResponse(rawResult)
 
     return NextResponse.json({

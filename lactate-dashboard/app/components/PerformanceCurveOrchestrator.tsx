@@ -26,6 +26,7 @@ export default function PerformanceCurveOrchestrator() {
   const [aiReasoning, setAiReasoning] = useState<string | null>(null)
   const [aiMethods, setAiMethods] = useState<import('@/lib/types').MethodComparisonResult[] | null>(null)
   const [showMethodComparison, setShowMethodComparison] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
   // Cached AI thresholds — survive method switching so switching back to 'adjusted' restores them
   const cachedAiLt1 = useRef<import('@/lib/types').ThresholdPoint | null>(null)
   const cachedAiLt2 = useRef<import('@/lib/types').ThresholdPoint | null>(null)
@@ -149,6 +150,7 @@ export default function PerformanceCurveOrchestrator() {
     setAiReasoning(null)
     setAiMethods(null)
     setShowMethodComparison(false)
+    setAiError(null)
   }, [selectedSessionId])
 
   // Calculate thresholds when data loads
@@ -247,12 +249,13 @@ export default function PerformanceCurveOrchestrator() {
   const handleAIAdjust = async () => {
     if (!webhookData.length) return
     setIsAILoading(true)
-    // Clear previous AI results
+    // Clear previous AI results and errors
     setAiCurve(null)
     setAiVt1(null)
     setAiVt2(null)
     setAiVo2max(null)
     setAiReasoning(null)
+    setAiError(null)
     try {
       const response = await fetch('/api/ai-analysis', {
         method: 'POST',
@@ -284,7 +287,7 @@ export default function PerformanceCurveOrchestrator() {
       const result = await response.json()
 
       if (!response.ok || !result.success) {
-        alert(`AI-Analyse Fehler: ${result.message || 'Unbekannter Fehler'}`)
+        setAiError(result.message || 'AI-Analyse fehlgeschlagen.')
         return
       }
 
@@ -303,7 +306,7 @@ export default function PerformanceCurveOrchestrator() {
         setAiReasoning(result.reasoning ?? null)
       }
     } catch (error) {
-      alert('Verbindungsfehler bei der AI-Analyse.')
+      setAiError('Verbindungsfehler bei der AI-Analyse.')
       console.error('handleAIAdjust error:', error)
     } finally {
       setIsAILoading(false)
@@ -465,6 +468,8 @@ export default function PerformanceCurveOrchestrator() {
         aiMethods={aiMethods}
         showMethodComparison={showMethodComparison}
         onToggleMethodComparison={() => setShowMethodComparison(v => !v)}
+        aiError={aiError}
+        onDismissAiError={() => setAiError(null)}
       />
 
       {/* 1.5 Training Zones Description (dynamisch basierend auf Zonenmodell) */}
