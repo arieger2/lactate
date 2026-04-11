@@ -29,6 +29,7 @@ function parseAgentResponse(responseData: unknown): AIAnalysisResponse {
       curve:   (data.curve  as AIAnalysisResponse['curve'])  ?? undefined,
       method:  data.method  as string | undefined             ?? null,
       reasoning: (data.reasoning ?? data.output) as string | undefined ?? null,
+      methods: (data.methods as AIAnalysisResponse['methods']) ?? undefined,
     }
   }
 
@@ -138,6 +139,7 @@ export async function POST(request: NextRequest) {
       curve:     parsed.curve     ?? null,
       method:    parsed.method    ?? null,
       reasoning: parsed.reasoning ?? null,
+      methods:   parsed.methods   ?? null,
     })
 
   } catch (error) {

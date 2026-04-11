@@ -4,6 +4,8 @@
 
 This is a **Next.js lactate analysis dashboard** for sports science — it calculates LT1/LT2 thresholds from lactate step-test data using scientific methods (Dickhuth, DMAX, Mader/OBLA, ModDMAX).
 
+ALLWAYS make a proposal before implementing  !!!!!!!
+
 **Claude's primary role in this project**: build and maintain **n8n workflows** on the connected n8n instance that power the dashboard's AI features. You have access to:
 
 1. **n8n MCP server** — direct API access to the n8n instance (list, create, update, activate/deactivate workflows, manage executions)

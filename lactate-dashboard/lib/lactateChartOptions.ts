@@ -1,11 +1,21 @@
 import * as echarts from 'echarts'
-import { LactateDataPoint, ThresholdPoint, TrainingZone, VentilatorThreshold } from './types'
+import { LactateDataPoint, MethodComparisonResult, ThresholdPoint, TrainingZone, VentilatorThreshold } from './types'
 
 export interface AiChartExtras {
-  curve?:  Array<{ power: number; lactate: number }> | null
-  vt1?:    VentilatorThreshold | null
-  vt2?:    VentilatorThreshold | null
-  vo2max?: number | null
+  curve?:   Array<{ power: number; lactate: number }> | null
+  vt1?:     VentilatorThreshold | null
+  vt2?:     VentilatorThreshold | null
+  vo2max?:  number | null
+  methods?: MethodComparisonResult[] | null
+  showMethods?: boolean
+}
+
+const METHOD_COLORS: Record<string, string> = {
+  dickhuth: '#0ea5e9',
+  dmax:     '#f97316',
+  mader:    '#84cc16',
+  moddmax:  '#e879f9',
+  unknown:  '#94a3b8',
 }
 
 export function createLactateChartOptions(
@@ -406,8 +416,9 @@ export function createLactateChartOptions(
         name: 'AI-Kurve',
         type: 'line' as const,
         data: aiExtras.curve.map(p => [p.power, p.lactate]),
-        smooth: true,
-        lineStyle: { color: '#8b5cf6', width: 2, type: 'dashed' as const },
+        smooth: false,
+        z: 10,
+        lineStyle: { color: '#8b5cf6', width: 3, type: 'dashed' as const },
         itemStyle: { color: '#8b5cf6' },
         yAxisIndex: 0,
         showSymbol: false,
@@ -465,6 +476,69 @@ export function createLactateChartOptions(
           }]
         }
       }] : []),
+      // Method comparison markers (LT1/LT2 from other methods, shown as small diamonds)
+      ...(aiExtras?.showMethods && aiExtras?.methods?.length ? aiExtras.methods.flatMap(m => {
+        const color = METHOD_COLORS[m.method.toLowerCase().split(' ')[0]] ?? METHOD_COLORS.unknown
+        const label = m.method.length > 8 ? m.method.substring(0, 8) : m.method
+        const series = []
+        if (m.lt1) series.push({
+          name: `${label} LT1`,
+          type: 'scatter' as const,
+          data: [[m.lt1.power, m.lt1.lactate]],
+          symbolSize: 14,
+          symbol: 'diamond',
+          animation: false,
+          z: 8,
+          itemStyle: { color, borderColor: '#fff', borderWidth: 2, opacity: 0.85 },
+          yAxisIndex: 0,
+          label: {
+            show: true,
+            position: 'top' as const,
+            formatter: label,
+            fontSize: 9,
+            color,
+            backgroundColor: 'rgba(255,255,255,0.8)',
+            padding: [1, 3],
+            borderRadius: 2
+          },
+          tooltip: {
+            show: true,
+            formatter: () => `<strong>${m.method}</strong><br/>LT1: ${m.lt1!.power} ${tooltipUnit}<br/>${m.lt1!.lactate.toFixed(2)} mmol/L`
+          },
+          markLine: {
+            data: [{ xAxis: m.lt1.power, lineStyle: { color, type: 'dotted' as const, width: 1, opacity: 0.6 }, label: { show: false } }]
+          }
+        })
+        if (m.lt2) series.push({
+          name: `${label} LT2`,
+          type: 'scatter' as const,
+          data: [[m.lt2.power, m.lt2.lactate]],
+          symbolSize: 14,
+          symbol: 'diamond',
+          animation: false,
+          z: 8,
+          itemStyle: { color, borderColor: '#fff', borderWidth: 2, opacity: 0.85 },
+          yAxisIndex: 0,
+          label: {
+            show: true,
+            position: 'top' as const,
+            formatter: label,
+            fontSize: 9,
+            color,
+            backgroundColor: 'rgba(255,255,255,0.8)',
+            padding: [1, 3],
+            borderRadius: 2
+          },
+          tooltip: {
+            show: true,
+            formatter: () => `<strong>${m.method}</strong><br/>LT2: ${m.lt2!.power} ${tooltipUnit}<br/>${m.lt2!.lactate.toFixed(2)} mmol/L`
+          },
+          markLine: {
+            data: [{ xAxis: m.lt2.power, lineStyle: { color, type: 'dotted' as const, width: 1, opacity: 0.6 }, label: { show: false } }]
+          }
+        })
+        return series
+      }) : []),
       // VT2 marker
       ...(aiExtras?.vt2 ? [{
         name: 'VT2',

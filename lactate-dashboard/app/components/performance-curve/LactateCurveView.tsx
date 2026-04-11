@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef } from 'react'
-import { ThresholdPoint, TrainingZone } from '@/lib/types'
+import { MethodComparisonResult, ThresholdPoint, TrainingZone } from '@/lib/types'
 import ZoneBoundaryMarkers from './ZoneBoundaryMarkers'
 
 import * as echarts from 'echarts'
@@ -32,6 +32,9 @@ interface LactateCurveViewProps {
   aiVt2?: { power: number; heartRate?: number; vo2?: number } | null
   aiVo2max?: number | null
   aiReasoning?: string | null
+  aiMethods?: MethodComparisonResult[] | null
+  showMethodComparison?: boolean
+  onToggleMethodComparison?: () => void
 }
 
 export default function LactateCurveView({
@@ -59,6 +62,9 @@ export default function LactateCurveView({
   aiVt2,
   aiVo2max,
   aiReasoning,
+  aiMethods,
+  showMethodComparison,
+  onToggleMethodComparison,
 }: LactateCurveViewProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
 
@@ -167,6 +173,32 @@ export default function LactateCurveView({
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Method Comparison Toggle */}
+      {aiMethods && aiMethods.length > 0 && (
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onToggleMethodComparison}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              showMethodComparison
+                ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+            }`}
+          >
+            {showMethodComparison ? '◆ Methoden ausblenden' : '◇ Methoden einblenden'}
+          </button>
+          {showMethodComparison && (
+            <div className="flex flex-wrap gap-2">
+              {aiMethods.map(m => (
+                <span key={m.method} className="text-xs px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                  ◆ {m.method}: LT1 {m.lt1?.power ?? '–'} / LT2 {m.lt2?.power ?? '–'} {unitLabel}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

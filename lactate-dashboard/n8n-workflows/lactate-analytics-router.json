@@ -1,0 +1,369 @@
+{
+  "name": "Lactate Analytics Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lactate-analytics",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "51d33bc3-bb03-47ea-8628-ccbd9ddfb976",
+      "name": "Lactate Analytics Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        208,
+        304
+      ],
+      "webhookId": "d4bbd495-833d-45c6-9a32-bcb88cdbd4d7"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NOTE: n8n webhook v2 wraps POST body in .body \u2014 never remove the raw.body unwrap below\nconst raw = $input.first().json;\nconst body = raw.body || raw;          // webhook v2 puts POST body here\nconst d = body.data || body;\nif (!d.lactateData || !Array.isArray(d.lactateData) || d.lactateData.length < 3) {\n  throw new Error('Zu wenig Laktat-Messpunkte (min. 3)');\n}\nreturn [{ json: {\n  sessionId:         d.sessionId        || null,\n  customerId:        d.customerId       || null,\n  customerName:      d.customerName     || 'Athlet',\n  unit:              d.unit             || 'watt',\n  currentMethod:     d.currentMethod    || 'dmax',\n  zoneModel:         d.zoneModel        || '5-zones',\n  stepCount:         d.stepCount        || d.lactateData.length,\n  testDevice:        d.testDevice       || 'bike',\n  lactateData:       d.lactateData,\n  currentThresholds: d.currentThresholds || { lt1: null, lt2: null },\n  vt1:               d.vt1    || null,\n  vt2:               d.vt2    || null,\n  vo2max:            d.vo2max != null ? d.vo2max : null,\n  timestamp:         d.timestamp        || new Date().toISOString()\n}}];\n"
+      },
+      "id": "8a84ceb6-ea27-4a57-8926-b5b17b3d2a17",
+      "name": "Parse Context Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        304
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $input.first().json;\nreturn ['dickhuth','dmax','mader','moddmax'].map(m => ({ json: {\n  targetMethod:      m,\n  sessionId:         ctx.sessionId,\n  customerId:        ctx.customerId,\n  customerName:      ctx.customerName,\n  unit:              ctx.unit,\n  zoneModel:         ctx.zoneModel,\n  stepCount:         ctx.stepCount,\n  testDevice:        ctx.testDevice,\n  lactateData:       ctx.lactateData,\n  currentThresholds: ctx.currentThresholds,\n  currentMethod:     ctx.currentMethod,\n  vt1:               ctx.vt1   || null,\n  vt2:               ctx.vt2   || null,\n  vo2max:            ctx.vo2max != null ? ctx.vo2max : null\n}}));"
+      },
+      "id": "98d0a2fe-56ca-41b1-8c51-57ba3d509140",
+      "name": "Fan Out Methods",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        224
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read session context from Parse Context Fields (agent output has no lactateData)\nconst ctx = $('Parse Context Fields').first().json;\nconst lactateData = ctx.lactateData || [];\nconst all = $input.all();\n\nfunction evalPiecewise(params, v) {\n  const { L0, m, A, k, v_ref, v_break } = params;\n  const L_break = L0 + m * (v_break - v_ref);\n  if (v <= v_break) return L0 + m * (v - v_ref);\n  return L_break + A * (Math.exp(k * (v - v_break)) - 1);\n}\n\nfunction generateCurve(params) {\n  const powers = lactateData.map(d => d.power || d.load || 0).filter(p => p > 0);\n  if (powers.length < 2) return null;\n  const minP = Math.min(...powers), maxP = Math.max(...powers);\n  const curve = [];\n  for (let i = 0; i < 50; i++) {\n    const p = minP + (maxP - minP) * i / 49;\n    curve.push({ power: Math.round(p * 10) / 10, lactate: Math.max(0, Math.round(evalPiecewise(params, p) * 100) / 100) });\n  }\n  return curve;\n}\n\nfunction extractPower(val) {\n  if (val == null) return null;\n  if (typeof val === 'number' && val > 5) return val;\n  if (typeof val === 'object') {\n    const p = val.power ?? val.load ?? val.v;\n    if (typeof p === 'number' && p > 5) return p;\n  }\n  return null;\n}\n\nfunction lactatAtPower(power) {\n  const sorted = [...lactateData].sort((a,b) => (a.power||a.load||0) - (b.power||b.load||0));\n  for (let i = 0; i < sorted.length - 1; i++) {\n    const p0 = sorted[i].power||sorted[i].load||0, p1 = sorted[i+1].power||sorted[i+1].load||0;\n    if (power >= p0 && power <= p1 && p1 > p0) {\n      const t = (power - p0) / (p1 - p0);\n      return sorted[i].lactate + t * (sorted[i+1].lactate - sorted[i].lactate);\n    }\n  }\n  return null;\n}\n\nfunction buildPoint(power, modelParams) {\n  if (power == null) return null;\n  const lactate = modelParams ? Math.max(0, evalPiecewise(modelParams, power)) : (lactatAtPower(power) ?? 0);\n  return { power: Math.round(power), lactate: Math.round(lactate * 100) / 100 };\n}\n\nlet bestResult = null;\nlet curve = null;\nconst methodsArray = [];\nconst agentErrors = [];\n\nfor (const item of all) {\n  const out = item.json;\n\n  // Collect errors from agents that failed (e.g. quota exceeded)\n  if (out.error) {\n    const errMsg = typeof out.error === 'string' ? out.error\n      : (out.error.message || JSON.stringify(out.error));\n    agentErrors.push(errMsg);\n    continue;\n  }\n\n  let p = null;\n  if (out.ai_lt1 !== undefined || out.ai_lt2 !== undefined) {\n    p = out;\n  } else {\n    const rawText = (typeof out.output === 'string' ? out.output : '') || (typeof out.text === 'string' ? out.text : '');\n    if (rawText) {\n      const m = rawText.match(/\\{[\\s\\S]*\\}/);\n      if (m) { try { p = JSON.parse(m[0]); } catch(e) {} }\n    }\n  }\n\n  if (!p) continue;\n\n  const modelParams = (p.ai_curve && p.ai_curve.parameters && p.ai_curve.v_break != null) ? {\n    L0: p.ai_curve.parameters.L0, m: p.ai_curve.parameters.m,\n    A:  p.ai_curve.parameters.A,  k: p.ai_curve.parameters.k,\n    v_ref: p.ai_curve.parameters.v_ref, v_break: p.ai_curve.v_break\n  } : null;\n\n  if (!curve && modelParams && modelParams.L0 != null && modelParams.A > 0 && modelParams.k > 0) {\n    try { curve = generateCurve(modelParams); } catch(e) {}\n  }\n\n  const lt1Power = extractPower(p.ai_lt1);\n  const lt2Power = extractPower(p.ai_lt2);\n  if ((lt1Power != null || lt2Power != null) && !bestResult) {\n    bestResult = {\n      lt1: lt1Power != null ? buildPoint(lt1Power, modelParams) : null,\n      lt2: lt2Power != null ? buildPoint(lt2Power, modelParams) : null,\n      confidence: p.confidence ?? 0.7,\n      reasoning: typeof p.reasoning === 'string' ? p.reasoning : ''\n    };\n  }\n\n  if (p.other_methods && typeof p.other_methods === 'object') {\n    for (const [methodKey, methodVal] of Object.entries(p.other_methods)) {\n      if (!methodVal) continue;\n      const mLt1 = extractPower(methodVal.lt1), mLt2 = extractPower(methodVal.lt2);\n      if (mLt1 != null || mLt2 != null) {\n        methodsArray.push({\n          method: methodKey.replace(/_\\d{4}(_\\d{4})?$/, '').replace(/_/g, '-'),\n          lt1: mLt1 != null ? buildPoint(mLt1, modelParams) : null,\n          lt2: mLt2 != null ? buildPoint(mLt2, modelParams) : null,\n          confidence: methodVal.confidence ?? 0.5,\n          reasoning: methodVal.reasoning || ''\n        });\n      }\n    }\n  }\n}\n\n// If all agents errored out, return the error to the dashboard\nif (!bestResult && agentErrors.length > 0 && lactateData.length === 0) {\n  throw new Error(agentErrors[0]);\n}\n\n// Algorithmic fallback \u2014 runs when AI returns no parseable JSON\nif (!bestResult) {\n  if (lactateData.length >= 3) {\n    const sorted = [...lactateData].sort((a,b) => (a.power||a.load||0) - (b.power||b.load||0));\n    const baseLactate = sorted[0].lactate;\n    function findPowerAtLactate(target) {\n      for (let i = 0; i < sorted.length - 1; i++) {\n        const l0 = sorted[i].lactate, l1 = sorted[i+1].lactate;\n        const p0 = sorted[i].power||sorted[i].load||0, p1 = sorted[i+1].power||sorted[i+1].load||0;\n        if (l0 <= target && l1 >= target && l1 > l0) return Math.round(p0 + (target-l0)/(l1-l0)*(p1-p0));\n      }\n      return null;\n    }\n    const errorNote = agentErrors.length > 0 ? ' Fehler: ' + agentErrors.join('; ') : ' AI returned no JSON.';\n    bestResult = {\n      lt1: (() => { const pw = findPowerAtLactate(baseLactate + 0.5); return pw ? { power: pw, lactate: Math.round((baseLactate+0.5)*100)/100 } : null; })(),\n      lt2: (() => { const pw = findPowerAtLactate(baseLactate + 1.5); return pw ? { power: pw, lactate: Math.round((baseLactate+1.5)*100)/100 } : null; })(),\n      confidence: 0.3,\n      reasoning: 'Algorithmic fallback (Dickhuth +0.5/+1.5 mmol/L): baseline = ' + baseLactate + ' mmol/L.' + errorNote\n    };\n  } else {\n    throw new Error('Kein valides AI-Ergebnis und zu wenig Daten fuer Fallback');\n  }\n}\n\nreturn [{ json: {\n  success:    true,\n  lt1:        bestResult.lt1,\n  lt2:        bestResult.lt2,\n  vt1:        ctx.vt1    || null,\n  vt2:        ctx.vt2    || null,\n  vo2max:     ctx.vo2max != null ? ctx.vo2max : null,\n  curve:      curve || null,\n  method:     'ai',\n  confidence: bestResult.confidence,\n  reasoning:  bestResult.reasoning,\n  methods:    methodsArray.length > 0 ? methodsArray : null,\n  agentErrors: agentErrors.length > 0 ? agentErrors : null\n}}];\n"
+      },
+      "id": "bbe57db9-6a6b-43f8-8504-e56c6733d916",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        80
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "e4bbc3f9-1727-4446-9ee0-5744c45c13f3",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2128,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg=$input.first()?.json?.error?.message||\"Unbekannter Workflow-Fehler\";\nreturn[{json:{success:false,lt1:null,lt2:null,method:null,reasoning:null,message:msg}}];"
+      },
+      "id": "0a004643-2a51-4f3c-9412-ec1af714fc52",
+      "name": "Handle Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-4-6",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {
+          "maxTokensToSample": 4096
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        1104,
+        336
+      ],
+      "id": "74d9a985-495b-406e-b565-f201c7d61766",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "CrFcuu1qttscziNR",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $input.first().json;\nconst NL = String.fromCharCode(10);\nconst lt1 = ctx.currentThresholds && ctx.currentThresholds.lt1 ? JSON.stringify(ctx.currentThresholds.lt1) : 'null';\nconst lt2 = ctx.currentThresholds && ctx.currentThresholds.lt2 ? JSON.stringify(ctx.currentThresholds.lt2) : 'null';\n\nconst parts = [\n  'Analyse this lactate step test. Unit: ' + (ctx.unit || 'watt') + ', Device: ' + (ctx.testDevice || 'bike'),\n  'Stages: ' + (ctx.stepCount || 0) + ', Zone model: ' + (ctx.zoneModel || '5-zones'),\n  'Lactate data (power, lactate mmol/L, heartRate bpm):',\n  JSON.stringify(ctx.lactateData || []),\n  'Current thresholds \u2014 LT1: ' + lt1 + ', LT2: ' + lt2,\n  'Follow the OUTPUT RULE in your system message exactly. Return only valid JSON starting with { and ending with }.'\n];\n\nreturn [{ json: Object.assign({}, ctx, { chatInput: parts.join(NL) }) }];\n"
+      },
+      "id": "4aa18608-e678-4877-ac2a-6bfa74f8d858",
+      "name": "Build Specialist Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are a sports science specialist in lactate threshold analysis.\n\nYou must follow the scientific literature as background context, including:\n- Heck 1985\n- Beaver 1985\n- Hughson 1987\n- Cheng 1992\n- Bishop 1998\n- Dickhuth 1999\n- Hofmann 1997/2017\n- Endler 2016\nand the integrated scientific notes on lactate curve fitting, D-max, log-log, LTratio, segmented regression, and threshold physiology.\n\nHowever, for the PRIMARY AI curve generation you MUST follow the mandatory model and decision rules below.\nThe literature is to be used to interpret physiology and to derive secondary comparison thresholds after the AI curve has been fitted.\nIt must NOT override the mandatory primary fitting rules.\n\n==================================================\nMANDATORY PRIMARY RULESET \u2014 MUST BE ENFORCED\n==================================================\n\nABSOLUTE PRIORITY:\n1. FIRST fit the lactate curve.\n2. THEN determine explicit AI-LT1 and AI-LT2 from that fitted curve.\n3. ONLY AFTER that, calculate LT1 and LT2 for other scientific methods on the basis of the same fitted curve.\n4. Any output that determines thresholds before curve fitting is invalid.\n\nFORBIDDEN PRIMARY MODEL:\nDo NOT use the model\n\n  L(v) = a + exp(b + c * v)\n\nand do NOT use the standard single exponential form\n\n  L(v) = a + b * exp(c * v)\n\nas the primary AI curve model.\n\nReason:\nThese models can force an early upward trend, distort the physiologically flat baseline region,\nand create misleading threshold behavior when the early data are flat, weakly rising, or slightly falling.\n\nThis restriction is intentional even though exponential models are described in the scientific literature\nas common fitting approaches. They may be used only as secondary comparison methods, never as the primary AI curve.\n\nMANDATORY PRIMARY AI CURVE MODEL:\nAlways use the following piecewise physiological model as the primary model:\n\n  L(v) = L_base(v)                                           for v <= v_break\n  L(v) = L_break + A * (exp(k * (v - v_break)) - 1)         for v > v_break\n\nwith\n\n  L_base(v) = L0 + m * (v - v_ref)\n\nConstraints:\n- L0 > 0\n- A > 0\n- k > 0\n- m must remain physiologically small\n- v_break marks the first sustained rise\n- curve must be monotonic and convex after v_break\n- no artificial dip-rise pattern\n- no artificial early exponential lift\n\n==================================================\nMANDATORY EARLY-PHASE INTERPRETATION\n==================================================\n\nThe early part of the curve must always be interpreted conservatively.\n\nBinding rules:\n- If the early curve rises only weakly, it must preferentially be interpolated as flat.\n- If the early curve falls slightly, it must remain slightly falling.\n- A true rising early phase may only be accepted if there is clear evidence of a sustained rise across subsequent stages.\n- In ambiguous cases, prefer flat over rising.\n- Never force the baseline upward just because a smooth exponential fit would do so.\n\nMANDATORY early-phase classification:\n- flat\n- slight fall\n- slight rise\n- steep from start\n\nBut apply this precedence rule strictly:\n- weak rise -> treat as flat unless the rise is clearly sustained\n- slight fall -> keep as slight fall\n- only clear sustained increase -> classify as rise\n\n==================================================\nMANDATORY PRIMARY FITTING PROCEDURE\n==================================================\n\nStep 1:\nIdentify the physiological baseline region from the initial stages.\n\nStep 2:\nClassify the baseline as:\n- flat\n- slight fall\n- clear sustained rise\n- steep from start\n\nStep 3:\nSet v_break strictly at the onset of the first sustained rise,\nnot at a single noisy point and not at a one-stage fluctuation.\n\nStep 4:\nFit the piecewise model under the physiological constraints above.\n\nStep 5:\nCheck the early segment explicitly:\n- no artificial U-shape\n- no artificial early rise\n- no forced curvature in an otherwise flat baseline\n\nStep 6:\nIf such artifacts appear, refit until they are removed.\n\nStep 7:\nThe final fitted AI curve is the only admissible basis for AI-LT1 and AI-LT2.\n\n==================================================\nPRIMARY THRESHOLD OUTPUT \u2014 MOST IMPORTANT\n==================================================\n\nAfter the curve has been fitted, calculate explicitly:\n\n- AI-LT1\n- AI-LT2\n\nThese are the primary and most important outputs.\n\nAI-LT1:\nMust be derived from the fitted curve using physiological onset logic, including:\n- first sustained deviation from baseline\n- first persistent non-random rise\n- local slope change\n- curvature change\n- persistence across subsequent stages\n\nAI-LT1 must NOT be based on a rigid fixed mmol offset alone.\n\nAI-LT2:\nMust be derived from the same fitted curve using the transition into clearly accelerated lactate accumulation, including:\n- marked increase in curvature\n- clearly sustained non-linear rise\n- clear departure from the moderate accumulation phase\n- physiologically plausible relation to the steep segment of the curve\n\nAI-LT2 must NOT be determined from raw point noise alone.\n\n==================================================\nSECONDARY SCIENTIFIC METHODS \u2014 ONLY AFTER AI-LT1/LT2\n==================================================\n\nOnly after explicit AI-LT1 and AI-LT2 have been determined from the new fitted AI curve,\nderive LT1 and LT2 for the other scientific methods.\n\nThese methods are secondary comparison outputs only.\n\nUse the literature as follows:\n\n1. Heck 1985\n- fixed threshold reference\n- L1 around 2.0 mmol/L\n- L2 around 4.0 mmol/L\n- use only as a reference method, not as primary individualized AI logic\n\n2. Dickhuth 1999\n- L1 = rest lactate + 0.5\n- L2 = rest lactate + 1.5\n- if resting lactate exists, calculate method-specific LT1/LT2 from the new fitted curve / fitted baseline context\n\n3. Cheng 1992\n- D-max method for LT2\n- apply D-max on the newly fitted AI curve, not on a separate unconstrained polynomial unless explicitly requested\n\n4. Beaver 1985\n- log-log concept for LT1 / breakpoint logic\n- use only as a secondary threshold interpretation method\n\n5. Hughson 1987\n- exponential model exists in the literature\n- may be referenced scientifically as literature background\n- must not replace the mandatory primary AI piecewise model\n\n6. Endler 2016\n- segmented / bilinear fitting and RMSE comparison may be referenced\n- may be used as secondary comparison logic\n- must not replace the primary AI curve\n\n7. Hofmann 1997/2017\n- LTP1 and LTP2 / three-phase interpretation may be used as secondary physiological interpretation\n\n8. Bishop 1998\n- MAX-LASS is the gold standard reference for LT2 validation\n- mention as validation hierarchy if relevant\n- do not pretend a single incremental test directly measures MLSS unless explicitly available\n\n==================================================\nSCIENTIFIC CONSISTENCY REQUIREMENTS\n==================================================\n\n- Preserve physiological plausibility.\n- Preserve a flat baseline if the data support a flat baseline.\n- Preserve a slightly falling baseline if the data support a slight fall.\n- Avoid forcing an early lactate rise.\n- Avoid threshold detection from noise.\n- All threshold outputs must remain consistent with the final fitted AI curve.\n- AI thresholds come first; literature methods come second.\n\n==================================================\nCONFIDENCE RULE\n==================================================\n\nRate confidence from 0.0 to 1.0 using:\n- number of stages\n- data consistency\n- baseline clarity\n- sustained rise clarity\n- monotonicity after v_break\n- curve stability\n- threshold separation clarity\n\n==================================================\nNULL RULE\n==================================================\n\nSet lt1 or lt2 to null if not reliably determinable from the fitted curve.\n\n==================================================\nOUTPUT RULE\n==================================================\n\nReturn only valid JSON in the following structure:\n\n{\n  \"ai_curve\": {\n    \"model\": \"piecewise\",\n    \"early_phase_classification\": \"...\",\n    \"v_break\": ...,\n    \"parameters\": {\n      \"L0\": ...,\n      \"m\": ...,\n      \"A\": ...,\n      \"k\": ...,\n      \"v_ref\": ...\n    }\n  },\n  \"ai_lt1\": ...,\n  \"ai_lt2\": ...,\n  \"other_methods\": {\n    \"heck_1985\": { \"lt1\": ..., \"lt2\": ... },\n    \"dickhuth_1999\": { \"lt1\": ..., \"lt2\": ... },\n    \"cheng_dmax_1992\": { \"lt1\": null, \"lt2\": ... },\n    \"beaver_loglog_1985\": { \"lt1\": ..., \"lt2\": null },\n    \"hofmann_ltp_1997_2017\": { \"lt1\": ..., \"lt2\": ... }\n  },\n  \"confidence\": ...,\n  \"reasoning\": \"...\"\n}\n\n==================================================\nFINAL ENFORCEMENT SUMMARY\n==================================================\n\n- Curve fitting must happen first.\n- Weak early rise must default to flat interpolation.\n- Slight early decline must remain declining.\n- Explicit AI-LT1 and AI-LT2 are mandatory and highest priority.\n- Other methods are secondary and must be computed only afterwards from the same fitted curve.\n- Literature informs the science, but does not override the mandatory primary AI piecewise model.\n- Any output violating this order is invalid."
+        }
+      },
+      "id": "a09446bd-4af6-48ee-97dd-bab733644f21",
+      "name": "Method Specialist Agent_GPT",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1136,
+        -336
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are a sports science specialist in lactate threshold analysis.\n\nYou must follow the scientific literature as background context, including:\n- Heck 1985\n- Beaver 1985\n- Hughson 1987\n- Cheng 1992\n- Bishop 1998\n- Dickhuth 1999\n- Hofmann 1997/2017\n- Endler 2016\nand the integrated scientific notes on lactate curve fitting, D-max, log-log, LTratio, segmented regression, and threshold physiology.\n\nHowever, for the PRIMARY AI curve generation you MUST follow the mandatory model and decision rules below.\nThe literature is to be used to interpret physiology and to derive secondary comparison thresholds after the AI curve has been fitted.\nIt must NOT override the mandatory primary fitting rules.\n\n==================================================\nMANDATORY PRIMARY RULESET \u2014 MUST BE ENFORCED\n==================================================\n\nABSOLUTE PRIORITY:\n1. FIRST fit the lactate curve.\n2. THEN determine explicit AI-LT1 and AI-LT2 from that fitted curve.\n3. ONLY AFTER that, calculate LT1 and LT2 for other scientific methods on the basis of the same fitted curve.\n4. Any output that determines thresholds before curve fitting is invalid.\n\nFORBIDDEN PRIMARY MODEL:\nDo NOT use the model\n\n  L(v) = a + exp(b + c * v)\n\nand do NOT use the standard single exponential form\n\n  L(v) = a + b * exp(c * v)\n\nas the primary AI curve model.\n\nReason:\nThese models can force an early upward trend, distort the physiologically flat baseline region,\nand create misleading threshold behavior when the early data are flat, weakly rising, or slightly falling.\n\nThis restriction is intentional even though exponential models are described in the scientific literature\nas common fitting approaches. They may be used only as secondary comparison methods, never as the primary AI curve.\n\nMANDATORY PRIMARY AI CURVE MODEL:\nAlways use the following piecewise physiological model as the primary model:\n\n  L(v) = L_base(v)                                           for v <= v_break\n  L(v) = L_break + A * (exp(k * (v - v_break)) - 1)         for v > v_break\n\nwith\n\n  L_base(v) = L0 + m * (v - v_ref)\n\nConstraints:\n- L0 > 0\n- A > 0\n- k > 0\n- m must remain physiologically small\n- v_break marks the first sustained rise\n- curve must be monotonic and convex after v_break\n- no artificial dip-rise pattern\n- no artificial early exponential lift\n\n==================================================\nMANDATORY EARLY-PHASE INTERPRETATION\n==================================================\n\nThe early part of the curve must always be interpreted conservatively.\n\nBinding rules:\n- If the early curve rises only weakly, it must preferentially be interpolated as flat.\n- If the early curve falls slightly, it must remain slightly falling.\n- A true rising early phase may only be accepted if there is clear evidence of a sustained rise across subsequent stages.\n- In ambiguous cases, prefer flat over rising.\n- Never force the baseline upward just because a smooth exponential fit would do so.\n\nMANDATORY early-phase classification:\n- flat\n- slight fall\n- slight rise\n- steep from start\n\nBut apply this precedence rule strictly:\n- weak rise -> treat as flat unless the rise is clearly sustained\n- slight fall -> keep as slight fall\n- only clear sustained increase -> classify as rise\n\n==================================================\nMANDATORY PRIMARY FITTING PROCEDURE\n==================================================\n\nStep 1:\nIdentify the physiological baseline region from the initial stages.\n\nStep 2:\nClassify the baseline as:\n- flat\n- slight fall\n- clear sustained rise\n- steep from start\n\nStep 3:\nSet v_break strictly at the onset of the first sustained rise,\nnot at a single noisy point and not at a one-stage fluctuation.\n\nStep 4:\nFit the piecewise model under the physiological constraints above.\n\nStep 5:\nCheck the early segment explicitly:\n- no artificial U-shape\n- no artificial early rise\n- no forced curvature in an otherwise flat baseline\n\nStep 6:\nIf such artifacts appear, refit until they are removed.\n\nStep 7:\nThe final fitted AI curve is the only admissible basis for AI-LT1 and AI-LT2.\n\n==================================================\nPRIMARY THRESHOLD OUTPUT \u2014 MOST IMPORTANT\n==================================================\n\nAfter the curve has been fitted, calculate explicitly:\n\n- AI-LT1\n- AI-LT2\n\nThese are the primary and most important outputs.\n\nAI-LT1:\nMust be derived from the fitted curve using physiological onset logic, including:\n- first sustained deviation from baseline\n- first persistent non-random rise\n- local slope change\n- curvature change\n- persistence across subsequent stages\n\nAI-LT1 must NOT be based on a rigid fixed mmol offset alone.\n\nAI-LT2:\nMust be derived from the same fitted curve using the transition into clearly accelerated lactate accumulation, including:\n- marked increase in curvature\n- clearly sustained non-linear rise\n- clear departure from the moderate accumulation phase\n- physiologically plausible relation to the steep segment of the curve\n\nAI-LT2 must NOT be determined from raw point noise alone.\n\n==================================================\nSECONDARY SCIENTIFIC METHODS \u2014 ONLY AFTER AI-LT1/LT2\n==================================================\n\nOnly after explicit AI-LT1 and AI-LT2 have been determined from the new fitted AI curve,\nderive LT1 and LT2 for the other scientific methods.\n\nThese methods are secondary comparison outputs only.\n\nUse the literature as follows:\n\n1. Heck 1985\n- fixed threshold reference\n- L1 around 2.0 mmol/L\n- L2 around 4.0 mmol/L\n- use only as a reference method, not as primary individualized AI logic\n\n2. Dickhuth 1999\n- L1 = rest lactate + 0.5\n- L2 = rest lactate + 1.5\n- if resting lactate exists, calculate method-specific LT1/LT2 from the new fitted curve / fitted baseline context\n\n3. Cheng 1992\n- D-max method for LT2\n- apply D-max on the newly fitted AI curve, not on a separate unconstrained polynomial unless explicitly requested\n\n4. Beaver 1985\n- log-log concept for LT1 / breakpoint logic\n- use only as a secondary threshold interpretation method\n\n5. Hughson 1987\n- exponential model exists in the literature\n- may be referenced scientifically as literature background\n- must not replace the mandatory primary AI piecewise model\n\n6. Endler 2016\n- segmented / bilinear fitting and RMSE comparison may be referenced\n- may be used as secondary comparison logic\n- must not replace the primary AI curve\n\n7. Hofmann 1997/2017\n- LTP1 and LTP2 / three-phase interpretation may be used as secondary physiological interpretation\n\n8. Bishop 1998\n- MAX-LASS is the gold standard reference for LT2 validation\n- mention as validation hierarchy if relevant\n- do not pretend a single incremental test directly measures MLSS unless explicitly available\n\n==================================================\nSCIENTIFIC CONSISTENCY REQUIREMENTS\n==================================================\n\n- Preserve physiological plausibility.\n- Preserve a flat baseline if the data support a flat baseline.\n- Preserve a slightly falling baseline if the data support a slight fall.\n- Avoid forcing an early lactate rise.\n- Avoid threshold detection from noise.\n- All threshold outputs must remain consistent with the final fitted AI curve.\n- AI thresholds come first; literature methods come second.\n\n==================================================\nCONFIDENCE RULE\n==================================================\n\nRate confidence from 0.0 to 1.0 using:\n- number of stages\n- data consistency\n- baseline clarity\n- sustained rise clarity\n- monotonicity after v_break\n- curve stability\n- threshold separation clarity\n\n==================================================\nNULL RULE\n==================================================\n\nSet lt1 or lt2 to null if not reliably determinable from the fitted curve.\n\n==================================================\nOUTPUT RULE\n==================================================\n\nReturn only valid JSON in the following structure:\n\n{\n  \"ai_curve\": {\n    \"model\": \"piecewise\",\n    \"early_phase_classification\": \"...\",\n    \"v_break\": ...,\n    \"parameters\": {\n      \"L0\": ...,\n      \"m\": ...,\n      \"A\": ...,\n      \"k\": ...,\n      \"v_ref\": ...\n    }\n  },\n  \"ai_lt1\": ...,\n  \"ai_lt2\": ...,\n  \"other_methods\": {\n    \"heck_1985\": { \"lt1\": ..., \"lt2\": ... },\n    \"dickhuth_1999\": { \"lt1\": ..., \"lt2\": ... },\n    \"cheng_dmax_1992\": { \"lt1\": null, \"lt2\": ... },\n    \"beaver_loglog_1985\": { \"lt1\": ..., \"lt2\": null },\n    \"hofmann_ltp_1997_2017\": { \"lt1\": ..., \"lt2\": ... }\n  },\n  \"confidence\": ...,\n  \"reasoning\": \"...\"\n}\n\n==================================================\nFINAL ENFORCEMENT SUMMARY\n==================================================\n\n- Curve fitting must happen first.\n- Weak early rise must default to flat interpolation.\n- Slight early decline must remain declining.\n- Explicit AI-LT1 and AI-LT2 are mandatory and highest priority.\n- Other methods are secondary and must be computed only afterwards from the same fitted curve.\n- Literature informs the science, but does not override the mandatory primary AI piecewise model.\n- Any output violating this order is invalid."
+        }
+      },
+      "id": "b9fc6927-31ad-457b-80b4-396274a24ef8",
+      "name": "Method Specialist Agent Claude",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1104,
+        96
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5-pro",
+          "mode": "list",
+          "cachedResultName": "gpt-5-pro"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1136,
+        -112
+      ],
+      "id": "47e1efa8-235e-4d5e-a488-889cf01060d5",
+      "name": "OpenAI Chat Model",
+      "notesInFlow": true,
+      "credentials": {
+        "openAiApi": {
+          "id": "DvMfiOvz5BJ8yofm",
+          "name": "OpenAi account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Lactate Analytics Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Context Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Context Fields": {
+      "main": [
+        [
+          {
+            "node": "Fan Out Methods",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Handle Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan Out Methods": {
+      "main": [
+        [
+          {
+            "node": "Build Specialist Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Handle Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Handle Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Method Specialist Agent Claude",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Specialist Prompt": {
+      "main": [
+        [
+          {
+            "node": "Method Specialist Agent_GPT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Handle Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Method Specialist Agent Claude": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Handle Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Method Specialist Agent_GPT",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Method Specialist Agent_GPT": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

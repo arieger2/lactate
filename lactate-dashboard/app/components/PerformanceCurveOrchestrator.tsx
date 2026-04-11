@@ -24,6 +24,12 @@ export default function PerformanceCurveOrchestrator() {
   const [aiVt2, setAiVt2] = useState<{ power: number; heartRate?: number } | null>(null)
   const [aiVo2max, setAiVo2max] = useState<number | null>(null)
   const [aiReasoning, setAiReasoning] = useState<string | null>(null)
+  const [aiMethods, setAiMethods] = useState<import('@/lib/types').MethodComparisonResult[] | null>(null)
+  const [showMethodComparison, setShowMethodComparison] = useState(false)
+  // Cached AI thresholds — survive method switching so switching back to 'adjusted' restores them
+  const cachedAiLt1 = useRef<import('@/lib/types').ThresholdPoint | null>(null)
+  const cachedAiLt2 = useRef<import('@/lib/types').ThresholdPoint | null>(null)
+  const cachedAiZones = useRef<import('@/lib/types').TrainingZone[]>([])
   const popupWindowRef = useRef<Window | null>(null)
   
   // Custom hooks for data and logic
@@ -69,11 +75,13 @@ export default function PerformanceCurveOrchestrator() {
   })
 
   const aiExtras = useMemo(() => ({
-    curve:  aiCurve  ?? undefined,
-    vt1:    aiVt1    ?? undefined,
-    vt2:    aiVt2    ?? undefined,
-    vo2max: aiVo2max ?? undefined,
-  }), [aiCurve, aiVt1, aiVt2, aiVo2max])
+    curve:       aiCurve   ?? undefined,
+    vt1:         aiVt1     ?? undefined,
+    vt2:         aiVt2     ?? undefined,
+    vo2max:      aiVo2max  ?? undefined,
+    methods:     aiMethods ?? undefined,
+    showMethods: showMethodComparison,
+  }), [aiCurve, aiVt1, aiVt2, aiVo2max, aiMethods, showMethodComparison])
 
   const { chartRef, chartInstance, isDragging, zoneBoundaryPositions, onZoneDragStart, onZoneDragEnd } = useChartInteraction({
     webhookData,
@@ -128,6 +136,20 @@ export default function PerformanceCurveOrchestrator() {
       `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
     )
   }
+
+  // Clear AI cache when session changes
+  useEffect(() => {
+    cachedAiLt1.current = null
+    cachedAiLt2.current = null
+    cachedAiZones.current = []
+    setAiCurve(null)
+    setAiVt1(null)
+    setAiVt2(null)
+    setAiVo2max(null)
+    setAiReasoning(null)
+    setAiMethods(null)
+    setShowMethodComparison(false)
+  }, [selectedSessionId])
 
   // Calculate thresholds when data loads
   useEffect(() => {
@@ -268,14 +290,15 @@ export default function PerformanceCurveOrchestrator() {
 
       if (result.lt1 || result.lt2) {
         setSelectedMethod('adjusted')
-        if (result.lt1) setLt1(result.lt1)
-        if (result.lt2) setLt2(result.lt2)
-        if (result.zones) setTrainingZones(result.zones)
-        if (result.curve)   setAiCurve(result.curve)
-        if (result.vt1)     setAiVt1(result.vt1)
-        if (result.vt2)     setAiVt2(result.vt2)
+        if (result.lt1) { setLt1(result.lt1); cachedAiLt1.current = result.lt1 }
+        if (result.lt2) { setLt2(result.lt2); cachedAiLt2.current = result.lt2 }
+        if (result.zones) { setTrainingZones(result.zones); cachedAiZones.current = result.zones }
+        if (result.curve)      setAiCurve(result.curve)
+        if (result.vt1)        setAiVt1(result.vt1)
+        if (result.vt2)        setAiVt2(result.vt2)
         if (result.vo2max != null) setAiVo2max(result.vo2max)
-        if (result.reasoning) setAiReasoning(result.reasoning)
+        if (result.reasoning)  setAiReasoning(result.reasoning)
+        if (result.methods)    setAiMethods(result.methods)
       } else {
         setAiReasoning(result.reasoning ?? null)
       }
@@ -338,7 +361,14 @@ export default function PerformanceCurveOrchestrator() {
             selectedMethod={selectedMethod}
             onMethodChange={(method) => {
               setSelectedMethod(method)
-              calculateThresholdsWrapper(webhookData, method, currentUnit, zoneModel)
+              if (method === 'adjusted' && cachedAiLt1.current && cachedAiLt2.current) {
+                // Restore cached AI thresholds — no recalculation needed
+                setLt1(cachedAiLt1.current)
+                setLt2(cachedAiLt2.current)
+                if (cachedAiZones.current.length > 0) setTrainingZones(cachedAiZones.current)
+              } else {
+                calculateThresholdsWrapper(webhookData, method, currentUnit, zoneModel)
+              }
             }}
             onManualLoad={handleManualLoad}
             onAIAdjust={handleAIAdjust}
@@ -432,6 +462,9 @@ export default function PerformanceCurveOrchestrator() {
         aiVt2={aiVt2}
         aiVo2max={aiVo2max}
         aiReasoning={aiReasoning}
+        aiMethods={aiMethods}
+        showMethodComparison={showMethodComparison}
+        onToggleMethodComparison={() => setShowMethodComparison(v => !v)}
       />
 
       {/* 1.5 Training Zones Description (dynamisch basierend auf Zonenmodell) */}

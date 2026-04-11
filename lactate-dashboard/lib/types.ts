@@ -103,6 +103,14 @@ export interface VentilatorThreshold {
   vo2?: number
 }
 
+export interface MethodComparisonResult {
+  method: string
+  lt1: ThresholdPoint | null
+  lt2: ThresholdPoint | null
+  confidence: number
+  reasoning?: string
+}
+
 export interface AIAnalysisResponse {
   lt1: ThresholdPoint | null
   lt2: ThresholdPoint | null
@@ -112,6 +120,7 @@ export interface AIAnalysisResponse {
   curve?: Array<{ power: number; lactate: number }>
   method: string | null
   reasoning: string | null
+  methods?: MethodComparisonResult[]
 }
 
 export interface TrainingZone {
