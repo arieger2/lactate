@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AIAnalysisResponse } from '@/lib/types'
+import { smoothLactateCurve } from '@/lib/lactateCurveSmoother'
 
 /**
  * AI-Analyse Webhook Endpoint
@@ -87,6 +88,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const smooth = smoothLactateCurve(testData)
+
     const payload = {
       data: {
         sessionId,
@@ -95,6 +98,8 @@ export async function POST(request: NextRequest) {
         unit,
         currentMethod: method,
         lactateData: testData,
+        smoothedCurve: smooth?.smoothedCurve ?? null,
+        smoothModel:   smooth?.smoothModel   ?? null,
         currentThresholds: {
           lt1: currentLt1 ?? null,
           lt2: currentLt2 ?? null,

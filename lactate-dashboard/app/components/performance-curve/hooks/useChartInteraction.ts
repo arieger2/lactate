@@ -16,6 +16,7 @@ interface UseChartInteractionProps {
   setTrainingZones: (zones: TrainingZone[]) => void
   setSelectedMethod: (method: ThresholdMethod) => void
   aiExtras?: AiChartExtras
+  smoothedCurve?: Array<{ power: number; lactate: number }> | null
 }
 
 interface UseChartInteractionReturn {
@@ -38,7 +39,8 @@ export function useChartInteraction({
   setLt2,
   setTrainingZones,
   setSelectedMethod,
-  aiExtras
+  aiExtras,
+  smoothedCurve,
 }: UseChartInteractionProps): UseChartInteractionReturn {
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstanceRef = useRef<echarts.ECharts | null>(null)
@@ -148,7 +150,8 @@ export function useChartInteraction({
         lt2,
         isDragging.type !== null,
         currentUnit,
-        aiExtras
+        aiExtras,
+        smoothedCurve
       )
 
       chartInstanceRef.current.setOption(options, true)
@@ -186,7 +189,7 @@ export function useChartInteraction({
         setZoneBoundaryPositions(positions);
       }
     }
-  }, [webhookData, trainingZones, lt1, lt2, isDragging, currentUnit, aiExtras])
+  }, [webhookData, trainingZones, lt1, lt2, isDragging, currentUnit, aiExtras, smoothedCurve])
 
   // Handle window resize
   useEffect(() => {

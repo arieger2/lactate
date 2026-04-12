@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCustomer } from '@/lib/CustomerContext'
 import { getMethodDisplayName } from '@/lib/lactateCalculations'
+import { smoothLactateCurve } from '@/lib/lactateCurveSmoother'
 import { exportLactateAnalysisToPDF } from '@/lib/pdfExport'
 import SessionSelection from './performance-curve/SessionSelection'
 import ThresholdMethodSelector from './performance-curve/ThresholdMethodSelector'
@@ -75,6 +76,11 @@ export default function PerformanceCurveOrchestrator() {
     selectedCustomerId: selectedCustomer?.customer_id || null
   })
 
+  const smoothedCurve = useMemo(
+    () => smoothLactateCurve(webhookData)?.smoothedCurve ?? null,
+    [webhookData]
+  )
+
   const aiExtras = useMemo(() => ({
     curve:       aiCurve   ?? undefined,
     vt1:         aiVt1     ?? undefined,
@@ -96,6 +102,7 @@ export default function PerformanceCurveOrchestrator() {
     setTrainingZones,
     setSelectedMethod,
     aiExtras,
+    smoothedCurve,
   })
 
   // Listen for updates from popup window

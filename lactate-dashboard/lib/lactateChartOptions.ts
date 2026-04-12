@@ -25,7 +25,8 @@ export function createLactateChartOptions(
   lt2: ThresholdPoint | null,
   isDragging: boolean,
   unit: string = 'watt',
-  aiExtras?: AiChartExtras
+  aiExtras?: AiChartExtras,
+  smoothedCurve?: Array<{ power: number; lactate: number }> | null
 ): echarts.EChartsOption {
   // Determine axis label based on unit
   const xAxisLabel = unit === 'kmh' ? 'Geschwindigkeit (km/h)' : 'Leistung (W)'
@@ -186,19 +187,24 @@ export function createLactateChartOptions(
       bottom: 80
     },
     series: [
-      // Lactate curve (complete stages) mit Trainingszonen als Hintergrundbereiche
+      // Lactate curve — uses pre-fitted smooth curve when available, else raw data
       {
         name: 'Laktat',
         type: 'line' as const,
-        data: completeData,
-        smooth: true,
+        data: smoothedCurve
+          ? smoothedCurve.map(p => [p.power, p.lactate])
+          : completeData,
+        smooth: !smoothedCurve,   // ECharts smoothing only needed for raw data
         lineStyle: {
           color: '#ef4444',
-          width: 3
+          width: smoothedCurve ? 2 : 3
         },
         itemStyle: {
-          color: '#ef4444'
+          color: '#ef4444',
+          // Hide individual point symbols on the dense smooth curve
+          ...(smoothedCurve ? { opacity: 0 } : {}),
         },
+        showSymbol: !smoothedCurve,
         yAxisIndex: 0,
         markArea: {
           silent: true,
@@ -248,37 +254,41 @@ export function createLactateChartOptions(
           }])
         }
       },
-      // Interpolated segment (last stage) - LINEAR fallback if parabola failed
-      ...(hasInterpolatedLastStage && interpolatedSegment.length > 0 ? [{
+      // Raw measurement points — visible as markers when smooth curve is shown as the line
+      ...(smoothedCurve ? [{
+        name: 'Messwerte',
+        type: 'scatter' as const,
+        data: webhookData.map(d => [d.power, d.lactate]),
+        symbol: 'circle',
+        symbolSize: 8,
+        itemStyle: { color: '#ef4444', opacity: 0.85 },
+        yAxisIndex: 0,
+        tooltip: {
+          formatter: (params: any) =>
+            `${tooltipLabel}: ${params.value[0]} ${tooltipUnit}<br/>Laktat: ${params.value[1].toFixed(2)} mmol/L`
+        }
+      }] : []),
+      // Interpolated segment (last stage) - LINEAR fallback if parabola failed — only when no smooth curve
+      ...(!smoothedCurve && hasInterpolatedLastStage && interpolatedSegment.length > 0 ? [{
         name: 'Laktat (interpoliert)',
         type: 'line' as const,
         data: interpolatedSegment,
         smooth: true,
-        lineStyle: {
-          color: '#ef4444',
-          width: 3
-        },
-        itemStyle: {
-          color: '#ef4444'
-        },
+        lineStyle: { color: '#ef4444', width: 3 },
+        itemStyle: { color: '#ef4444' },
         yAxisIndex: 0,
         showSymbol: true,
         symbol: 'circle',
         symbolSize: 8
       }] : []),
-      // Parabolic curve through last 3 points
-      ...(parabolaCurveData.length > 0 ? [{
+      // Parabolic curve through last 3 points — only when no smooth curve
+      ...(!smoothedCurve && parabolaCurveData.length > 0 ? [{
         name: 'Laktat (quadratisch)',
         type: 'line' as const,
         data: parabolaCurveData,
         smooth: true,
-        lineStyle: {
-          color: '#ef4444',
-          width: 3
-        },
-        itemStyle: {
-          color: '#ef4444'
-        },
+        lineStyle: { color: '#ef4444', width: 3 },
+        itemStyle: { color: '#ef4444' },
         yAxisIndex: 0,
         showSymbol: true,
         symbol: 'circle',
