@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCustomer } from '@/lib/CustomerContext'
-import { getMethodDisplayName, calculateTrainingZones } from '@/lib/lactateCalculations'
+import { getMethodDisplayName, calculateTrainingZones, calculateThresholds } from '@/lib/lactateCalculations'
 import { smoothLactateCurve } from '@/lib/lactateCurveSmoother'
 import { exportLactateAnalysisToPDF } from '@/lib/pdfExport'
 import SessionSelection from './performance-curve/SessionSelection'
@@ -345,7 +345,21 @@ export default function PerformanceCurveOrchestrator() {
         if (result.vt2)        setAiVt2(result.vt2)
         if (result.vo2max != null) setAiVo2max(result.vo2max)
         if (result.reasoning)  setAiReasoning(result.reasoning)
-        if (result.methods)    setAiMethods(result.methods)
+
+        // Compute method comparison using the dashboard's own implementations —
+        // not the AI's estimates — so the values match the method buttons exactly.
+        const compMethods: import('@/lib/types').MethodComparisonResult[] = (
+          ['dickhuth', 'dmax', 'mader', 'moddmax'] as const
+        ).map(m => {
+          const r = calculateThresholds(webhookData, m)
+          return {
+            method: getMethodDisplayName(m),
+            lt1: r.lt1 ? normalizeLt(r.lt1) : null,
+            lt2: r.lt2 ? normalizeLt(r.lt2) : null,
+            confidence: 1,
+          }
+        })
+        setAiMethods(compMethods)
       } else {
         setAiReasoning(result.reasoning ?? null)
       }
