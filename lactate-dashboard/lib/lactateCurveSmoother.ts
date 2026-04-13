@@ -1,14 +1,17 @@
 /**
- * Lactate Curve Smoother — Piecewise Hybrid Model
+ * Lactate Curve Smoother — public API wrapper around fitLactateCurve
  *
- * Phase 1: Linear baseline  L(v) = m·v + b
- *   - weak rise (< weakRiseThreshold) → forced flat (m = 0)
- *   - slight fall → kept as-is
- * Phase 2: Exponential rise  L(v) = yBreak + A·(exp(k·(v − vBreak)) − 1)
- *   fitted via brute-force grid search over (A, k)
+ * Public types / function signature are unchanged so all consumers compile
+ * without modification. The internal algorithm has been replaced with
+ * fitLactateCurve which selects between three fitting modes based on the
+ * slope of the first data segment:
+ *
+ *   · full_exponential      — rising from the very first point
+ *   · piecewise_flat_start  — flat/near-flat initial segment + exponential tail
+ *   · negative_start_turn   — falling initial segment + exponential tail
  */
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Public types (unchanged) ──────────────────────────────────────────────────
 
 export interface SmoothedPoint {
   power:   number
@@ -28,77 +31,206 @@ export interface SmoothResult {
   smoothModel:   SmoothModel
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────────────
+// ── Internal types ────────────────────────────────────────────────────────────
 
 interface Pt { x: number; y: number }
 
-function linearRegression(pts: Pt[]): { m: number; b: number } {
-  const n   = pts.length
-  const sx  = pts.reduce((a, p) => a + p.x, 0)
-  const sy  = pts.reduce((a, p) => a + p.y, 0)
-  const sxx = pts.reduce((a, p) => a + p.x * p.x, 0)
-  const sxy = pts.reduce((a, p) => a + p.x * p.y, 0)
-  const det = n * sxx - sx * sx
-  const m   = Math.abs(det) < 1e-12 ? 0 : (n * sxy - sx * sy) / det
-  const b   = (sy - m * sx) / n
-  return { m, b }
+interface FitCfg {
+  fineSteps:            number
+  horizontalThreshold:  number
+  expA_Min:             number
+  expA_Max:             number
+  expA_Step:            number
+  expK_Min:             number
+  expK_Max:             number
+  expK_Step:            number
 }
 
-function detectBaselineEnd(
-  pts: Pt[],
-  weakRiseThreshold: number,
-  sustainedRiseCount: number,
-  baselinePointsMin:  number,
-): number {
-  if (pts.length <= baselinePointsMin) return baselinePointsMin - 1
+interface FitBase {
+  mode:  string
+  err:   number
+  curve: (x: number) => number
+  // fields that may or may not be present depending on mode
+  x0?:    number
+  y0?:    number
+  A?:     number
+  k?:     number
+  m?:     number
+  b?:     number
+  xBreak?: number
+  yBreak?: number
+  xMin?:   number
+  yMin?:   number
+}
 
-  for (let i = baselinePointsMin - 1; i < pts.length - sustainedRiseCount; i++) {
-    const baseline        = pts.slice(0, i + 1)
-    const { m, b }        = linearRegression(baseline)
-    let   sustainedRise   = true
-    let   prevY           = baseline[baseline.length - 1].y
+interface FitResult {
+  horizontalThreshold: number
+  firstSegmentSlope:   number
+  fit:                 FitBase
+  grid:                Pt[]
+}
 
-    for (let j = 1; j <= sustainedRiseCount; j++) {
-      const p    = pts[i + j]
-      const pred = m * p.x + b
-      if (p.y <= prevY || p.y <= pred + 0.05) { sustainedRise = false; break }
-      prevY = p.y
-    }
+// ── Core algorithm ────────────────────────────────────────────────────────────
 
-    if (sustainedRise) return i
+function fitLactateCurve(
+  data: Array<{ x: number | string; y: number | string }>,
+  options: Partial<FitCfg> = {},
+): FitResult {
+  const cfg: FitCfg = {
+    fineSteps:           options.fineSteps           ?? 400,
+    horizontalThreshold: options.horizontalThreshold ?? 0.005,
+    expA_Min:            options.expA_Min            ?? 0.01,
+    expA_Max:            options.expA_Max            ?? 6.0,
+    expA_Step:           options.expA_Step           ?? 0.01,
+    expK_Min:            options.expK_Min            ?? 0.0005,
+    expK_Max:            options.expK_Max            ?? 1.5,
+    expK_Step:           options.expK_Step           ?? 0.0005,
   }
 
-  return baselinePointsMin - 1
-}
+  const pts: Pt[] = [...data]
+    .map(d => ({ x: Number(d.x), y: Number(d.y) }))
+    .sort((a, b) => a.x - b.x)
 
-function fitExponentialTail(
-  pts:    Pt[],
-  xBreak: number,
-  yBreak: number,
-  yMax:   number,
-): { A: number; k: number } {
-  const tail = pts.filter(p => p.x > xBreak)
-  if (tail.length < 2) return { A: 0.1, k: 0.3 }
+  if (pts.length < 4) throw new Error('At least 4 data points required.')
 
-  // Dynamic A ceiling: must be able to reach the highest observed lactate
-  const aMax = Math.max(3.0, (yMax - yBreak) * 1.5)
+  function linearRegression(subset: Pt[]): { m: number; b: number } {
+    const n   = subset.length
+    const sx  = subset.reduce((a, p) => a + p.x, 0)
+    const sy  = subset.reduce((a, p) => a + p.y, 0)
+    const sxx = subset.reduce((a, p) => a + p.x * p.x, 0)
+    const sxy = subset.reduce((a, p) => a + p.x * p.y, 0)
+    const den = n * sxx - sx * sx
+    const m   = Math.abs(den) < 1e-12 ? 0 : (n * sxy - sx * sy) / den
+    const b   = (sy - m * sx) / n
+    return { m, b }
+  }
 
-  let best = { A: 0.1, k: 0.3, err: Infinity }
+  function localSlope(p1: Pt, p2: Pt): number {
+    const dx = p2.x - p1.x
+    return Math.abs(dx) < 1e-12 ? 0 : (p2.y - p1.y) / dx
+  }
 
-  for (let ai = 1; ai <= 150; ai++) {
-    const A = aMax * ai / 150
-    for (let ki = 1; ki <= 80; ki++) {
-      const k = 0.01 + 1.5 * ki / 80
-      let err = 0
-      for (const p of tail) {
-        const yHat = yBreak + A * (Math.exp(k * (p.x - xBreak)) - 1)
-        err += (p.y - yHat) ** 2
+  function fitExpTail(
+    tailPts: Pt[],
+    xBreak: number,
+    yBreak: number,
+  ): { A: number; k: number; err: number } {
+    if (tailPts.length < 2) return { A: 0.1, k: 0.3, err: Infinity }
+
+    let best = { A: 0.1, k: 0.3, err: Infinity }
+
+    for (let A = cfg.expA_Min; A <= cfg.expA_Max + 1e-12; A += cfg.expA_Step) {
+      for (let k = cfg.expK_Min; k <= cfg.expK_Max + 1e-12; k += cfg.expK_Step) {
+        let err = 0
+        for (const p of tailPts) {
+          const yHat = yBreak + A * (Math.exp(k * (p.x - xBreak)) - 1)
+          err += (p.y - yHat) ** 2
+        }
+        if (err < best.err) best = { A, k, err }
       }
-      if (err < best.err) best = { A, k, err }
+    }
+
+    return best
+  }
+
+  function fitExpFromStart(points: Pt[]): FitBase {
+    const x0 = points[0].x
+    const y0 = points[0].y
+
+    let best = { A: 0.1, k: 0.2, err: Infinity }
+
+    for (let A = cfg.expA_Min; A <= cfg.expA_Max + 1e-12; A += cfg.expA_Step) {
+      for (let k = cfg.expK_Min; k <= cfg.expK_Max + 1e-12; k += cfg.expK_Step) {
+        let err = 0
+        for (const p of points) {
+          const yHat = y0 + A * (Math.exp(k * (p.x - x0)) - 1)
+          err += (p.y - yHat) ** 2
+        }
+        if (err < best.err) best = { A, k, err }
+      }
+    }
+
+    const { A, k } = best
+    return {
+      mode:  'full_exponential',
+      x0, y0, A, k,
+      err:   best.err,
+      curve: (x: number) => y0 + A * (Math.exp(k * (x - x0)) - 1),
     }
   }
 
-  return { A: best.A, k: best.k }
+  function fitPiecewiseFlatStart(points: Pt[]): FitBase {
+    const s2       = localSlope(points[1], points[2])
+    const breakIdx = Math.abs(s2) <= cfg.horizontalThreshold ? 2 : 1
+
+    const baseline = points.slice(0, breakIdx + 1)
+    const tail     = points.slice(breakIdx + 1)
+
+    const { m, b } = linearRegression(baseline)
+    const xBreak   = baseline[baseline.length - 1].x
+    const yBreak   = m * xBreak + b
+
+    const bestTail = fitExpTail(tail, xBreak, yBreak)
+    const { A, k } = bestTail
+
+    const curveFn = (x: number) =>
+      x <= xBreak ? m * x + b : yBreak + A * (Math.exp(k * (x - xBreak)) - 1)
+
+    let totalErr = 0
+    for (const p of points) totalErr += (p.y - curveFn(p.x)) ** 2
+
+    return { mode: 'piecewise_flat_start', xBreak, yBreak, m, b, A, k, err: totalErr, curve: curveFn }
+  }
+
+  function fitNegativeStartTurn(points: Pt[]): FitBase | null {
+    let bestModel: FitBase | null = null
+
+    for (let minIdx = 1; minIdx <= points.length - 2; minIdx++) {
+      const left  = points.slice(0, minIdx + 1)
+      const right = points.slice(minIdx + 1)
+
+      const { m, b } = linearRegression(left)
+      const xMin = left[left.length - 1].x
+      const yMin = m * xMin + b
+
+      if (m >= -cfg.horizontalThreshold) continue
+
+      const bestTail = fitExpTail(right, xMin, yMin)
+      const { A, k } = bestTail
+
+      const curveFn = (x: number) =>
+        x <= xMin ? m * x + b : yMin + A * (Math.exp(k * (x - xMin)) - 1)
+
+      let totalErr = 0
+      for (const p of points) totalErr += (p.y - curveFn(p.x)) ** 2
+
+      const model: FitBase = { mode: 'negative_start_turn', xMin, yMin, m, b, A, k, err: totalErr, curve: curveFn }
+      if (!bestModel || model.err < bestModel.err) bestModel = model
+    }
+
+    return bestModel
+  }
+
+  const s1 = localSlope(pts[0], pts[1])
+
+  let fit: FitBase
+  if (Math.abs(s1) <= cfg.horizontalThreshold) {
+    fit = fitPiecewiseFlatStart(pts)
+  } else if (s1 > 0) {
+    fit = fitExpFromStart(pts)
+  } else {
+    fit = fitNegativeStartTurn(pts) ?? fitExpFromStart(pts)
+  }
+
+  const xMin = pts[0].x
+  const xMax = pts[pts.length - 1].x
+  const grid: Pt[] = []
+  for (let i = 0; i <= cfg.fineSteps; i++) {
+    const x = xMin + (xMax - xMin) * (i / cfg.fineSteps)
+    grid.push({ x, y: fit.curve(x) })
+  }
+
+  return { horizontalThreshold: cfg.horizontalThreshold, firstSegmentSlope: s1, fit, grid }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -106,84 +238,64 @@ function fitExponentialTail(
 export function smoothLactateCurve(
   rawData: Array<{ power: number | string; lactate: number | string }>,
   options: {
-    weakRiseThreshold?: number
-    sustainedRiseCount?: number
-    baselinePointsMin?:  number
-    outputPoints?:       number
+    fineSteps?:           number
+    horizontalThreshold?: number
   } = {},
 ): SmoothResult | null {
-  const weakRiseThreshold = options.weakRiseThreshold ?? 0.08
-  const sustainedRiseCount = options.sustainedRiseCount ?? 2
-  const baselinePointsMin  = options.baselinePointsMin  ?? 3
-  const outputPoints       = options.outputPoints        ?? 50
+  if (!rawData || rawData.length < 4) return null
 
-  const pts: Pt[] = rawData
-    .map(d => ({ x: parseFloat(String(d.power ?? 0)), y: parseFloat(String(d.lactate ?? 0)) }))
-    .filter(d => d.x > 0 && d.y > 0)
-    .sort((a, b) => a.x - b.x)
+  let result: FitResult
+  try {
+    const pts = rawData.map(d => ({
+      x: parseFloat(String(d.power   ?? 0)),
+      y: parseFloat(String(d.lactate ?? 0)),
+    })).filter(p => p.x > 0 && p.y > 0)
 
-  if (pts.length < 4) return null
-
-  const xMin  = pts[0].x
-  const xLast = pts[pts.length - 1].x
-  // Extend slightly beyond last point so the curve visually reaches it
-  const xStep = pts.length > 1 ? pts[pts.length - 1].x - pts[pts.length - 2].x : 1
-  const xMax  = xLast + xStep * 0.3
-  const yMax  = Math.max(...pts.map(p => p.y))
-
-  // ── 1. Detect baseline end ────────────────────────────────────────────────
-  const baselineEndIdx = detectBaselineEnd(pts, weakRiseThreshold, sustainedRiseCount, baselinePointsMin)
-  const baselinePts    = pts.slice(0, baselineEndIdx + 1)
-
-  // ── 2. Fit baseline (linear regression) ──────────────────────────────────
-  let { m, b } = linearRegression(baselinePts)
-
-  // Weak positive rise → treat as flat
-  if (m > 0 && m < weakRiseThreshold) {
-    m = 0
-    b = baselinePts.reduce((a, p) => a + p.y, 0) / baselinePts.length
-  }
-  // Slight fall stays as-is
-
-  // ── 3. Breakpoint ─────────────────────────────────────────────────────────
-  const xBreak = pts[baselineEndIdx].x
-  const yBreak = m * xBreak + b
-
-  // ── 4. Fit exponential tail ───────────────────────────────────────────────
-  const { A, k } = fitExponentialTail(pts, xBreak, yBreak, yMax)
-
-  // ── 5. Piecewise curve function ───────────────────────────────────────────
-  function curve(x: number): number {
-    if (x <= xBreak) return m * x + b
-    return yBreak + A * (Math.exp(k * (x - xBreak)) - 1)
+    if (pts.length < 4) return null
+    result = fitLactateCurve(pts, options)
+  } catch {
+    return null
   }
 
-  // ── 6. Generate output points ─────────────────────────────────────────────
-  const smoothedCurve: SmoothedPoint[] = []
-  for (let i = 0; i < outputPoints; i++) {
-    const x = xMin + (xMax - xMin) * i / (outputPoints - 1)
-    smoothedCurve.push({
-      power:   Math.round(x                    * 100) / 100,
-      lactate: Math.round(Math.max(0.1, curve(x)) * 1000) / 1000,
-    })
-  }
+  const { fit, grid, firstSegmentSlope } = result
 
-  const earlyPhase = m === 0 ? 'flat' : m < 0 ? 'slight_fall' : 'slight_rise'
+  // Map grid → SmoothedPoint[]
+  const smoothedCurve: SmoothedPoint[] = grid.map(p => ({
+    power:   Math.round(p.x * 100) / 100,
+    lactate: Math.round(Math.max(0.1, p.y) * 1000) / 1000,
+  }))
 
-  return {
-    smoothedCurve,
-    smoothModel: {
-      model:       'piecewise_hybrid',
-      fit_ok:      true,
-      early_phase: earlyPhase,
-      v_break:     Math.round(xBreak * 100) / 100,
-      params: {
-        L0:     Math.round((m * xMin + b) * 10000) / 10000,
-        m:      Math.round(m              * 10000) / 10000,
-        A:      Math.round(A              * 10000) / 10000,
-        k:      Math.round(k              * 10000) / 10000,
-        yBreak: Math.round(yBreak         * 10000) / 10000,
-      },
+  // Derive SmoothModel fields from fit
+  const early_phase: 'flat' | 'slight_fall' | 'slight_rise' =
+    fit.mode === 'negative_start_turn' ? 'slight_fall'
+    : Math.abs(firstSegmentSlope) <= result.horizontalThreshold ? 'flat'
+    : 'slight_rise'
+
+  const v_break =
+    fit.xBreak ?? fit.xMin ?? fit.x0 ?? smoothedCurve[0]?.power ?? 0
+
+  const yBreak =
+    fit.yBreak ?? fit.yMin ?? fit.y0 ?? smoothedCurve[0]?.lactate ?? 0
+
+  const m = fit.m ?? 0
+  const b = fit.b ?? (fit.y0 ?? 0)
+  const A = fit.A ?? 0
+  const k = fit.k ?? 0
+  const xFirst = smoothedCurve[0]?.power ?? 0
+
+  const smoothModel: SmoothModel = {
+    model:       fit.mode,
+    fit_ok:      true,
+    early_phase,
+    v_break:     Math.round(v_break * 100) / 100,
+    params: {
+      L0:     Math.round((m * xFirst + b) * 10000) / 10000,
+      m:      Math.round(m               * 10000) / 10000,
+      A:      Math.round(A               * 10000) / 10000,
+      k:      Math.round(k               * 10000) / 10000,
+      yBreak: Math.round(yBreak          * 10000) / 10000,
     },
   }
+
+  return { smoothedCurve, smoothModel }
 }

@@ -28,6 +28,22 @@ export function createLactateChartOptions(
   aiExtras?: AiChartExtras,
   smoothedCurve?: Array<{ power: number; lactate: number }> | null
 ): echarts.EChartsOption {
+  // Snap a power value to the y-position on the smoothed curve (linear interpolation).
+  // Used to guarantee LT1/LT2 dots sit visually on the rendered line regardless of
+  // how their stored lactate value was computed.
+  const snapToSmoothedCurve = (power: number): number | null => {
+    if (!smoothedCurve || smoothedCurve.length < 2) return null
+    if (power <= smoothedCurve[0].power) return smoothedCurve[0].lactate
+    if (power >= smoothedCurve[smoothedCurve.length - 1].power) return smoothedCurve[smoothedCurve.length - 1].lactate
+    for (let i = 0; i < smoothedCurve.length - 1; i++) {
+      if (smoothedCurve[i].power <= power && smoothedCurve[i + 1].power >= power) {
+        const ratio = (power - smoothedCurve[i].power) / (smoothedCurve[i + 1].power - smoothedCurve[i].power)
+        return Math.round((smoothedCurve[i].lactate + ratio * (smoothedCurve[i + 1].lactate - smoothedCurve[i].lactate)) * 1000) / 1000
+      }
+    }
+    return null
+  }
+
   // Determine axis label based on unit
   const xAxisLabel = unit === 'kmh' ? 'Geschwindigkeit (km/h)' : 'Leistung (W)'
   const tooltipLabel = unit === 'kmh' ? 'Geschwindigkeit' : 'Leistung'
@@ -146,7 +162,6 @@ export function createLactateChartOptions(
         ...(parabolaCurveData.length > 0 ? ['Laktat (quadratisch)'] :
             hasInterpolatedLastStage && interpolatedSegment.length > 0 ? ['Laktat (interpoliert)'] :
             []),
-        ...(aiExtras?.curve?.length ? ['AI-Kurve'] : []),
         'Herzfrequenz',
         'LT1',
         'LT2',
@@ -315,7 +330,7 @@ export function createLactateChartOptions(
       ...(lt1 ? [{
         name: 'LT1',
         type: 'scatter' as const,
-        data: [[lt1.power, lt1.lactate]],
+        data: [[lt1.power, snapToSmoothedCurve(lt1.power) ?? lt1.lactate]],
         symbolSize: 22,
         animation: false,
         itemStyle: {
@@ -370,7 +385,7 @@ export function createLactateChartOptions(
       ...(lt2 ? [{
         name: 'LT2',
         type: 'scatter' as const,
-        data: [[lt2.power, lt2.lactate]],
+        data: [[lt2.power, snapToSmoothedCurve(lt2.power) ?? lt2.lactate]],
         symbolSize: 22,
         animation: false,
         itemStyle: {
@@ -419,23 +434,6 @@ export function createLactateChartOptions(
               borderRadius: 3
             }
           }]
-        }
-      }] : []),
-      // AI-fitted lactate curve
-      ...(aiExtras?.curve?.length ? [{
-        name: 'AI-Kurve',
-        type: 'line' as const,
-        data: aiExtras.curve.map(p => [p.power, p.lactate]),
-        smooth: false,
-        z: 10,
-        lineStyle: { color: '#8b5cf6', width: 3, type: 'dashed' as const },
-        itemStyle: { color: '#8b5cf6' },
-        yAxisIndex: 0,
-        showSymbol: false,
-        tooltip: {
-          show: true,
-          formatter: (params: any) =>
-            `AI-Kurve<br/>${tooltipLabel}: ${params.value[0]} ${tooltipUnit}<br/>Laktat: ${Number(params.value[1]).toFixed(2)} mmol/L`
         }
       }] : []),
       // VT1 marker

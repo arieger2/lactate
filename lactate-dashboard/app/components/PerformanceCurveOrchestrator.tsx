@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCustomer } from '@/lib/CustomerContext'
-import { getMethodDisplayName } from '@/lib/lactateCalculations'
+import { getMethodDisplayName, calculateTrainingZones } from '@/lib/lactateCalculations'
 import { smoothLactateCurve } from '@/lib/lactateCurveSmoother'
 import { exportLactateAnalysisToPDF } from '@/lib/pdfExport'
 import SessionSelection from './performance-curve/SessionSelection'
@@ -300,9 +300,46 @@ export default function PerformanceCurveOrchestrator() {
 
       if (result.lt1 || result.lt2) {
         setSelectedMethod('adjusted')
-        if (result.lt1) { setLt1(result.lt1); cachedAiLt1.current = result.lt1 }
-        if (result.lt2) { setLt2(result.lt2); cachedAiLt2.current = result.lt2 }
-        if (result.zones) { setTrainingZones(result.zones); cachedAiZones.current = result.zones }
+
+        // Helper: snap lactate to the visible curve at a given power.
+        // Prefers smoothedCurve (what is drawn) over raw webhookData.
+        const snapLactateToData = (power: number): number => {
+          const curve = smoothedCurve ?? webhookData.map(d => ({ power: d.power, lactate: d.lactate }))
+          if (curve.length < 2) return 0
+          if (power <= curve[0].power) return curve[0].lactate
+          if (power >= curve[curve.length - 1].power) return curve[curve.length - 1].lactate
+          for (let i = 0; i < curve.length - 1; i++) {
+            if (curve[i].power <= power && curve[i + 1].power >= power) {
+              const ratio = (power - curve[i].power) / (curve[i + 1].power - curve[i].power)
+              return Math.round((curve[i].lactate + ratio * (curve[i + 1].lactate - curve[i].lactate)) * 100) / 100
+            }
+          }
+          return 0
+        }
+
+        // Normalize: ensure power/lactate are numbers; snap lactate to the actual curve
+        const normalizeLt = (raw: any) => {
+          if (!raw) return null
+          const power = Math.round(Number(raw.power) * 100) / 100
+          return { power, lactate: snapLactateToData(power) }
+        }
+
+        const newLt1 = result.lt1 ? normalizeLt(result.lt1) : null
+        const newLt2 = result.lt2 ? normalizeLt(result.lt2) : null
+
+        if (newLt1) { setLt1(newLt1); cachedAiLt1.current = newLt1 }
+        if (newLt2) { setLt2(newLt2); cachedAiLt2.current = newLt2 }
+
+        // Zones: use n8n result if present, otherwise recalculate from new thresholds
+        if (result.zones && result.zones.length > 0) {
+          setTrainingZones(result.zones)
+          cachedAiZones.current = result.zones
+        } else if (newLt1 && newLt2) {
+          const maxPower = Math.max(...webhookData.map(d => d.power))
+          const zones = calculateTrainingZones(newLt1, newLt2, maxPower, 'adjusted', currentUnit, zoneModel)
+          if (zones) { setTrainingZones(zones); cachedAiZones.current = zones }
+        }
+
         if (result.curve)      setAiCurve(result.curve)
         if (result.vt1)        setAiVt1(result.vt1)
         if (result.vt2)        setAiVt2(result.vt2)
@@ -467,7 +504,6 @@ export default function PerformanceCurveOrchestrator() {
         }}
         onZoneDragStart={onZoneDragStart}
         onZoneDragEnd={onZoneDragEnd}
-        aiCurve={aiCurve}
         aiVt1={aiVt1}
         aiVt2={aiVt2}
         aiVo2max={aiVo2max}

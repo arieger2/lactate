@@ -27,7 +27,6 @@ interface LactateCurveViewProps {
   onZoneDragStart?: (zoneId: number) => void
   onZoneDragEnd?: () => void
   // AI analysis results
-  aiCurve?: Array<{ power: number; lactate: number }> | null
   aiVt1?: { power: number; heartRate?: number; vo2?: number } | null
   aiVt2?: { power: number; heartRate?: number; vo2?: number } | null
   aiVo2max?: number | null
@@ -59,7 +58,6 @@ export default function LactateCurveView({
   onZoneBoundaryDrag,
   onZoneDragStart,
   onZoneDragEnd,
-  aiCurve,
   aiVt1,
   aiVt2,
   aiVo2max,
@@ -263,12 +261,6 @@ export default function LactateCurveView({
             </div>
           )}
 
-          {/* AI curve note */}
-          {aiCurve && aiCurve.length > 0 && (
-            <p className="text-xs text-purple-600 dark:text-purple-400 mb-3">
-              AI-Fitkurve ({aiCurve.length} Punkte) im Diagramm als gestrichelte Linie dargestellt.
-            </p>
-          )}
 
           {/* Reasoning */}
           {aiReasoning && (
