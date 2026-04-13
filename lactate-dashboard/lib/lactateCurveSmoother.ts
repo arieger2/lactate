@@ -2,9 +2,9 @@
  * Lactate Curve Smoother — public API wrapper around fitLactateCurve
  *
  * Three fitting modes based on the slope of the first data segment:
- *   · full_exponential       — rising from the very first point
- *   · piecewise_flat_start   — flat/near-flat initial segment + exponential tail
- *   · smooth_minimum_curve   — falling initial segment, smooth minimum, exponential-like rise
+ *   · full_exponential      — rising from the very first point
+ *   · piecewise_flat_start  — flat/near-flat initial segment + exponential tail
+ *   · smooth_minimum_curve  — falling initial segment, smooth minimum, rising tail
  */
 
 // ── Public types (unchanged) ──────────────────────────────────────────────────
@@ -66,10 +66,9 @@ interface FitBase {
 }
 
 interface FitResult {
-  horizontalThreshold: number
-  firstSegmentSlope:   number
-  fit:                 FitBase
-  grid:                Pt[]
+  firstSegmentSlope: number
+  fit:               FitBase
+  grid:              Pt[]
 }
 
 // ── Core algorithm ────────────────────────────────────────────────────────────
@@ -187,8 +186,8 @@ function fitLactateCurve(
     return { mode: 'piecewise_flat_start', breakIdx, xBreak, yBreak, m, b, A, k, err: totalErr, curve: curveFn }
   }
 
-  function fitNegativeStartSmoothMinimum(points: Pt[]): FitBase {
-    // Find first local minimum (first point where the next is higher)
+  function fitSmoothMinimum(points: Pt[]): FitBase {
+    // Find first local minimum (first index where the next point is higher)
     let minIdx = 1
     for (let i = 1; i < points.length - 1; i++) {
       if (points[i + 1].y > points[i].y) {
@@ -200,11 +199,10 @@ function fitLactateCurve(
     const xMin = points[minIdx].x
     const yMin = points[minIdx].y
 
-    const xArr = points.map(p => p.x)
-    const yArr = points.map(p => p.y)
-
-    const dx   = xArr.map(x => x - xMin)
-    const phi2 = dx.map(v => v * v)
+    const xArr  = points.map(p => p.x)
+    const yArr  = points.map(p => p.y)
+    const dx    = xArr.map(x => x - xMin)
+    const phi2  = dx.map(v => v * v)
     const phi3p = dx.map(v => Math.max(0, v) ** 3)
 
     let best: { alpha: number; beta: number; err: number } | null = null
@@ -249,12 +247,12 @@ function fitLactateCurve(
   const s1 = localSlope(pts[0], pts[1])
 
   let fit: FitBase
-  if (Math.abs(s1) <= cfg.horizontalThreshold) {
+  if (s1 < 0) {
+    fit = fitSmoothMinimum(pts)
+  } else if (Math.abs(s1) <= cfg.horizontalThreshold) {
     fit = fitPiecewiseFlatStart(pts)
-  } else if (s1 > 0) {
-    fit = fitExpFromStart(pts)
   } else {
-    fit = fitNegativeStartSmoothMinimum(pts)
+    fit = fitExpFromStart(pts)
   }
 
   const xMin = pts[0].x
@@ -265,7 +263,7 @@ function fitLactateCurve(
     grid.push({ x, y: fit.curve(x) })
   }
 
-  return { horizontalThreshold: cfg.horizontalThreshold, firstSegmentSlope: s1, fit, grid }
+  return { firstSegmentSlope: s1, fit, grid }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -301,9 +299,11 @@ export function smoothLactateCurve(
   }))
 
   // Derive SmoothModel fields from fit
+  const horizontalThreshold = options.horizontalThreshold ?? 0.005
+
   const early_phase: 'flat' | 'slight_fall' | 'slight_rise' =
     fit.mode === 'smooth_minimum_curve' ? 'slight_fall'
-    : Math.abs(firstSegmentSlope) <= result.horizontalThreshold ? 'flat'
+    : Math.abs(firstSegmentSlope) <= horizontalThreshold ? 'flat'
     : 'slight_rise'
 
   const v_break =
