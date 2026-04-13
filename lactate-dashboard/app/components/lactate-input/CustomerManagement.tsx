@@ -406,7 +406,7 @@ export default function CustomerManagement({
             <span className="text-2xl">🤖</span>
             <h3 className="font-semibold text-purple-900 dark:text-purple-100">AI Analysis</h3>
           </div>
-          <p className="text-sm text-purple-700 dark:text-purple-300">Coming Soon</p>
+          <p className="text-sm text-purple-700 dark:text-purple-300">AI has arrived</p>
           <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Intelligent performance insights</p>
         </div>
       </div>
