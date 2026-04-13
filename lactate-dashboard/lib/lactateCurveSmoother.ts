@@ -1,14 +1,10 @@
 /**
  * Lactate Curve Smoother — public API wrapper around fitLactateCurve
  *
- * Public types / function signature are unchanged so all consumers compile
- * without modification. The internal algorithm has been replaced with
- * fitLactateCurve which selects between three fitting modes based on the
- * slope of the first data segment:
- *
- *   · full_exponential      — rising from the very first point
- *   · piecewise_flat_start  — flat/near-flat initial segment + exponential tail
- *   · negative_start_turn   — falling initial segment + exponential tail
+ * Three fitting modes based on the slope of the first data segment:
+ *   · full_exponential       — rising from the very first point
+ *   · piecewise_flat_start   — flat/near-flat initial segment + exponential tail
+ *   · smooth_minimum_curve   — falling initial segment, smooth minimum, exponential-like rise
  */
 
 // ── Public types (unchanged) ──────────────────────────────────────────────────
@@ -44,23 +40,29 @@ interface FitCfg {
   expK_Min:             number
   expK_Max:             number
   expK_Step:            number
+  betaMin:              number
+  betaMax:              number
+  betaStep:             number
 }
 
 interface FitBase {
-  mode:  string
-  err:   number
-  curve: (x: number) => number
-  // fields that may or may not be present depending on mode
-  x0?:    number
-  y0?:    number
-  A?:     number
-  k?:     number
-  m?:     number
-  b?:     number
-  xBreak?: number
-  yBreak?: number
-  xMin?:   number
-  yMin?:   number
+  mode:      string
+  err:       number
+  curve:     (x: number) => number
+  x0?:       number
+  y0?:       number
+  A?:        number
+  k?:        number
+  m?:        number
+  b?:        number
+  xBreak?:   number
+  yBreak?:   number
+  breakIdx?: number
+  xMin?:     number
+  yMin?:     number
+  minIdx?:   number
+  alpha?:    number
+  beta?:     number
 }
 
 interface FitResult {
@@ -85,6 +87,9 @@ function fitLactateCurve(
     expK_Min:            options.expK_Min            ?? 0.0005,
     expK_Max:            options.expK_Max            ?? 1.5,
     expK_Step:           options.expK_Step           ?? 0.0005,
+    betaMin:             options.betaMin             ?? 0.0,
+    betaMax:             options.betaMax             ?? 0.001,
+    betaStep:            options.betaStep            ?? 0.000001,
   }
 
   const pts: Pt[] = [...data]
@@ -179,36 +184,66 @@ function fitLactateCurve(
     let totalErr = 0
     for (const p of points) totalErr += (p.y - curveFn(p.x)) ** 2
 
-    return { mode: 'piecewise_flat_start', xBreak, yBreak, m, b, A, k, err: totalErr, curve: curveFn }
+    return { mode: 'piecewise_flat_start', breakIdx, xBreak, yBreak, m, b, A, k, err: totalErr, curve: curveFn }
   }
 
-  function fitNegativeStartTurn(points: Pt[]): FitBase | null {
-    let bestModel: FitBase | null = null
-
-    for (let minIdx = 1; minIdx <= points.length - 2; minIdx++) {
-      const left  = points.slice(0, minIdx + 1)
-      const right = points.slice(minIdx + 1)
-
-      const { m, b } = linearRegression(left)
-      const xMin = left[left.length - 1].x
-      const yMin = m * xMin + b
-
-      if (m >= -cfg.horizontalThreshold) continue
-
-      const bestTail = fitExpTail(right, xMin, yMin)
-      const { A, k } = bestTail
-
-      const curveFn = (x: number) =>
-        x <= xMin ? m * x + b : yMin + A * (Math.exp(k * (x - xMin)) - 1)
-
-      let totalErr = 0
-      for (const p of points) totalErr += (p.y - curveFn(p.x)) ** 2
-
-      const model: FitBase = { mode: 'negative_start_turn', xMin, yMin, m, b, A, k, err: totalErr, curve: curveFn }
-      if (!bestModel || model.err < bestModel.err) bestModel = model
+  function fitNegativeStartSmoothMinimum(points: Pt[]): FitBase {
+    // Find first local minimum (first point where the next is higher)
+    let minIdx = 1
+    for (let i = 1; i < points.length - 1; i++) {
+      if (points[i + 1].y > points[i].y) {
+        minIdx = i
+        break
+      }
     }
 
-    return bestModel
+    const xMin = points[minIdx].x
+    const yMin = points[minIdx].y
+
+    const xArr = points.map(p => p.x)
+    const yArr = points.map(p => p.y)
+
+    const dx   = xArr.map(x => x - xMin)
+    const phi2 = dx.map(v => v * v)
+    const phi3p = dx.map(v => Math.max(0, v) ** 3)
+
+    let best: { alpha: number; beta: number; err: number } | null = null
+
+    for (let beta = cfg.betaMin; beta <= cfg.betaMax + 1e-12; beta += cfg.betaStep) {
+      const rhs = yArr.map((y, i) => y - yMin - beta * phi3p[i])
+
+      let num = 0
+      let den = 0
+      for (let i = 0; i < phi2.length; i++) {
+        num += phi2[i] * rhs[i]
+        den += phi2[i] * phi2[i]
+      }
+
+      const alpha = den === 0 ? 0 : num / den
+      if (alpha < 0) continue
+
+      let err = 0
+      for (let i = 0; i < xArr.length; i++) {
+        const yHat = yMin + alpha * phi2[i] + beta * phi3p[i]
+        err += (yArr[i] - yHat) ** 2
+      }
+
+      if (!best || err < best.err) best = { alpha, beta, err }
+    }
+
+    // Fallback if no valid fit found
+    if (!best) best = { alpha: 0, beta: 0, err: Infinity }
+
+    const { alpha, beta } = best
+    return {
+      mode: 'smooth_minimum_curve',
+      minIdx, xMin, yMin, alpha, beta,
+      err:   best.err,
+      curve: (x: number) => {
+        const d = x - xMin
+        return yMin + alpha * d * d + beta * Math.max(0, d) ** 3
+      },
+    }
   }
 
   const s1 = localSlope(pts[0], pts[1])
@@ -219,7 +254,7 @@ function fitLactateCurve(
   } else if (s1 > 0) {
     fit = fitExpFromStart(pts)
   } else {
-    fit = fitNegativeStartTurn(pts) ?? fitExpFromStart(pts)
+    fit = fitNegativeStartSmoothMinimum(pts)
   }
 
   const xMin = pts[0].x
@@ -267,7 +302,7 @@ export function smoothLactateCurve(
 
   // Derive SmoothModel fields from fit
   const early_phase: 'flat' | 'slight_fall' | 'slight_rise' =
-    fit.mode === 'negative_start_turn' ? 'slight_fall'
+    fit.mode === 'smooth_minimum_curve' ? 'slight_fall'
     : Math.abs(firstSegmentSlope) <= result.horizontalThreshold ? 'flat'
     : 'slight_rise'
 
