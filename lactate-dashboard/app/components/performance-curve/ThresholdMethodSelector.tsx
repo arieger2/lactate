@@ -5,7 +5,6 @@ import { ThresholdMethod } from '@/lib/lactateCalculations'
 interface ThresholdMethodSelectorProps {
   selectedMethod: ThresholdMethod
   onMethodChange: (method: ThresholdMethod) => void
-  onManualLoad: () => Promise<void>
   onAIAdjust: () => Promise<void>
   isAILoading?: boolean
 }
@@ -13,7 +12,6 @@ interface ThresholdMethodSelectorProps {
 export default function ThresholdMethodSelector({
   selectedMethod,
   onMethodChange,
-  onManualLoad,
   onAIAdjust,
   isAILoading = false
 }: ThresholdMethodSelectorProps) {
@@ -74,7 +72,7 @@ export default function ThresholdMethodSelector({
         {/* eslint-disable-next-line react/forbid-dom-props */}
         <button
           type="button"
-          onClick={onManualLoad}
+          onClick={() => onMethodChange('adjusted')}
           className={`p-3 text-xs rounded-lg border relative transition-all duration-200 ${
             selectedMethod === 'adjusted'
               ? 'text-gray-800 font-semibold'

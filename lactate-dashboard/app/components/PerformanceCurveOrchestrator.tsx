@@ -31,7 +31,7 @@ export default function PerformanceCurveOrchestrator() {
   // Cached AI thresholds — survive method switching so switching back to 'adjusted' restores them
   const cachedAiLt1 = useRef<import('@/lib/types').ThresholdPoint | null>(null)
   const cachedAiLt2 = useRef<import('@/lib/types').ThresholdPoint | null>(null)
-  const cachedAiZones = useRef<import('@/lib/types').TrainingZone[]>([])
+  const cachedAiZonesMap = useRef<Record<string, import('@/lib/types').TrainingZone[]>>({})
   const popupWindowRef = useRef<Window | null>(null)
   
   // Custom hooks for data and logic
@@ -149,7 +149,7 @@ export default function PerformanceCurveOrchestrator() {
   useEffect(() => {
     cachedAiLt1.current = null
     cachedAiLt2.current = null
-    cachedAiZones.current = []
+    cachedAiZonesMap.current = {}
     setAiCurve(null)
     setAiVt1(null)
     setAiVt2(null)
@@ -255,6 +255,17 @@ export default function PerformanceCurveOrchestrator() {
 
   const handleAIAdjust = async () => {
     if (!webhookData.length) return
+
+    // Restore from cache — no API call needed
+    if (cachedAiLt1.current && cachedAiLt2.current) {
+      setSelectedMethod('adjusted')
+      setLt1(cachedAiLt1.current)
+      setLt2(cachedAiLt2.current)
+      const cachedZones = cachedAiZonesMap.current[zoneModel]
+      if (cachedZones && cachedZones.length > 0) setTrainingZones(cachedZones)
+      return
+    }
+
     setIsAILoading(true)
     // Clear previous AI results and errors
     setAiCurve(null)
@@ -330,14 +341,19 @@ export default function PerformanceCurveOrchestrator() {
         if (newLt1) { setLt1(newLt1); cachedAiLt1.current = newLt1 }
         if (newLt2) { setLt2(newLt2); cachedAiLt2.current = newLt2 }
 
-        // Zones: use n8n result if present, otherwise recalculate from new thresholds
-        if (result.zones && result.zones.length > 0) {
-          setTrainingZones(result.zones)
-          cachedAiZones.current = result.zones
-        } else if (newLt1 && newLt2) {
+        // Zones: calculate all three models and cache each; apply the currently selected one
+        if (newLt1 && newLt2) {
           const maxPower = Math.max(...webhookData.map(d => d.power))
-          const zones = calculateTrainingZones(newLt1, newLt2, maxPower, 'adjusted', currentUnit, zoneModel)
-          if (zones) { setTrainingZones(zones); cachedAiZones.current = zones }
+          for (const model of ['5-zones', '3-zones-a', '3-zones-b'] as const) {
+            const zones = calculateTrainingZones(newLt1, newLt2, maxPower, 'adjusted', currentUnit, model)
+            if (zones) cachedAiZonesMap.current[model] = zones
+          }
+          const activeZones = cachedAiZonesMap.current[zoneModel]
+          if (activeZones && activeZones.length > 0) setTrainingZones(activeZones)
+        } else if (result.zones && result.zones.length > 0) {
+          // n8n returned pre-built zones — store only for current model
+          cachedAiZonesMap.current[zoneModel] = result.zones
+          setTrainingZones(result.zones)
         }
 
         if (result.curve)      setAiCurve(result.curve)
@@ -420,18 +436,23 @@ export default function PerformanceCurveOrchestrator() {
           {/* 1.2 Schwellenmethoden */}
           <ThresholdMethodSelector
             selectedMethod={selectedMethod}
-            onMethodChange={(method) => {
+            onMethodChange={async (method) => {
               setSelectedMethod(method)
-              if (method === 'adjusted' && cachedAiLt1.current && cachedAiLt2.current) {
-                // Restore cached AI thresholds — no recalculation needed
-                setLt1(cachedAiLt1.current)
-                setLt2(cachedAiLt2.current)
-                if (cachedAiZones.current.length > 0) setTrainingZones(cachedAiZones.current)
+              if (method === 'adjusted') {
+                if (cachedAiLt1.current && cachedAiLt2.current) {
+                  // Restore cached AI thresholds — no API call needed
+                  setLt1(cachedAiLt1.current)
+                  setLt2(cachedAiLt2.current)
+                  const cachedZones = cachedAiZonesMap.current[zoneModel]
+                  if (cachedZones && cachedZones.length > 0) setTrainingZones(cachedZones)
+                } else {
+                  // No AI cache — fall back to DB-saved manual thresholds
+                  await handleManualLoad()
+                }
               } else {
                 calculateThresholdsWrapper(webhookData, method, currentUnit, zoneModel)
               }
             }}
-            onManualLoad={handleManualLoad}
             onAIAdjust={handleAIAdjust}
             isAILoading={isAILoading}
           />
@@ -443,6 +464,13 @@ export default function PerformanceCurveOrchestrator() {
             selectedZoneModel={zoneModel}
             onZoneModelChange={(model) => {
               setZoneModel(model)
+              if (selectedMethod === 'adjusted' && cachedAiLt1.current && cachedAiLt2.current) {
+                const cachedZones = cachedAiZonesMap.current[model]
+                if (cachedZones && cachedZones.length > 0) {
+                  setTrainingZones(cachedZones)
+                  return
+                }
+              }
               calculateThresholdsWrapper(webhookData, selectedMethod, currentUnit, model)
             }}
           />
