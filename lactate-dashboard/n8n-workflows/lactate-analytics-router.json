@@ -1,369 +1,880 @@
 {
-  "name": "Lactate Analytics Router",
-  "nodes": [
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "lactate-analytics",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "51d33bc3-bb03-47ea-8628-ccbd9ddfb976",
-      "name": "Lactate Analytics Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        208,
-        304
-      ],
-      "webhookId": "d4bbd495-833d-45c6-9a32-bcb88cdbd4d7"
-    },
-    {
-      "parameters": {
-        "jsCode": "// NOTE: n8n webhook v2 wraps POST body in .body — never remove the raw.body unwrap below\nconst raw = $input.first().json;\nconst body = raw.body || raw;          // webhook v2 puts POST body here\nconst d = body.data || body;\nif (!d.lactateData || !Array.isArray(d.lactateData) || d.lactateData.length < 3) {\n  throw new Error('Zu wenig Laktat-Messpunkte (min. 3)');\n}\nreturn [{ json: {\n  sessionId:         d.sessionId        || null,\n  customerId:        d.customerId       || null,\n  customerName:      d.customerName     || 'Athlet',\n  unit:              d.unit             || 'watt',\n  currentMethod:     d.currentMethod    || 'dmax',\n  zoneModel:         d.zoneModel        || '5-zones',\n  stepCount:         d.stepCount        || d.lactateData.length,\n  testDevice:        d.testDevice       || 'bike',\n  lactateData:       d.lactateData,\n  smoothedCurve:     d.smoothedCurve    || null,\n  smoothModel:       d.smoothModel      || null,\n  currentThresholds: d.currentThresholds || { lt1: null, lt2: null },\n  vt1:               d.vt1    || null,\n  vt2:               d.vt2    || null,\n  vo2max:            d.vo2max != null ? d.vo2max : null,\n  timestamp:         d.timestamp        || new Date().toISOString()\n}}];\n"
-      },
-      "id": "8a84ceb6-ea27-4a57-8926-b5b17b3d2a17",
-      "name": "Parse Context Fields",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        432,
-        304
-      ],
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "const ctx = $input.first().json;\nreturn ['dickhuth','dmax','mader','moddmax'].map(m => ({ json: {\n  targetMethod:      m,\n  sessionId:         ctx.sessionId,\n  customerId:        ctx.customerId,\n  customerName:      ctx.customerName,\n  unit:              ctx.unit,\n  zoneModel:         ctx.zoneModel,\n  stepCount:         ctx.stepCount,\n  testDevice:        ctx.testDevice,\n  lactateData:       ctx.lactateData,\n  smoothedCurve:     ctx.smoothedCurve || null,\n  smoothModel:       ctx.smoothModel   || null,\n  currentThresholds: ctx.currentThresholds,\n  currentMethod:     ctx.currentMethod,\n  vt1:               ctx.vt1   || null,\n  vt2:               ctx.vt2   || null,\n  vo2max:            ctx.vo2max != null ? ctx.vo2max : null\n}}));\n"
-      },
-      "id": "98d0a2fe-56ca-41b1-8c51-57ba3d509140",
-      "name": "Fan Out Methods",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        672,
-        224
-      ],
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Read session context (smoothedCurve from dashboard, lactateData for fallback)\nconst ctx = $('Parse Context Fields').first().json;\nconst lactateData   = ctx.lactateData   || [];\nconst smoothedCurve = ctx.smoothedCurve || null;   // pre-fitted dashboard curve — use as-is\nconst all = $input.all();\n\nfunction extractPower(val) {\n  if (val == null) return null;\n  if (typeof val === 'number' && val > 5) return val;\n  if (typeof val === 'object') {\n    const p = val.power ?? val.load ?? val.v;\n    if (typeof p === 'number' && p > 5) return p;\n  }\n  return null;\n}\n\nfunction lactatFromCurve(power, curve) {\n  if (!curve || curve.length < 2) return null;\n  const sorted = [...curve].sort((a, b) => a.power - b.power);\n  for (let i = 0; i < sorted.length - 1; i++) {\n    const p0 = sorted[i].power, p1 = sorted[i+1].power;\n    if (power >= p0 && power <= p1 && p1 > p0) {\n      const t = (power - p0) / (p1 - p0);\n      return Math.round((sorted[i].lactate + t * (sorted[i+1].lactate - sorted[i].lactate)) * 100) / 100;\n    }\n  }\n  if (power <= sorted[0].power)              return sorted[0].lactate;\n  if (power >= sorted[sorted.length-1].power) return sorted[sorted.length-1].lactate;\n  return null;\n}\n\nfunction lactatFromRaw(power) {\n  const sorted = [...lactateData].sort((a,b) => (a.power||0)-(b.power||0));\n  for (let i = 0; i < sorted.length - 1; i++) {\n    const p0 = sorted[i].power||0, p1 = sorted[i+1].power||0;\n    if (power >= p0 && power <= p1 && p1 > p0) {\n      const t = (power - p0) / (p1 - p0);\n      return sorted[i].lactate + t * (sorted[i+1].lactate - sorted[i].lactate);\n    }\n  }\n  return null;\n}\n\nfunction buildPoint(power) {\n  if (power == null) return null;\n  const lactate = lactatFromCurve(power, smoothedCurve) ?? lactatFromRaw(power) ?? 0;\n  return { power: Math.round(power), lactate: Math.round(lactate * 100) / 100 };\n}\n\nlet bestResult = null;\nconst methodsArray = [];\nconst agentErrors = [];\n\nfor (const item of all) {\n  const out = item.json;\n\n  if (out.error) {\n    const errMsg = typeof out.error === 'string' ? out.error : (out.error.message || JSON.stringify(out.error));\n    agentErrors.push(errMsg);\n    continue;\n  }\n\n  let p = null;\n  if (out.ai_lt1 !== undefined || out.ai_lt2 !== undefined) {\n    p = out;\n  } else {\n    const rawText = (typeof out.output === 'string' ? out.output : '') || (typeof out.text === 'string' ? out.text : '');\n    if (rawText) {\n      const match = rawText.match(/\\{[\\s\\S]*\\}/);\n      if (match) { try { p = JSON.parse(match[0]); } catch(e) {} }\n    }\n  }\n\n  if (!p) continue;\n\n  const lt1Power = extractPower(p.ai_lt1);\n  const lt2Power = extractPower(p.ai_lt2);\n\n  if ((lt1Power != null || lt2Power != null) && !bestResult) {\n    bestResult = {\n      lt1:        lt1Power != null ? buildPoint(lt1Power) : null,\n      lt2:        lt2Power != null ? buildPoint(lt2Power) : null,\n      confidence: p.confidence ?? 0.7,\n      reasoning:  typeof p.reasoning === 'string' ? p.reasoning : ''\n    };\n  }\n\n  if (p.other_methods && typeof p.other_methods === 'object') {\n    for (const [methodKey, methodVal] of Object.entries(p.other_methods)) {\n      if (!methodVal) continue;\n      const mLt1 = extractPower(methodVal.lt1), mLt2 = extractPower(methodVal.lt2);\n      if (mLt1 != null || mLt2 != null) {\n        methodsArray.push({\n          method:     methodKey.replace(/_\\d{4}(_\\d{4})?$/, '').replace(/_/g, '-'),\n          lt1:        mLt1 != null ? buildPoint(mLt1) : null,\n          lt2:        mLt2 != null ? buildPoint(mLt2) : null,\n          confidence: methodVal.confidence ?? 0.5,\n          reasoning:  methodVal.reasoning || ''\n        });\n      }\n    }\n  }\n}\n\n// Algorithmic fallback\nif (!bestResult) {\n  if (lactateData.length >= 3) {\n    const sorted = [...lactateData].sort((a,b) => (a.power||0)-(b.power||0));\n    const baseLactate = sorted[0].lactate;\n    function findPowerAtLactate(target) {\n      for (let i = 0; i < sorted.length - 1; i++) {\n        const l0 = sorted[i].lactate, l1 = sorted[i+1].lactate;\n        const p0 = sorted[i].power||0, p1 = sorted[i+1].power||0;\n        if (l0 <= target && l1 >= target && l1 > l0) return Math.round(p0 + (target-l0)/(l1-l0)*(p1-p0));\n      }\n      return null;\n    }\n    const errorNote = agentErrors.length > 0 ? ' Fehler: ' + agentErrors.join('; ') : ' AI returned no JSON.';\n    bestResult = {\n      lt1:        buildPoint(findPowerAtLactate(baseLactate + 0.5)),\n      lt2:        buildPoint(findPowerAtLactate(baseLactate + 1.5)),\n      confidence: 0.3,\n      reasoning:  'Algorithmic fallback (Dickhuth +0.5/+1.5): baseline=' + baseLactate + ' mmol/L.' + errorNote\n    };\n  } else {\n    throw new Error('Kein valides AI-Ergebnis und zu wenig Daten fuer Fallback');\n  }\n}\n\nreturn [{ json: {\n  success:     true,\n  lt1:         bestResult.lt1,\n  lt2:         bestResult.lt2,\n  vt1:         ctx.vt1    || null,\n  vt2:         ctx.vt2    || null,\n  vo2max:      ctx.vo2max != null ? ctx.vo2max : null,\n  curve:       smoothedCurve,   // always use the pre-fitted dashboard curve\n  method:      'ai',\n  confidence:  bestResult.confidence,\n  reasoning:   bestResult.reasoning,\n  methods:     methodsArray.length > 0 ? methodsArray : null,\n  agentErrors: agentErrors.length > 0 ? agentErrors : null\n}}];\n"
-      },
-      "id": "bbe57db9-6a6b-43f8-8504-e56c6733d916",
-      "name": "Aggregate Results",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1504,
-        80
-      ],
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              }
+    "updatedAt": "2026-04-13T05:36:24.925Z",
+    "createdAt": "2026-01-16T08:20:02.388Z",
+    "id": "ljNATO9oj54uhfzmTM84Z",
+    "name": "Lactate Analytics Router",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "lactate-analytics",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "51d33bc3-bb03-47ea-8628-ccbd9ddfb976",
+            "name": "Lactate Analytics Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                208,
+                304
+            ],
+            "webhookId": "d4bbd495-833d-45c6-9a32-bcb88cdbd4d7"
+        },
+        {
+            "parameters": {
+                "jsCode": "// NOTE: n8n webhook v2 wraps POST body in .body \u2014 never remove the raw.body unwrap below\nconst raw = $input.first().json;\nconst body = raw.body || raw;          // webhook v2 puts POST body here\nconst d = body.data || body;\nif (!d.lactateData || !Array.isArray(d.lactateData) || d.lactateData.length < 3) {\n  throw new Error('Zu wenig Laktat-Messpunkte (min. 3)');\n}\nreturn [{ json: {\n  sessionId:         d.sessionId        || null,\n  customerId:        d.customerId       || null,\n  customerName:      d.customerName     || 'Athlet',\n  unit:              d.unit             || 'watt',\n  currentMethod:     d.currentMethod    || 'dmax',\n  zoneModel:         d.zoneModel        || '5-zones',\n  stepCount:         d.stepCount        || d.lactateData.length,\n  testDevice:        d.testDevice       || 'bike',\n  lactateData:       d.lactateData,\n  smoothedCurve:     d.smoothedCurve    || null,\n  smoothModel:       d.smoothModel      || null,\n  currentThresholds: d.currentThresholds || { lt1: null, lt2: null },\n  vt1:               d.vt1    || null,\n  vt2:               d.vt2    || null,\n  vo2max:            d.vo2max != null ? d.vo2max : null,\n  timestamp:         d.timestamp        || new Date().toISOString()\n}}];\n"
+            },
+            "id": "8a84ceb6-ea27-4a57-8926-b5b17b3d2a17",
+            "name": "Parse Context Fields",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                432,
+                304
+            ],
+            "onError": "continueErrorOutput"
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $input.first().json;\nreturn ['dickhuth','dmax','mader','moddmax'].map(m => ({ json: {\n  targetMethod:      m,\n  sessionId:         ctx.sessionId,\n  customerId:        ctx.customerId,\n  customerName:      ctx.customerName,\n  unit:              ctx.unit,\n  zoneModel:         ctx.zoneModel,\n  stepCount:         ctx.stepCount,\n  testDevice:        ctx.testDevice,\n  lactateData:       ctx.lactateData,\n  smoothedCurve:     ctx.smoothedCurve || null,\n  smoothModel:       ctx.smoothModel   || null,\n  currentThresholds: ctx.currentThresholds,\n  currentMethod:     ctx.currentMethod,\n  vt1:               ctx.vt1   || null,\n  vt2:               ctx.vt2   || null,\n  vo2max:            ctx.vo2max != null ? ctx.vo2max : null\n}}));\n"
+            },
+            "id": "98d0a2fe-56ca-41b1-8c51-57ba3d509140",
+            "name": "Fan Out Methods",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                672,
+                224
+            ],
+            "onError": "continueErrorOutput"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Read session context (smoothedCurve from dashboard, lactateData for fallback)\nconst ctx = $('Parse Context Fields').first().json;\nconst lactateData   = ctx.lactateData   || [];\nconst smoothedCurve = ctx.smoothedCurve || null;   // pre-fitted dashboard curve \u2014 use as-is\nconst all = $input.all();\n\nfunction extractPower(val) {\n  if (val == null) return null;\n  if (typeof val === 'number' && val > 5) return val;\n  if (typeof val === 'object') {\n    const p = val.power ?? val.load ?? val.v;\n    if (typeof p === 'number' && p > 5) return p;\n  }\n  return null;\n}\n\nfunction lactatFromCurve(power, curve) {\n  if (!curve || curve.length < 2) return null;\n  const sorted = [...curve].sort((a, b) => a.power - b.power);\n  for (let i = 0; i < sorted.length - 1; i++) {\n    const p0 = sorted[i].power, p1 = sorted[i+1].power;\n    if (power >= p0 && power <= p1 && p1 > p0) {\n      const t = (power - p0) / (p1 - p0);\n      return Math.round((sorted[i].lactate + t * (sorted[i+1].lactate - sorted[i].lactate)) * 100) / 100;\n    }\n  }\n  if (power <= sorted[0].power)              return sorted[0].lactate;\n  if (power >= sorted[sorted.length-1].power) return sorted[sorted.length-1].lactate;\n  return null;\n}\n\nfunction lactatFromRaw(power) {\n  const sorted = [...lactateData].sort((a,b) => (a.power||0)-(b.power||0));\n  for (let i = 0; i < sorted.length - 1; i++) {\n    const p0 = sorted[i].power||0, p1 = sorted[i+1].power||0;\n    if (power >= p0 && power <= p1 && p1 > p0) {\n      const t = (power - p0) / (p1 - p0);\n      return sorted[i].lactate + t * (sorted[i+1].lactate - sorted[i].lactate);\n    }\n  }\n  return null;\n}\n\nfunction buildPoint(power) {\n  if (power == null) return null;\n  const lactate = lactatFromCurve(power, smoothedCurve) ?? lactatFromRaw(power) ?? 0;\n  return { power: Math.round(power), lactate: Math.round(lactate * 100) / 100 };\n}\n\nlet bestResult = null;\nconst methodsArray = [];\nconst agentErrors = [];\n\nfor (const item of all) {\n  const out = item.json;\n\n  if (out.error) {\n    const errMsg = typeof out.error === 'string' ? out.error : (out.error.message || JSON.stringify(out.error));\n    agentErrors.push(errMsg);\n    continue;\n  }\n\n  let p = null;\n  if (out.ai_lt1 !== undefined || out.ai_lt2 !== undefined) {\n    p = out;\n  } else {\n    const rawText = (typeof out.output === 'string' ? out.output : '') || (typeof out.text === 'string' ? out.text : '');\n    if (rawText) {\n      const match = rawText.match(/\\{[\\s\\S]*\\}/);\n      if (match) { try { p = JSON.parse(match[0]); } catch(e) {} }\n    }\n  }\n\n  if (!p) continue;\n\n  const lt1Power = extractPower(p.ai_lt1);\n  const lt2Power = extractPower(p.ai_lt2);\n\n  if ((lt1Power != null || lt2Power != null) && !bestResult) {\n    bestResult = {\n      lt1:        lt1Power != null ? buildPoint(lt1Power) : null,\n      lt2:        lt2Power != null ? buildPoint(lt2Power) : null,\n      confidence: p.confidence ?? 0.7,\n      reasoning:  typeof p.reasoning === 'string' ? p.reasoning : ''\n    };\n  }\n\n  if (p.other_methods && typeof p.other_methods === 'object') {\n    for (const [methodKey, methodVal] of Object.entries(p.other_methods)) {\n      if (!methodVal) continue;\n      const mLt1 = extractPower(methodVal.lt1), mLt2 = extractPower(methodVal.lt2);\n      if (mLt1 != null || mLt2 != null) {\n        methodsArray.push({\n          method:     methodKey.replace(/_\\d{4}(_\\d{4})?$/, '').replace(/_/g, '-'),\n          lt1:        mLt1 != null ? buildPoint(mLt1) : null,\n          lt2:        mLt2 != null ? buildPoint(mLt2) : null,\n          confidence: methodVal.confidence ?? 0.5,\n          reasoning:  methodVal.reasoning || ''\n        });\n      }\n    }\n  }\n}\n\n// Algorithmic fallback\nif (!bestResult) {\n  if (lactateData.length >= 3) {\n    const sorted = [...lactateData].sort((a,b) => (a.power||0)-(b.power||0));\n    const baseLactate = sorted[0].lactate;\n    function findPowerAtLactate(target) {\n      for (let i = 0; i < sorted.length - 1; i++) {\n        const l0 = sorted[i].lactate, l1 = sorted[i+1].lactate;\n        const p0 = sorted[i].power||0, p1 = sorted[i+1].power||0;\n        if (l0 <= target && l1 >= target && l1 > l0) return Math.round(p0 + (target-l0)/(l1-l0)*(p1-p0));\n      }\n      return null;\n    }\n    const errorNote = agentErrors.length > 0 ? ' Fehler: ' + agentErrors.join('; ') : ' AI returned no JSON.';\n    bestResult = {\n      lt1:        buildPoint(findPowerAtLactate(baseLactate + 0.5)),\n      lt2:        buildPoint(findPowerAtLactate(baseLactate + 1.5)),\n      confidence: 0.3,\n      reasoning:  'Algorithmic fallback (Dickhuth +0.5/+1.5): baseline=' + baseLactate + ' mmol/L.' + errorNote\n    };\n  } else {\n    throw new Error('Kein valides AI-Ergebnis und zu wenig Daten fuer Fallback');\n  }\n}\n\nreturn [{ json: {\n  success:     true,\n  lt1:         bestResult.lt1,\n  lt2:         bestResult.lt2,\n  vt1:         ctx.vt1    || null,\n  vt2:         ctx.vt2    || null,\n  vo2max:      ctx.vo2max != null ? ctx.vo2max : null,\n  curve:       smoothedCurve,   // always use the pre-fitted dashboard curve\n  method:      'ai',\n  confidence:  bestResult.confidence,\n  reasoning:   bestResult.reasoning,\n  methods:     methodsArray.length > 0 ? methodsArray : null,\n  agentErrors: agentErrors.length > 0 ? agentErrors : null\n}}];\n"
+            },
+            "id": "bbe57db9-6a6b-43f8-8504-e56c6733d916",
+            "name": "Aggregate Results",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1504,
+                80
+            ],
+            "onError": "continueErrorOutput"
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify($json) }}",
+                "options": {
+                    "responseHeaders": {
+                        "entries": [
+                            {
+                                "name": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ]
+                    }
+                }
+            },
+            "id": "e4bbc3f9-1727-4446-9ee0-5744c45c13f3",
+            "name": "Respond to Webhook",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.1,
+            "position": [
+                2128,
+                432
             ]
-          }
-        }
-      },
-      "id": "e4bbc3f9-1727-4446-9ee0-5744c45c13f3",
-      "name": "Respond to Webhook",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        2128,
-        432
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const item = $input.first()?.json || {};\n// error can be a string (API error) or an object with .message\nconst err = item.error;\nconst msg = typeof err === \"string\" ? err\n          : typeof err === \"object\" && err?.message ? err.message\n          : \"Unbekannter Workflow-Fehler\";\nreturn [{ json: { success: false, lt1: null, lt2: null, method: null, reasoning: null, message: msg } }];\n"
-      },
-      "id": "0a004643-2a51-4f3c-9412-ec1af714fc52",
-      "name": "Handle Error",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1744,
-        784
-      ]
-    },
-    {
-      "parameters": {
-        "model": {
-          "__rl": true,
-          "value": "claude-sonnet-4-6",
-          "mode": "list",
-          "cachedResultName": "Claude Sonnet 4.6"
         },
-        "options": {
-          "maxTokensToSample": 4096
-        }
-      },
-      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
-      "typeVersion": 1.3,
-      "position": [
-        1104,
-        336
-      ],
-      "id": "74d9a985-495b-406e-b565-f201c7d61766",
-      "name": "Anthropic Chat Model",
-      "credentials": {
-        "anthropicApi": {
-          "id": "CrFcuu1qttscziNR",
-          "name": "Anthropic account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const ctx = $input.first().json;\nconst NL = String.fromCharCode(10);\nconst lt1 = ctx.currentThresholds && ctx.currentThresholds.lt1 ? JSON.stringify(ctx.currentThresholds.lt1) : 'null';\nconst lt2 = ctx.currentThresholds && ctx.currentThresholds.lt2 ? JSON.stringify(ctx.currentThresholds.lt2) : 'null';\n\nconst parts = [\n  'Lactate step test analysis. Unit: ' + (ctx.unit || 'watt') + ', Device: ' + (ctx.testDevice || 'bike'),\n  'Stages: ' + (ctx.stepCount || 0) + ', Zone model: ' + (ctx.zoneModel || '5-zones'),\n  '',\n  'IMPORTANT: The curve below is already fitted by the dashboard. DO NOT refit or smooth it.',\n  'Use it directly to detect LT1 and LT2.',\n  '',\n];\n\nif (ctx.smoothedCurve && ctx.smoothedCurve.length > 0 && ctx.smoothModel) {\n  const m = ctx.smoothModel;\n  parts.push('Pre-fitted smoothed lactate curve (' + ctx.smoothedCurve.length + ' points):');\n  parts.push(JSON.stringify(ctx.smoothedCurve));\n  parts.push('');\n  parts.push('Curve metadata: model=' + m.model + ', early_phase=' + m.early_phase + ', v_break=' + m.v_break);\n  parts.push('Raw measurement points (reference only — do NOT use for curve fitting):');\n  parts.push(JSON.stringify(ctx.lactateData || []));\n} else {\n  parts.push('WARNING: No pre-fitted curve available. Use raw data only.');\n  parts.push(JSON.stringify(ctx.lactateData || []));\n}\n\nparts.push('');\nparts.push('Currently set thresholds — LT1: ' + lt1 + ', LT2: ' + lt2);\nparts.push('');\nparts.push('Follow the OUTPUT RULE in your system message. Return only valid JSON starting with { and ending with }.');\nparts.push('DO NOT return ai_curve or curve parameters.');\n\nreturn [{ json: Object.assign({}, ctx, { chatInput: parts.join(NL) }) }];\n"
-      },
-      "id": "4aa18608-e678-4877-ac2a-6bfa74f8d858",
-      "name": "Build Specialist Prompt",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        880,
-        96
-      ]
-    },
-    {
-      "parameters": {
-        "options": {
-          "systemMessage": "You are a sports science specialist in lactate threshold analysis.\n\n==================================================\nCURVE FITTING IS FORBIDDEN\n==================================================\n\nThe dashboard has ALREADY fitted the lactate curve using a validated piecewise hybrid model.\nYou will receive a pre-computed smoothed curve (smoothedCurve) with 50 dense points.\n\nYOU MUST NOT:\n- Fit, refit, smooth, or modify the lactate curve in any way\n- Return curve parameters (L0, m, A, k, v_break)\n- Ignore the provided smoothedCurve\n\nYOUR ONLY JOB:\nDetect LT1 and LT2 thresholds by analysing the provided smoothedCurve.\n\n==================================================\nTHRESHOLD DETECTION RULES\n==================================================\n\nUse the smoothedCurve (array of {power, lactate} points) as the sole basis.\n\nAI-LT1 (aerobic threshold):\n- First sustained deviation from the flat/falling baseline\n- First persistent, non-random rise in the smoothed curve\n- Use slope change and curvature onset — NOT a fixed mmol offset\n\nAI-LT2 (anaerobic threshold):\n- Onset of clearly accelerated, non-linear lactate accumulation\n- Marked increase in curvature on the smoothed curve\n- Clear departure from the moderate accumulation phase\n\nThe smoothModel metadata (early_phase, v_break) provides context about where\nthe piecewise model transitions — use this as a physiological reference point.\n\n==================================================\nSECONDARY SCIENTIFIC METHODS\n==================================================\n\nAfter detecting AI-LT1 and AI-LT2 from the smoothedCurve, derive comparison\nthresholds for the following methods, also based on the smoothedCurve:\n\n- heck_1985: fixed 2.0 / 4.0 mmol/L intercepts on the smoothedCurve\n- dickhuth_1999: baseline + 0.5 / baseline + 1.5 mmol/L\n- cheng_dmax_1992: D-max method applied to the smoothedCurve\n- beaver_loglog_1985: log-log breakpoint\n- hofmann_ltp_1997_2017: three-phase interpretation\n\n==================================================\nCONFIDENCE RULE\n==================================================\n\nRate confidence 0.0–1.0 based on:\n- number of stages, data consistency, baseline clarity\n- sustained rise clarity, threshold separation\n\n==================================================\nOUTPUT RULE — RETURN ONLY THIS JSON\n==================================================\n\n{\n  \"ai_lt1\": <power value or null>,\n  \"ai_lt2\": <power value or null>,\n  \"other_methods\": {\n    \"heck_1985\":           { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"dickhuth_1999\":       { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"cheng_dmax_1992\":     { \"lt1\": null,            \"lt2\": <power or null> },\n    \"beaver_loglog_1985\":  { \"lt1\": <power or null>, \"lt2\": null            },\n    \"hofmann_ltp_1997_2017\": { \"lt1\": <power or null>, \"lt2\": <power or null> }\n  },\n  \"confidence\": <0.0–1.0>,\n  \"reasoning\": \"<brief explanation of threshold detection logic>\"\n}\n\nDo NOT include ai_curve or any curve parameters in your output.\nReturn only valid JSON starting with { and ending with }."
-        }
-      },
-      "id": "a09446bd-4af6-48ee-97dd-bab733644f21",
-      "name": "Method Specialist Agent_GPT",
-      "type": "@n8n/n8n-nodes-langchain.agent",
-      "typeVersion": 1.7,
-      "position": [
-        1136,
-        -336
-      ],
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "options": {
-          "systemMessage": "You are a sports science specialist in lactate threshold analysis.\n\n==================================================\nCURVE FITTING IS FORBIDDEN\n==================================================\n\nThe dashboard has ALREADY fitted the lactate curve using a validated piecewise hybrid model.\nYou will receive a pre-computed smoothed curve (smoothedCurve) with 50 dense points.\n\nYOU MUST NOT:\n- Fit, refit, smooth, or modify the lactate curve in any way\n- Return curve parameters (L0, m, A, k, v_break)\n- Ignore the provided smoothedCurve\n\nYOUR ONLY JOB:\nDetect LT1 and LT2 thresholds by analysing the provided smoothedCurve.\n\n==================================================\nTHRESHOLD DETECTION RULES\n==================================================\n\nUse the smoothedCurve (array of {power, lactate} points) as the sole basis.\n\nAI-LT1 (aerobic threshold):\n- First sustained deviation from the flat/falling baseline\n- First persistent, non-random rise in the smoothed curve\n- Use slope change and curvature onset — NOT a fixed mmol offset\n\nAI-LT2 (anaerobic threshold):\n- Onset of clearly accelerated, non-linear lactate accumulation\n- Marked increase in curvature on the smoothed curve\n- Clear departure from the moderate accumulation phase\n\nThe smoothModel metadata (early_phase, v_break) provides context about where\nthe piecewise model transitions — use this as a physiological reference point.\n\n==================================================\nSECONDARY SCIENTIFIC METHODS\n==================================================\n\nAfter detecting AI-LT1 and AI-LT2 from the smoothedCurve, derive comparison\nthresholds for the following methods, also based on the smoothedCurve:\n\n- heck_1985: fixed 2.0 / 4.0 mmol/L intercepts on the smoothedCurve\n- dickhuth_1999: baseline + 0.5 / baseline + 1.5 mmol/L\n- cheng_dmax_1992: D-max method applied to the smoothedCurve\n- beaver_loglog_1985: log-log breakpoint\n- hofmann_ltp_1997_2017: three-phase interpretation\n\n==================================================\nCONFIDENCE RULE\n==================================================\n\nRate confidence 0.0–1.0 based on:\n- number of stages, data consistency, baseline clarity\n- sustained rise clarity, threshold separation\n\n==================================================\nOUTPUT RULE — RETURN ONLY THIS JSON\n==================================================\n\n{\n  \"ai_lt1\": <power value or null>,\n  \"ai_lt2\": <power value or null>,\n  \"other_methods\": {\n    \"heck_1985\":           { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"dickhuth_1999\":       { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"cheng_dmax_1992\":     { \"lt1\": null,            \"lt2\": <power or null> },\n    \"beaver_loglog_1985\":  { \"lt1\": <power or null>, \"lt2\": null            },\n    \"hofmann_ltp_1997_2017\": { \"lt1\": <power or null>, \"lt2\": <power or null> }\n  },\n  \"confidence\": <0.0–1.0>,\n  \"reasoning\": \"<brief explanation of threshold detection logic>\"\n}\n\nDo NOT include ai_curve or any curve parameters in your output.\nReturn only valid JSON starting with { and ending with }."
-        }
-      },
-      "id": "b9fc6927-31ad-457b-80b4-396274a24ef8",
-      "name": "Method Specialist Agent Claude",
-      "type": "@n8n/n8n-nodes-langchain.agent",
-      "typeVersion": 1.7,
-      "position": [
-        1104,
-        96
-      ],
-      "onError": "continueErrorOutput"
-    },
-    {
-      "parameters": {
-        "model": {
-          "__rl": true,
-          "value": "gpt-5-pro",
-          "mode": "list",
-          "cachedResultName": "gpt-5-pro"
+        {
+            "parameters": {
+                "jsCode": "const item = $input.first()?.json || {};\n// error can be a string (API error) or an object with .message\nconst err = item.error;\nconst msg = typeof err === \"string\" ? err\n          : typeof err === \"object\" && err?.message ? err.message\n          : \"Unbekannter Workflow-Fehler\";\nreturn [{ json: { success: false, lt1: null, lt2: null, method: null, reasoning: null, message: msg } }];\n"
+            },
+            "id": "0a004643-2a51-4f3c-9412-ec1af714fc52",
+            "name": "Handle Error",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1744,
+                784
+            ]
         },
-        "builtInTools": {},
-        "options": {}
-      },
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-      "typeVersion": 1.3,
-      "position": [
-        1136,
-        -112
-      ],
-      "id": "47e1efa8-235e-4d5e-a488-889cf01060d5",
-      "name": "OpenAI Chat Model",
-      "notesInFlow": true,
-      "credentials": {
-        "openAiApi": {
-          "id": "DvMfiOvz5BJ8yofm",
-          "name": "OpenAi account"
+        {
+            "parameters": {
+                "model": {
+                    "__rl": true,
+                    "value": "claude-sonnet-4-6",
+                    "mode": "list",
+                    "cachedResultName": "Claude Sonnet 4.6"
+                },
+                "options": {
+                    "maxTokensToSample": 4096
+                }
+            },
+            "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+            "typeVersion": 1.3,
+            "position": [
+                1104,
+                336
+            ],
+            "id": "74d9a985-495b-406e-b565-f201c7d61766",
+            "name": "Anthropic Chat Model",
+            "credentials": {
+                "anthropicApi": {
+                    "id": "CrFcuu1qttscziNR",
+                    "name": "Anthropic account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "const ctx = $input.first().json;\nconst NL = String.fromCharCode(10);\nconst lt1 = ctx.currentThresholds && ctx.currentThresholds.lt1 ? JSON.stringify(ctx.currentThresholds.lt1) : 'null';\nconst lt2 = ctx.currentThresholds && ctx.currentThresholds.lt2 ? JSON.stringify(ctx.currentThresholds.lt2) : 'null';\n\nconst parts = [\n  'Lactate step test analysis. Unit: ' + (ctx.unit || 'watt') + ', Device: ' + (ctx.testDevice || 'bike'),\n  'Stages: ' + (ctx.stepCount || 0) + ', Zone model: ' + (ctx.zoneModel || '5-zones'),\n  '',\n  'IMPORTANT: The curve below is already fitted by the dashboard. DO NOT refit or smooth it.',\n  'Use it directly to detect LT1 and LT2.',\n  '',\n];\n\nif (ctx.smoothedCurve && ctx.smoothedCurve.length > 0 && ctx.smoothModel) {\n  const m = ctx.smoothModel;\n  parts.push('Pre-fitted smoothed lactate curve (' + ctx.smoothedCurve.length + ' points):');\n  parts.push(JSON.stringify(ctx.smoothedCurve));\n  parts.push('');\n  parts.push('Curve metadata: model=' + m.model + ', early_phase=' + m.early_phase + ', v_break=' + m.v_break);\n  parts.push('Raw measurement points (reference only \u2014 do NOT use for curve fitting):');\n  parts.push(JSON.stringify(ctx.lactateData || []));\n} else {\n  parts.push('WARNING: No pre-fitted curve available. Use raw data only.');\n  parts.push(JSON.stringify(ctx.lactateData || []));\n}\n\nparts.push('');\nparts.push('Currently set thresholds \u2014 LT1: ' + lt1 + ', LT2: ' + lt2);\nparts.push('');\nparts.push('Follow the OUTPUT RULE in your system message. Return only valid JSON starting with { and ending with }.');\nparts.push('DO NOT return ai_curve or curve parameters.');\n\nreturn [{ json: Object.assign({}, ctx, { chatInput: parts.join(NL) }) }];\n"
+            },
+            "id": "4aa18608-e678-4877-ac2a-6bfa74f8d858",
+            "name": "Build Specialist Prompt",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                880,
+                96
+            ]
+        },
+        {
+            "parameters": {
+                "options": {
+                    "systemMessage": "You are a sports science specialist in lactate threshold analysis.\n\n==================================================\nCURVE FITTING IS FORBIDDEN\n==================================================\n\nThe dashboard has ALREADY fitted the lactate curve using a validated piecewise hybrid model.\nYou will receive a pre-computed smoothed curve (smoothedCurve) with dense points.\n\nYOU MUST NOT:\n- Fit, refit, smooth, or modify the lactate curve in any way\n- Return curve parameters (L0, m, A, k, v_break)\n- Ignore the provided smoothedCurve\n\nYOUR ONLY JOB:\nDetect LT1 and LT2 thresholds by analysing the provided smoothedCurve.\n\n==================================================\nHARD CONSTRAINT \u2014 POWER VALUES MUST LIE ON THE CURVE\n==================================================\n\nThe smoothedCurve has a defined x-range: from smoothedCurve[0].power to smoothedCurve[last].power.\n\nYOU MUST:\n- Return ai_lt1 and ai_lt2 as power values that EXIST within the smoothedCurve x-range\n- NEVER return a power value below smoothedCurve[0].power or above smoothedCurve[last].power\n- Pick the closest in-range power value if your physiological estimate falls outside\n\nThis is non-negotiable. A threshold that lies outside the measured data range is\nphysiologically meaningless and will be rejected by the dashboard.\n\n==================================================\nTHRESHOLD DETECTION RULES\n==================================================\n\nUse the smoothedCurve (array of {power, lactate} points) as the sole basis.\n\nAI-LT1 (aerobic threshold):\n- First sustained deviation from the flat/falling baseline\n- First persistent, non-random rise in the smoothed curve\n- Use slope change and curvature onset \u2014 NOT a fixed mmol offset\n\nAI-LT2 (anaerobic threshold):\n- Onset of clearly accelerated, non-linear lactate accumulation\n- Marked increase in curvature on the smoothed curve\n- Clear departure from the moderate accumulation phase\n\nThe smoothModel metadata (early_phase, v_break) provides context about where\nthe piecewise model transitions \u2014 use this as a physiological reference point.\n\n==================================================\nSECONDARY SCIENTIFIC METHODS\n==================================================\n\nAfter detecting AI-LT1 and AI-LT2 from the smoothedCurve, derive comparison\nthresholds for the following methods, also based on the smoothedCurve.\nAll method power values must also lie within the smoothedCurve x-range.\n\n- heck_1985: fixed 2.0 / 4.0 mmol/L intercepts on the smoothedCurve\n- dickhuth_1999: baseline + 0.5 / baseline + 1.5 mmol/L\n- cheng_dmax_1992: D-max method applied to the smoothedCurve\n- beaver_loglog_1985: log-log breakpoint\n- hofmann_ltp_1997_2017: three-phase interpretation\n\n==================================================\nCONFIDENCE RULE\n==================================================\n\nRate confidence 0.0\u20131.0 based on:\n- number of stages, data consistency, baseline clarity\n- sustained rise clarity, threshold separation\n\n==================================================\nOUTPUT RULE \u2014 RETURN ONLY THIS JSON\n==================================================\n\n{\n  \"ai_lt1\": <power value within smoothedCurve range or null>,\n  \"ai_lt2\": <power value within smoothedCurve range or null>,\n  \"other_methods\": {\n    \"heck_1985\":           { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"dickhuth_1999\":       { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"cheng_dmax_1992\":     { \"lt1\": null,            \"lt2\": <power or null> },\n    \"beaver_loglog_1985\":  { \"lt1\": <power or null>, \"lt2\": null            },\n    \"hofmann_ltp_1997_2017\": { \"lt1\": <power or null>, \"lt2\": <power or null> }\n  },\n  \"confidence\": <0.0\u20131.0>,\n  \"reasoning\": \"<brief explanation of threshold detection logic>\"\n}\n\nDo NOT include ai_curve or any curve parameters in your output.\nReturn only valid JSON starting with { and ending with }."
+                }
+            },
+            "id": "a09446bd-4af6-48ee-97dd-bab733644f21",
+            "name": "Method Specialist Agent_GPT",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1.7,
+            "position": [
+                1136,
+                -336
+            ],
+            "onError": "continueErrorOutput"
+        },
+        {
+            "parameters": {
+                "options": {
+                    "systemMessage": "You are a sports science specialist in lactate threshold analysis.\n\n==================================================\nCURVE FITTING IS FORBIDDEN\n==================================================\n\nThe dashboard has ALREADY fitted the lactate curve using a validated piecewise hybrid model.\nYou will receive a pre-computed smoothed curve (smoothedCurve) with dense points.\n\nYOU MUST NOT:\n- Fit, refit, smooth, or modify the lactate curve in any way\n- Return curve parameters (L0, m, A, k, v_break)\n- Ignore the provided smoothedCurve\n\nYOUR ONLY JOB:\nDetect LT1 and LT2 thresholds by analysing the provided smoothedCurve.\n\n==================================================\nHARD CONSTRAINT \u2014 POWER VALUES MUST LIE ON THE CURVE\n==================================================\n\nThe smoothedCurve has a defined x-range: from smoothedCurve[0].power to smoothedCurve[last].power.\n\nYOU MUST:\n- Return ai_lt1 and ai_lt2 as power values that EXIST within the smoothedCurve x-range\n- NEVER return a power value below smoothedCurve[0].power or above smoothedCurve[last].power\n- Pick the closest in-range power value if your physiological estimate falls outside\n\nThis is non-negotiable. A threshold that lies outside the measured data range is\nphysiologically meaningless and will be rejected by the dashboard.\n\n==================================================\nTHRESHOLD DETECTION RULES\n==================================================\n\nUse the smoothedCurve (array of {power, lactate} points) as the sole basis.\n\nAI-LT1 (aerobic threshold):\n- First sustained deviation from the flat/falling baseline\n- First persistent, non-random rise in the smoothed curve\n- Use slope change and curvature onset \u2014 NOT a fixed mmol offset\n\nAI-LT2 (anaerobic threshold):\n- Onset of clearly accelerated, non-linear lactate accumulation\n- Marked increase in curvature on the smoothed curve\n- Clear departure from the moderate accumulation phase\n\nThe smoothModel metadata (early_phase, v_break) provides context about where\nthe piecewise model transitions \u2014 use this as a physiological reference point.\n\n==================================================\nSECONDARY SCIENTIFIC METHODS\n==================================================\n\nAfter detecting AI-LT1 and AI-LT2 from the smoothedCurve, derive comparison\nthresholds for the following methods, also based on the smoothedCurve.\nAll method power values must also lie within the smoothedCurve x-range.\n\n- heck_1985: fixed 2.0 / 4.0 mmol/L intercepts on the smoothedCurve\n- dickhuth_1999: baseline + 0.5 / baseline + 1.5 mmol/L\n- cheng_dmax_1992: D-max method applied to the smoothedCurve\n- beaver_loglog_1985: log-log breakpoint\n- hofmann_ltp_1997_2017: three-phase interpretation\n\n==================================================\nCONFIDENCE RULE\n==================================================\n\nRate confidence 0.0\u20131.0 based on:\n- number of stages, data consistency, baseline clarity\n- sustained rise clarity, threshold separation\n\n==================================================\nOUTPUT RULE \u2014 RETURN ONLY THIS JSON\n==================================================\n\n{\n  \"ai_lt1\": <power value within smoothedCurve range or null>,\n  \"ai_lt2\": <power value within smoothedCurve range or null>,\n  \"other_methods\": {\n    \"heck_1985\":           { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"dickhuth_1999\":       { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"cheng_dmax_1992\":     { \"lt1\": null,            \"lt2\": <power or null> },\n    \"beaver_loglog_1985\":  { \"lt1\": <power or null>, \"lt2\": null            },\n    \"hofmann_ltp_1997_2017\": { \"lt1\": <power or null>, \"lt2\": <power or null> }\n  },\n  \"confidence\": <0.0\u20131.0>,\n  \"reasoning\": \"<brief explanation of threshold detection logic>\"\n}\n\nDo NOT include ai_curve or any curve parameters in your output.\nReturn only valid JSON starting with { and ending with }."
+                }
+            },
+            "id": "b9fc6927-31ad-457b-80b4-396274a24ef8",
+            "name": "Method Specialist Agent Claude",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1.7,
+            "position": [
+                1104,
+                96
+            ],
+            "onError": "continueErrorOutput"
+        },
+        {
+            "parameters": {
+                "model": {
+                    "__rl": true,
+                    "value": "gpt-5.4-pro",
+                    "mode": "list",
+                    "cachedResultName": "gpt-5.4-pro"
+                },
+                "builtInTools": {},
+                "options": {}
+            },
+            "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+            "typeVersion": 1.3,
+            "position": [
+                1136,
+                -112
+            ],
+            "id": "47e1efa8-235e-4d5e-a488-889cf01060d5",
+            "name": "OpenAI Chat Model",
+            "notesInFlow": true,
+            "credentials": {
+                "openAiApi": {
+                    "id": "XXXZyTdeFKKnstwy",
+                    "name": "OpenAI account 2"
+                }
+            }
         }
-      }
-    }
-  ],
-  "connections": {
-    "Lactate Analytics Webhook": {
-      "main": [
-        [
-          {
-            "node": "Parse Context Fields",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    ],
+    "connections": {
+        "Lactate Analytics Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Context Fields",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Context Fields": {
+            "main": [
+                [
+                    {
+                        "node": "Fan Out Methods",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ],
+            "error": [
+                [
+                    {
+                        "node": "Handle Error",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fan Out Methods": {
+            "main": [
+                [
+                    {
+                        "node": "Build Specialist Prompt",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ],
+            "error": [
+                [
+                    {
+                        "node": "Handle Error",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Aggregate Results": {
+            "main": [
+                [
+                    {
+                        "node": "Respond to Webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ],
+            "error": [
+                [
+                    {
+                        "node": "Handle Error",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Handle Error": {
+            "main": [
+                [
+                    {
+                        "node": "Respond to Webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Anthropic Chat Model": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "Method Specialist Agent Claude",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Specialist Prompt": {
+            "main": [
+                [
+                    {
+                        "node": "Method Specialist Agent Claude",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ],
+            "error": [
+                [
+                    {
+                        "node": "Handle Error",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Method Specialist Agent Claude": {
+            "main": [
+                [
+                    {
+                        "node": "Aggregate Results",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ],
+            "error": [
+                [
+                    {
+                        "node": "Handle Error",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "OpenAI Chat Model": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "Method Specialist Agent_GPT",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Method Specialist Agent_GPT": {
+            "main": [
+                [
+                    {
+                        "node": "Aggregate Results",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Handle Error",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
     },
-    "Parse Context Fields": {
-      "main": [
-        [
-          {
-            "node": "Fan Out Methods",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ],
-      "error": [
-        [
-          {
-            "node": "Handle Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "settings": {
+        "executionOrder": "v1",
+        "availableInMCP": false,
+        "saveManualExecutions": true,
+        "callerPolicy": "workflowsFromSameOwner",
+        "binaryMode": "separate"
     },
-    "Fan Out Methods": {
-      "main": [
-        [
-          {
-            "node": "Build Specialist Prompt",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ],
-      "error": [
-        [
-          {
-            "node": "Handle Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "staticData": null,
+    "meta": {
+        "templateCredsSetupCompleted": true
     },
-    "Aggregate Results": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ],
-      "error": [
-        [
-          {
-            "node": "Handle Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Handle Error": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Anthropic Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Method Specialist Agent Claude",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build Specialist Prompt": {
-      "main": [
-        [
-          {
-            "node": "Method Specialist Agent_GPT",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ],
-      "error": [
-        [
-          {
-            "node": "Handle Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Method Specialist Agent Claude": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Results",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ],
-      "error": [
-        [
-          {
-            "node": "Handle Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Method Specialist Agent_GPT",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Method Specialist Agent_GPT": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Results",
-            "type": "main",
-            "index": 0
-          }
+    "pinData": {
+        "AI Decision Agent": [
+            {
+                "json": {
+                    "name": "First item",
+                    "code": 1
+                }
+            },
+            {
+                "json": {
+                    "name": "Second item",
+                    "code": 2
+                }
+            }
         ],
-        [
-          {
-            "node": "Handle Error",
-            "type": "main",
-            "index": 0
-          }
+        "AI Dickhuth Agent1": [
+            {
+                "json": {
+                    "name": "First item",
+                    "code": 1
+                }
+            },
+            {
+                "json": {
+                    "name": "Second item",
+                    "code": 2
+                }
+            }
+        ],
+        "AI Dmax Agent": [
+            {
+                "json": {
+                    "name": "First item",
+                    "code": 1
+                }
+            },
+            {
+                "json": {
+                    "name": "Second item",
+                    "code": 2
+                }
+            }
+        ],
+        "AI OBLA Agent1": [
+            {
+                "json": {
+                    "name": "First item",
+                    "code": 1
+                }
+            },
+            {
+                "json": {
+                    "name": "Second item",
+                    "code": 2
+                }
+            }
+        ],
+        "AI ModMax Agent": [
+            {
+                "json": {
+                    "name": "First item",
+                    "code": 1
+                }
+            },
+            {
+                "json": {
+                    "name": "Second item",
+                    "code": 2
+                }
+            }
+        ],
+        "AI other Agent1": [
+            {
+                "json": {
+                    "name": "First item",
+                    "code": 1
+                }
+            },
+            {
+                "json": {
+                    "name": "Second item",
+                    "code": 2
+                }
+            }
         ]
-      ]
+    },
+    "versionId": "a66073a2-167a-4c7c-bd87-6055c7119efe",
+    "activeVersionId": "a66073a2-167a-4c7c-bd87-6055c7119efe",
+    "versionCounter": 428,
+    "triggerCount": 1,
+    "shared": [
+        {
+            "updatedAt": "2026-01-16T08:20:02.388Z",
+            "createdAt": "2026-01-16T08:20:02.388Z",
+            "role": "workflow:owner",
+            "workflowId": "ljNATO9oj54uhfzmTM84Z",
+            "projectId": "gfWC4ODnCHdsipei",
+            "project": {
+                "updatedAt": "2026-01-16T07:49:12.483Z",
+                "createdAt": "2026-01-16T07:43:15.686Z",
+                "id": "gfWC4ODnCHdsipei",
+                "name": "Alexander Rieger <mail@alexander-rieger.de>",
+                "type": "personal",
+                "icon": null,
+                "description": null,
+                "creatorId": "47cb25e1-1cc9-4882-b013-1ebc70f28522"
+            }
+        }
+    ],
+    "tags": [],
+    "activeVersion": {
+        "updatedAt": "2026-04-13T05:36:24.927Z",
+        "createdAt": "2026-04-13T05:36:24.927Z",
+        "versionId": "a66073a2-167a-4c7c-bd87-6055c7119efe",
+        "workflowId": "ljNATO9oj54uhfzmTM84Z",
+        "nodes": [
+            {
+                "parameters": {
+                    "httpMethod": "POST",
+                    "path": "lactate-analytics",
+                    "responseMode": "responseNode",
+                    "options": {}
+                },
+                "id": "51d33bc3-bb03-47ea-8628-ccbd9ddfb976",
+                "name": "Lactate Analytics Webhook",
+                "type": "n8n-nodes-base.webhook",
+                "typeVersion": 2,
+                "position": [
+                    208,
+                    304
+                ],
+                "webhookId": "d4bbd495-833d-45c6-9a32-bcb88cdbd4d7"
+            },
+            {
+                "parameters": {
+                    "jsCode": "// NOTE: n8n webhook v2 wraps POST body in .body \u2014 never remove the raw.body unwrap below\nconst raw = $input.first().json;\nconst body = raw.body || raw;          // webhook v2 puts POST body here\nconst d = body.data || body;\nif (!d.lactateData || !Array.isArray(d.lactateData) || d.lactateData.length < 3) {\n  throw new Error('Zu wenig Laktat-Messpunkte (min. 3)');\n}\nreturn [{ json: {\n  sessionId:         d.sessionId        || null,\n  customerId:        d.customerId       || null,\n  customerName:      d.customerName     || 'Athlet',\n  unit:              d.unit             || 'watt',\n  currentMethod:     d.currentMethod    || 'dmax',\n  zoneModel:         d.zoneModel        || '5-zones',\n  stepCount:         d.stepCount        || d.lactateData.length,\n  testDevice:        d.testDevice       || 'bike',\n  lactateData:       d.lactateData,\n  smoothedCurve:     d.smoothedCurve    || null,\n  smoothModel:       d.smoothModel      || null,\n  currentThresholds: d.currentThresholds || { lt1: null, lt2: null },\n  vt1:               d.vt1    || null,\n  vt2:               d.vt2    || null,\n  vo2max:            d.vo2max != null ? d.vo2max : null,\n  timestamp:         d.timestamp        || new Date().toISOString()\n}}];\n"
+                },
+                "id": "8a84ceb6-ea27-4a57-8926-b5b17b3d2a17",
+                "name": "Parse Context Fields",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [
+                    432,
+                    304
+                ],
+                "onError": "continueErrorOutput"
+            },
+            {
+                "parameters": {
+                    "jsCode": "const ctx = $input.first().json;\nreturn ['dickhuth','dmax','mader','moddmax'].map(m => ({ json: {\n  targetMethod:      m,\n  sessionId:         ctx.sessionId,\n  customerId:        ctx.customerId,\n  customerName:      ctx.customerName,\n  unit:              ctx.unit,\n  zoneModel:         ctx.zoneModel,\n  stepCount:         ctx.stepCount,\n  testDevice:        ctx.testDevice,\n  lactateData:       ctx.lactateData,\n  smoothedCurve:     ctx.smoothedCurve || null,\n  smoothModel:       ctx.smoothModel   || null,\n  currentThresholds: ctx.currentThresholds,\n  currentMethod:     ctx.currentMethod,\n  vt1:               ctx.vt1   || null,\n  vt2:               ctx.vt2   || null,\n  vo2max:            ctx.vo2max != null ? ctx.vo2max : null\n}}));\n"
+                },
+                "id": "98d0a2fe-56ca-41b1-8c51-57ba3d509140",
+                "name": "Fan Out Methods",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [
+                    672,
+                    224
+                ],
+                "onError": "continueErrorOutput"
+            },
+            {
+                "parameters": {
+                    "jsCode": "// Read session context (smoothedCurve from dashboard, lactateData for fallback)\nconst ctx = $('Parse Context Fields').first().json;\nconst lactateData   = ctx.lactateData   || [];\nconst smoothedCurve = ctx.smoothedCurve || null;   // pre-fitted dashboard curve \u2014 use as-is\nconst all = $input.all();\n\nfunction extractPower(val) {\n  if (val == null) return null;\n  if (typeof val === 'number' && val > 5) return val;\n  if (typeof val === 'object') {\n    const p = val.power ?? val.load ?? val.v;\n    if (typeof p === 'number' && p > 5) return p;\n  }\n  return null;\n}\n\nfunction lactatFromCurve(power, curve) {\n  if (!curve || curve.length < 2) return null;\n  const sorted = [...curve].sort((a, b) => a.power - b.power);\n  for (let i = 0; i < sorted.length - 1; i++) {\n    const p0 = sorted[i].power, p1 = sorted[i+1].power;\n    if (power >= p0 && power <= p1 && p1 > p0) {\n      const t = (power - p0) / (p1 - p0);\n      return Math.round((sorted[i].lactate + t * (sorted[i+1].lactate - sorted[i].lactate)) * 100) / 100;\n    }\n  }\n  if (power <= sorted[0].power)              return sorted[0].lactate;\n  if (power >= sorted[sorted.length-1].power) return sorted[sorted.length-1].lactate;\n  return null;\n}\n\nfunction lactatFromRaw(power) {\n  const sorted = [...lactateData].sort((a,b) => (a.power||0)-(b.power||0));\n  for (let i = 0; i < sorted.length - 1; i++) {\n    const p0 = sorted[i].power||0, p1 = sorted[i+1].power||0;\n    if (power >= p0 && power <= p1 && p1 > p0) {\n      const t = (power - p0) / (p1 - p0);\n      return sorted[i].lactate + t * (sorted[i+1].lactate - sorted[i].lactate);\n    }\n  }\n  return null;\n}\n\nfunction buildPoint(power) {\n  if (power == null) return null;\n  const lactate = lactatFromCurve(power, smoothedCurve) ?? lactatFromRaw(power) ?? 0;\n  return { power: Math.round(power), lactate: Math.round(lactate * 100) / 100 };\n}\n\nlet bestResult = null;\nconst methodsArray = [];\nconst agentErrors = [];\n\nfor (const item of all) {\n  const out = item.json;\n\n  if (out.error) {\n    const errMsg = typeof out.error === 'string' ? out.error : (out.error.message || JSON.stringify(out.error));\n    agentErrors.push(errMsg);\n    continue;\n  }\n\n  let p = null;\n  if (out.ai_lt1 !== undefined || out.ai_lt2 !== undefined) {\n    p = out;\n  } else {\n    const rawText = (typeof out.output === 'string' ? out.output : '') || (typeof out.text === 'string' ? out.text : '');\n    if (rawText) {\n      const match = rawText.match(/\\{[\\s\\S]*\\}/);\n      if (match) { try { p = JSON.parse(match[0]); } catch(e) {} }\n    }\n  }\n\n  if (!p) continue;\n\n  const lt1Power = extractPower(p.ai_lt1);\n  const lt2Power = extractPower(p.ai_lt2);\n\n  if ((lt1Power != null || lt2Power != null) && !bestResult) {\n    bestResult = {\n      lt1:        lt1Power != null ? buildPoint(lt1Power) : null,\n      lt2:        lt2Power != null ? buildPoint(lt2Power) : null,\n      confidence: p.confidence ?? 0.7,\n      reasoning:  typeof p.reasoning === 'string' ? p.reasoning : ''\n    };\n  }\n\n  if (p.other_methods && typeof p.other_methods === 'object') {\n    for (const [methodKey, methodVal] of Object.entries(p.other_methods)) {\n      if (!methodVal) continue;\n      const mLt1 = extractPower(methodVal.lt1), mLt2 = extractPower(methodVal.lt2);\n      if (mLt1 != null || mLt2 != null) {\n        methodsArray.push({\n          method:     methodKey.replace(/_\\d{4}(_\\d{4})?$/, '').replace(/_/g, '-'),\n          lt1:        mLt1 != null ? buildPoint(mLt1) : null,\n          lt2:        mLt2 != null ? buildPoint(mLt2) : null,\n          confidence: methodVal.confidence ?? 0.5,\n          reasoning:  methodVal.reasoning || ''\n        });\n      }\n    }\n  }\n}\n\n// Algorithmic fallback\nif (!bestResult) {\n  if (lactateData.length >= 3) {\n    const sorted = [...lactateData].sort((a,b) => (a.power||0)-(b.power||0));\n    const baseLactate = sorted[0].lactate;\n    function findPowerAtLactate(target) {\n      for (let i = 0; i < sorted.length - 1; i++) {\n        const l0 = sorted[i].lactate, l1 = sorted[i+1].lactate;\n        const p0 = sorted[i].power||0, p1 = sorted[i+1].power||0;\n        if (l0 <= target && l1 >= target && l1 > l0) return Math.round(p0 + (target-l0)/(l1-l0)*(p1-p0));\n      }\n      return null;\n    }\n    const errorNote = agentErrors.length > 0 ? ' Fehler: ' + agentErrors.join('; ') : ' AI returned no JSON.';\n    bestResult = {\n      lt1:        buildPoint(findPowerAtLactate(baseLactate + 0.5)),\n      lt2:        buildPoint(findPowerAtLactate(baseLactate + 1.5)),\n      confidence: 0.3,\n      reasoning:  'Algorithmic fallback (Dickhuth +0.5/+1.5): baseline=' + baseLactate + ' mmol/L.' + errorNote\n    };\n  } else {\n    throw new Error('Kein valides AI-Ergebnis und zu wenig Daten fuer Fallback');\n  }\n}\n\nreturn [{ json: {\n  success:     true,\n  lt1:         bestResult.lt1,\n  lt2:         bestResult.lt2,\n  vt1:         ctx.vt1    || null,\n  vt2:         ctx.vt2    || null,\n  vo2max:      ctx.vo2max != null ? ctx.vo2max : null,\n  curve:       smoothedCurve,   // always use the pre-fitted dashboard curve\n  method:      'ai',\n  confidence:  bestResult.confidence,\n  reasoning:   bestResult.reasoning,\n  methods:     methodsArray.length > 0 ? methodsArray : null,\n  agentErrors: agentErrors.length > 0 ? agentErrors : null\n}}];\n"
+                },
+                "id": "bbe57db9-6a6b-43f8-8504-e56c6733d916",
+                "name": "Aggregate Results",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [
+                    1504,
+                    80
+                ],
+                "onError": "continueErrorOutput"
+            },
+            {
+                "parameters": {
+                    "respondWith": "json",
+                    "responseBody": "={{ JSON.stringify($json) }}",
+                    "options": {
+                        "responseHeaders": {
+                            "entries": [
+                                {
+                                    "name": "Content-Type",
+                                    "value": "application/json"
+                                }
+                            ]
+                        }
+                    }
+                },
+                "id": "e4bbc3f9-1727-4446-9ee0-5744c45c13f3",
+                "name": "Respond to Webhook",
+                "type": "n8n-nodes-base.respondToWebhook",
+                "typeVersion": 1.1,
+                "position": [
+                    2128,
+                    432
+                ]
+            },
+            {
+                "parameters": {
+                    "jsCode": "const item = $input.first()?.json || {};\n// error can be a string (API error) or an object with .message\nconst err = item.error;\nconst msg = typeof err === \"string\" ? err\n          : typeof err === \"object\" && err?.message ? err.message\n          : \"Unbekannter Workflow-Fehler\";\nreturn [{ json: { success: false, lt1: null, lt2: null, method: null, reasoning: null, message: msg } }];\n"
+                },
+                "id": "0a004643-2a51-4f3c-9412-ec1af714fc52",
+                "name": "Handle Error",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [
+                    1744,
+                    784
+                ]
+            },
+            {
+                "parameters": {
+                    "model": {
+                        "__rl": true,
+                        "value": "claude-sonnet-4-6",
+                        "mode": "list",
+                        "cachedResultName": "Claude Sonnet 4.6"
+                    },
+                    "options": {
+                        "maxTokensToSample": 4096
+                    }
+                },
+                "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+                "typeVersion": 1.3,
+                "position": [
+                    1104,
+                    336
+                ],
+                "id": "74d9a985-495b-406e-b565-f201c7d61766",
+                "name": "Anthropic Chat Model",
+                "credentials": {
+                    "anthropicApi": {
+                        "id": "CrFcuu1qttscziNR",
+                        "name": "Anthropic account"
+                    }
+                }
+            },
+            {
+                "parameters": {
+                    "jsCode": "const ctx = $input.first().json;\nconst NL = String.fromCharCode(10);\nconst lt1 = ctx.currentThresholds && ctx.currentThresholds.lt1 ? JSON.stringify(ctx.currentThresholds.lt1) : 'null';\nconst lt2 = ctx.currentThresholds && ctx.currentThresholds.lt2 ? JSON.stringify(ctx.currentThresholds.lt2) : 'null';\n\nconst parts = [\n  'Lactate step test analysis. Unit: ' + (ctx.unit || 'watt') + ', Device: ' + (ctx.testDevice || 'bike'),\n  'Stages: ' + (ctx.stepCount || 0) + ', Zone model: ' + (ctx.zoneModel || '5-zones'),\n  '',\n  'IMPORTANT: The curve below is already fitted by the dashboard. DO NOT refit or smooth it.',\n  'Use it directly to detect LT1 and LT2.',\n  '',\n];\n\nif (ctx.smoothedCurve && ctx.smoothedCurve.length > 0 && ctx.smoothModel) {\n  const m = ctx.smoothModel;\n  parts.push('Pre-fitted smoothed lactate curve (' + ctx.smoothedCurve.length + ' points):');\n  parts.push(JSON.stringify(ctx.smoothedCurve));\n  parts.push('');\n  parts.push('Curve metadata: model=' + m.model + ', early_phase=' + m.early_phase + ', v_break=' + m.v_break);\n  parts.push('Raw measurement points (reference only \u2014 do NOT use for curve fitting):');\n  parts.push(JSON.stringify(ctx.lactateData || []));\n} else {\n  parts.push('WARNING: No pre-fitted curve available. Use raw data only.');\n  parts.push(JSON.stringify(ctx.lactateData || []));\n}\n\nparts.push('');\nparts.push('Currently set thresholds \u2014 LT1: ' + lt1 + ', LT2: ' + lt2);\nparts.push('');\nparts.push('Follow the OUTPUT RULE in your system message. Return only valid JSON starting with { and ending with }.');\nparts.push('DO NOT return ai_curve or curve parameters.');\n\nreturn [{ json: Object.assign({}, ctx, { chatInput: parts.join(NL) }) }];\n"
+                },
+                "id": "4aa18608-e678-4877-ac2a-6bfa74f8d858",
+                "name": "Build Specialist Prompt",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [
+                    880,
+                    96
+                ]
+            },
+            {
+                "parameters": {
+                    "options": {
+                        "systemMessage": "You are a sports science specialist in lactate threshold analysis.\n\n==================================================\nCURVE FITTING IS FORBIDDEN\n==================================================\n\nThe dashboard has ALREADY fitted the lactate curve using a validated piecewise hybrid model.\nYou will receive a pre-computed smoothed curve (smoothedCurve) with dense points.\n\nYOU MUST NOT:\n- Fit, refit, smooth, or modify the lactate curve in any way\n- Return curve parameters (L0, m, A, k, v_break)\n- Ignore the provided smoothedCurve\n\nYOUR ONLY JOB:\nDetect LT1 and LT2 thresholds by analysing the provided smoothedCurve.\n\n==================================================\nHARD CONSTRAINT \u2014 POWER VALUES MUST LIE ON THE CURVE\n==================================================\n\nThe smoothedCurve has a defined x-range: from smoothedCurve[0].power to smoothedCurve[last].power.\n\nYOU MUST:\n- Return ai_lt1 and ai_lt2 as power values that EXIST within the smoothedCurve x-range\n- NEVER return a power value below smoothedCurve[0].power or above smoothedCurve[last].power\n- Pick the closest in-range power value if your physiological estimate falls outside\n\nThis is non-negotiable. A threshold that lies outside the measured data range is\nphysiologically meaningless and will be rejected by the dashboard.\n\n==================================================\nTHRESHOLD DETECTION RULES\n==================================================\n\nUse the smoothedCurve (array of {power, lactate} points) as the sole basis.\n\nAI-LT1 (aerobic threshold):\n- First sustained deviation from the flat/falling baseline\n- First persistent, non-random rise in the smoothed curve\n- Use slope change and curvature onset \u2014 NOT a fixed mmol offset\n\nAI-LT2 (anaerobic threshold):\n- Onset of clearly accelerated, non-linear lactate accumulation\n- Marked increase in curvature on the smoothed curve\n- Clear departure from the moderate accumulation phase\n\nThe smoothModel metadata (early_phase, v_break) provides context about where\nthe piecewise model transitions \u2014 use this as a physiological reference point.\n\n==================================================\nSECONDARY SCIENTIFIC METHODS\n==================================================\n\nAfter detecting AI-LT1 and AI-LT2 from the smoothedCurve, derive comparison\nthresholds for the following methods, also based on the smoothedCurve.\nAll method power values must also lie within the smoothedCurve x-range.\n\n- heck_1985: fixed 2.0 / 4.0 mmol/L intercepts on the smoothedCurve\n- dickhuth_1999: baseline + 0.5 / baseline + 1.5 mmol/L\n- cheng_dmax_1992: D-max method applied to the smoothedCurve\n- beaver_loglog_1985: log-log breakpoint\n- hofmann_ltp_1997_2017: three-phase interpretation\n\n==================================================\nCONFIDENCE RULE\n==================================================\n\nRate confidence 0.0\u20131.0 based on:\n- number of stages, data consistency, baseline clarity\n- sustained rise clarity, threshold separation\n\n==================================================\nOUTPUT RULE \u2014 RETURN ONLY THIS JSON\n==================================================\n\n{\n  \"ai_lt1\": <power value within smoothedCurve range or null>,\n  \"ai_lt2\": <power value within smoothedCurve range or null>,\n  \"other_methods\": {\n    \"heck_1985\":           { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"dickhuth_1999\":       { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"cheng_dmax_1992\":     { \"lt1\": null,            \"lt2\": <power or null> },\n    \"beaver_loglog_1985\":  { \"lt1\": <power or null>, \"lt2\": null            },\n    \"hofmann_ltp_1997_2017\": { \"lt1\": <power or null>, \"lt2\": <power or null> }\n  },\n  \"confidence\": <0.0\u20131.0>,\n  \"reasoning\": \"<brief explanation of threshold detection logic>\"\n}\n\nDo NOT include ai_curve or any curve parameters in your output.\nReturn only valid JSON starting with { and ending with }."
+                    }
+                },
+                "id": "a09446bd-4af6-48ee-97dd-bab733644f21",
+                "name": "Method Specialist Agent_GPT",
+                "type": "@n8n/n8n-nodes-langchain.agent",
+                "typeVersion": 1.7,
+                "position": [
+                    1136,
+                    -336
+                ],
+                "onError": "continueErrorOutput"
+            },
+            {
+                "parameters": {
+                    "options": {
+                        "systemMessage": "You are a sports science specialist in lactate threshold analysis.\n\n==================================================\nCURVE FITTING IS FORBIDDEN\n==================================================\n\nThe dashboard has ALREADY fitted the lactate curve using a validated piecewise hybrid model.\nYou will receive a pre-computed smoothed curve (smoothedCurve) with dense points.\n\nYOU MUST NOT:\n- Fit, refit, smooth, or modify the lactate curve in any way\n- Return curve parameters (L0, m, A, k, v_break)\n- Ignore the provided smoothedCurve\n\nYOUR ONLY JOB:\nDetect LT1 and LT2 thresholds by analysing the provided smoothedCurve.\n\n==================================================\nHARD CONSTRAINT \u2014 POWER VALUES MUST LIE ON THE CURVE\n==================================================\n\nThe smoothedCurve has a defined x-range: from smoothedCurve[0].power to smoothedCurve[last].power.\n\nYOU MUST:\n- Return ai_lt1 and ai_lt2 as power values that EXIST within the smoothedCurve x-range\n- NEVER return a power value below smoothedCurve[0].power or above smoothedCurve[last].power\n- Pick the closest in-range power value if your physiological estimate falls outside\n\nThis is non-negotiable. A threshold that lies outside the measured data range is\nphysiologically meaningless and will be rejected by the dashboard.\n\n==================================================\nTHRESHOLD DETECTION RULES\n==================================================\n\nUse the smoothedCurve (array of {power, lactate} points) as the sole basis.\n\nAI-LT1 (aerobic threshold):\n- First sustained deviation from the flat/falling baseline\n- First persistent, non-random rise in the smoothed curve\n- Use slope change and curvature onset \u2014 NOT a fixed mmol offset\n\nAI-LT2 (anaerobic threshold):\n- Onset of clearly accelerated, non-linear lactate accumulation\n- Marked increase in curvature on the smoothed curve\n- Clear departure from the moderate accumulation phase\n\nThe smoothModel metadata (early_phase, v_break) provides context about where\nthe piecewise model transitions \u2014 use this as a physiological reference point.\n\n==================================================\nSECONDARY SCIENTIFIC METHODS\n==================================================\n\nAfter detecting AI-LT1 and AI-LT2 from the smoothedCurve, derive comparison\nthresholds for the following methods, also based on the smoothedCurve.\nAll method power values must also lie within the smoothedCurve x-range.\n\n- heck_1985: fixed 2.0 / 4.0 mmol/L intercepts on the smoothedCurve\n- dickhuth_1999: baseline + 0.5 / baseline + 1.5 mmol/L\n- cheng_dmax_1992: D-max method applied to the smoothedCurve\n- beaver_loglog_1985: log-log breakpoint\n- hofmann_ltp_1997_2017: three-phase interpretation\n\n==================================================\nCONFIDENCE RULE\n==================================================\n\nRate confidence 0.0\u20131.0 based on:\n- number of stages, data consistency, baseline clarity\n- sustained rise clarity, threshold separation\n\n==================================================\nOUTPUT RULE \u2014 RETURN ONLY THIS JSON\n==================================================\n\n{\n  \"ai_lt1\": <power value within smoothedCurve range or null>,\n  \"ai_lt2\": <power value within smoothedCurve range or null>,\n  \"other_methods\": {\n    \"heck_1985\":           { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"dickhuth_1999\":       { \"lt1\": <power or null>, \"lt2\": <power or null> },\n    \"cheng_dmax_1992\":     { \"lt1\": null,            \"lt2\": <power or null> },\n    \"beaver_loglog_1985\":  { \"lt1\": <power or null>, \"lt2\": null            },\n    \"hofmann_ltp_1997_2017\": { \"lt1\": <power or null>, \"lt2\": <power or null> }\n  },\n  \"confidence\": <0.0\u20131.0>,\n  \"reasoning\": \"<brief explanation of threshold detection logic>\"\n}\n\nDo NOT include ai_curve or any curve parameters in your output.\nReturn only valid JSON starting with { and ending with }."
+                    }
+                },
+                "id": "b9fc6927-31ad-457b-80b4-396274a24ef8",
+                "name": "Method Specialist Agent Claude",
+                "type": "@n8n/n8n-nodes-langchain.agent",
+                "typeVersion": 1.7,
+                "position": [
+                    1104,
+                    96
+                ],
+                "onError": "continueErrorOutput"
+            },
+            {
+                "parameters": {
+                    "model": {
+                        "__rl": true,
+                        "value": "gpt-5.4-pro",
+                        "mode": "list",
+                        "cachedResultName": "gpt-5.4-pro"
+                    },
+                    "builtInTools": {},
+                    "options": {}
+                },
+                "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+                "typeVersion": 1.3,
+                "position": [
+                    1136,
+                    -112
+                ],
+                "id": "47e1efa8-235e-4d5e-a488-889cf01060d5",
+                "name": "OpenAI Chat Model",
+                "notesInFlow": true,
+                "credentials": {
+                    "openAiApi": {
+                        "id": "XXXZyTdeFKKnstwy",
+                        "name": "OpenAI account 2"
+                    }
+                }
+            }
+        ],
+        "connections": {
+            "Lactate Analytics Webhook": {
+                "main": [
+                    [
+                        {
+                            "node": "Parse Context Fields",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Parse Context Fields": {
+                "main": [
+                    [
+                        {
+                            "node": "Fan Out Methods",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ],
+                "error": [
+                    [
+                        {
+                            "node": "Handle Error",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Fan Out Methods": {
+                "main": [
+                    [
+                        {
+                            "node": "Build Specialist Prompt",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ],
+                "error": [
+                    [
+                        {
+                            "node": "Handle Error",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Aggregate Results": {
+                "main": [
+                    [
+                        {
+                            "node": "Respond to Webhook",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ],
+                "error": [
+                    [
+                        {
+                            "node": "Handle Error",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Handle Error": {
+                "main": [
+                    [
+                        {
+                            "node": "Respond to Webhook",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Anthropic Chat Model": {
+                "ai_languageModel": [
+                    [
+                        {
+                            "node": "Method Specialist Agent Claude",
+                            "type": "ai_languageModel",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Build Specialist Prompt": {
+                "main": [
+                    [
+                        {
+                            "node": "Method Specialist Agent Claude",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ],
+                "error": [
+                    [
+                        {
+                            "node": "Handle Error",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Method Specialist Agent Claude": {
+                "main": [
+                    [
+                        {
+                            "node": "Aggregate Results",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ],
+                "error": [
+                    [
+                        {
+                            "node": "Handle Error",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "OpenAI Chat Model": {
+                "ai_languageModel": [
+                    [
+                        {
+                            "node": "Method Specialist Agent_GPT",
+                            "type": "ai_languageModel",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Method Specialist Agent_GPT": {
+                "main": [
+                    [
+                        {
+                            "node": "Aggregate Results",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ],
+                    [
+                        {
+                            "node": "Handle Error",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            }
+        },
+        "authors": "Alexander Rieger",
+        "name": null,
+        "description": null,
+        "autosaved": false,
+        "workflowPublishHistory": [
+            {
+                "createdAt": "2026-04-13T05:36:24.962Z",
+                "id": 155,
+                "workflowId": "ljNATO9oj54uhfzmTM84Z",
+                "versionId": "a66073a2-167a-4c7c-bd87-6055c7119efe",
+                "event": "deactivated",
+                "userId": "47cb25e1-1cc9-4882-b013-1ebc70f28522"
+            },
+            {
+                "createdAt": "2026-04-13T05:36:24.975Z",
+                "id": 156,
+                "workflowId": "ljNATO9oj54uhfzmTM84Z",
+                "versionId": "a66073a2-167a-4c7c-bd87-6055c7119efe",
+                "event": "activated",
+                "userId": "47cb25e1-1cc9-4882-b013-1ebc70f28522"
+            }
+        ]
     }
-  },
-  "settings": {
-    "executionOrder": "v1",
-    "saveManualExecutions": true,
-    "callerPolicy": "workflowsFromSameOwner"
-  }
 }
