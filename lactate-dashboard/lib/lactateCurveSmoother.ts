@@ -1,10 +1,11 @@
 /**
  * Lactate Curve Smoother — public API wrapper around fitLactateCurve
  *
- * Three fitting modes based on the slope of the first data segment:
- *   · full_exponential      — rising from the very first point
- *   · piecewise_flat_start  — flat/near-flat initial segment + exponential tail
- *   · smooth_minimum_curve  — falling initial segment, smooth minimum, rising tail
+ * Four routing rules based on s1 / s2:
+ *   Rule 1 (s1 < 0)                    → smooth_minimum_curve
+ *   Rule 2 (s1 > threshold)            → pure_cubic
+ *   Rule 3 (|s2| <= threshold)         → linear_cubic_tail at breakIdx 2
+ *   Rule 4 (else)                      → linear_cubic_tail at breakIdx 1
  */
 
 // ── Public types (unchanged) ──────────────────────────────────────────────────
@@ -32,43 +33,44 @@ export interface SmoothResult {
 interface Pt { x: number; y: number }
 
 interface FitCfg {
-  fineSteps:            number
-  horizontalThreshold:  number
-  expA_Min:             number
-  expA_Max:             number
-  expA_Step:            number
-  expK_Min:             number
-  expK_Max:             number
-  expK_Step:            number
-  betaMin:              number
-  betaMax:              number
-  betaStep:             number
+  fineSteps:           number
+  horizontalThreshold: number
+  betaMin:             number
+  betaMax:             number
+  betaStep:            number
 }
 
 interface FitBase {
   mode:      string
   err:       number
   curve:     (x: number) => number
-  x0?:       number
-  y0?:       number
-  A?:        number
-  k?:        number
-  m?:        number
-  b?:        number
-  xBreak?:   number
-  yBreak?:   number
-  breakIdx?: number
+  // smooth_minimum_curve
   xMin?:     number
   yMin?:     number
   minIdx?:   number
   alpha?:    number
   beta?:     number
+  // pure_cubic
+  a3?:       number
+  a2?:       number
+  a1?:       number
+  a0?:       number
+  // linear_cubic_tail
+  xBreak?:   number
+  yBreak?:   number
+  breakIdx?: number
+  slope?:    number
+  a?:        number
+  b?:        number
+  c?:        number
+  d?:        number
 }
 
 interface FitResult {
-  firstSegmentSlope: number
-  fit:               FitBase
-  grid:              Pt[]
+  firstSegmentSlope:  number
+  secondSegmentSlope: number
+  fit:                FitBase
+  grid:               Pt[]
 }
 
 // ── Core algorithm ────────────────────────────────────────────────────────────
@@ -80,12 +82,6 @@ function fitLactateCurve(
   const cfg: FitCfg = {
     fineSteps:           options.fineSteps           ?? 400,
     horizontalThreshold: options.horizontalThreshold ?? 0.005,
-    expA_Min:            options.expA_Min            ?? 0.01,
-    expA_Max:            options.expA_Max            ?? 6.0,
-    expA_Step:           options.expA_Step           ?? 0.01,
-    expK_Min:            options.expK_Min            ?? 0.0005,
-    expK_Max:            options.expK_Max            ?? 1.5,
-    expK_Step:           options.expK_Step           ?? 0.0005,
     betaMin:             options.betaMin             ?? 0.0,
     betaMax:             options.betaMax             ?? 0.001,
     betaStep:            options.betaStep            ?? 0.000001,
@@ -97,108 +93,119 @@ function fitLactateCurve(
 
   if (pts.length < 4) throw new Error('At least 4 data points required.')
 
-  function linearRegression(subset: Pt[]): { m: number; b: number } {
-    const n   = subset.length
-    const sx  = subset.reduce((a, p) => a + p.x, 0)
-    const sy  = subset.reduce((a, p) => a + p.y, 0)
-    const sxx = subset.reduce((a, p) => a + p.x * p.x, 0)
-    const sxy = subset.reduce((a, p) => a + p.x * p.y, 0)
-    const den = n * sxx - sx * sx
-    const m   = Math.abs(den) < 1e-12 ? 0 : (n * sxy - sx * sy) / den
-    const b   = (sy - m * sx) / n
-    return { m, b }
-  }
-
   function localSlope(p1: Pt, p2: Pt): number {
     const dx = p2.x - p1.x
     return Math.abs(dx) < 1e-12 ? 0 : (p2.y - p1.y) / dx
   }
 
-  function fitExpTail(
-    tailPts: Pt[],
-    xBreak: number,
-    yBreak: number,
-  ): { A: number; k: number; err: number } {
-    if (tailPts.length < 2) return { A: 0.1, k: 0.3, err: Infinity }
+  // ── Rule 2: pure cubic polynomial over all points ─────────────────────────
 
-    let best = { A: 0.1, k: 0.3, err: Infinity }
+  function fitPureCubic(points: Pt[]): FitBase {
+    const x = points.map(p => p.x)
+    const y = points.map(p => p.y)
 
-    for (let A = cfg.expA_Min; A <= cfg.expA_Max + 1e-12; A += cfg.expA_Step) {
-      for (let k = cfg.expK_Min; k <= cfg.expK_Max + 1e-12; k += cfg.expK_Step) {
-        let err = 0
-        for (const p of tailPts) {
-          const yHat = yBreak + A * (Math.exp(k * (p.x - xBreak)) - 1)
-          err += (p.y - yHat) ** 2
-        }
-        if (err < best.err) best = { A, k, err }
+    let s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0, s6 = 0
+    let t0 = 0, t1 = 0, t2 = 0, t3 = 0
+
+    for (let i = 0; i < x.length; i++) {
+      const xi = x[i], yi = y[i]
+      const x2 = xi * xi, x3 = x2 * xi, x4 = x3 * xi, x5 = x4 * xi, x6 = x5 * xi
+      s0 += 1;  s1 += xi; s2 += x2; s3 += x3; s4 += x4; s5 += x5; s6 += x6
+      t0 += yi; t1 += xi * yi; t2 += x2 * yi; t3 += x3 * yi
+    }
+
+    const M = [
+      [s6, s5, s4, s3],
+      [s5, s4, s3, s2],
+      [s4, s3, s2, s1],
+      [s3, s2, s1, s0],
+    ]
+    const rhs = [t3, t2, t1, t0]
+
+    const aug = M.map((row, i) => [...row, rhs[i]])
+    for (let i = 0; i < 4; i++) {
+      let maxRow = i
+      for (let r = i + 1; r < 4; r++) {
+        if (Math.abs(aug[r][i]) > Math.abs(aug[maxRow][i])) maxRow = r
+      }
+      ;[aug[i], aug[maxRow]] = [aug[maxRow], aug[i]]
+
+      const pivot = aug[i][i]
+      if (Math.abs(pivot) < 1e-12) throw new Error('Singular matrix in cubic fit.')
+      for (let j = i; j < 5; j++) aug[i][j] /= pivot
+      for (let r = 0; r < 4; r++) {
+        if (r === i) continue
+        const f = aug[r][i]
+        for (let j = i; j < 5; j++) aug[r][j] -= f * aug[i][j]
       }
     }
 
-    return best
-  }
-
-  function fitExpFromStart(points: Pt[]): FitBase {
-    const x0 = points[0].x
-    const y0 = points[0].y
-
-    let best = { A: 0.1, k: 0.2, err: Infinity }
-
-    for (let A = cfg.expA_Min; A <= cfg.expA_Max + 1e-12; A += cfg.expA_Step) {
-      for (let k = cfg.expK_Min; k <= cfg.expK_Max + 1e-12; k += cfg.expK_Step) {
-        let err = 0
-        for (const p of points) {
-          const yHat = y0 + A * (Math.exp(k * (p.x - x0)) - 1)
-          err += (p.y - yHat) ** 2
-        }
-        if (err < best.err) best = { A, k, err }
-      }
-    }
-
-    const { A, k } = best
-    return {
-      mode:  'full_exponential',
-      x0, y0, A, k,
-      err:   best.err,
-      curve: (x: number) => y0 + A * (Math.exp(k * (x - x0)) - 1),
-    }
-  }
-
-  function fitPiecewiseFlatStart(points: Pt[]): FitBase {
-    const s2       = localSlope(points[1], points[2])
-    const breakIdx = Math.abs(s2) <= cfg.horizontalThreshold ? 2 : 1
-
-    const baseline = points.slice(0, breakIdx + 1)
-    const tail     = points.slice(breakIdx + 1)
-
-    const { m, b } = linearRegression(baseline)
-    const xBreak   = baseline[baseline.length - 1].x
-    const yBreak   = m * xBreak + b
-
-    const bestTail = fitExpTail(tail, xBreak, yBreak)
-    const { A, k } = bestTail
-
-    const curveFn = (x: number) =>
-      x <= xBreak ? m * x + b : yBreak + A * (Math.exp(k * (x - xBreak)) - 1)
+    const a3 = aug[0][4], a2 = aug[1][4], a1 = aug[2][4], a0 = aug[3][4]
+    const curveFn = (xv: number) => a3 * xv * xv * xv + a2 * xv * xv + a1 * xv + a0
 
     let totalErr = 0
     for (const p of points) totalErr += (p.y - curveFn(p.x)) ** 2
 
-    return { mode: 'piecewise_flat_start', breakIdx, xBreak, yBreak, m, b, A, k, err: totalErr, curve: curveFn }
+    return { mode: 'pure_cubic', a3, a2, a1, a0, err: totalErr, curve: curveFn }
   }
 
-  function fitSmoothMinimum(points: Pt[]): FitBase {
-    // Find first local minimum (first index where the next point is higher)
-    let minIdx = 1
-    for (let i = 1; i < points.length - 1; i++) {
-      if (points[i + 1].y > points[i].y) {
-        minIdx = i
-        break
-      }
+  // ── Rules 3/4: linear start + C1-smooth cubic tail from breakpoint ────────
+
+  function fitLinearCubicTail(points: Pt[], breakIdx: number): FitBase {
+    const p1 = points[0]
+    const pb = points[breakIdx]
+
+    const x1 = p1.x, y1 = p1.y
+    const xb = pb.x, yb = pb.y
+
+    const slope = (yb - y1) / (xb - x1)
+    const c = slope
+    const d = yb
+
+    let s11 = 0, s12 = 0, s22 = 0, t1v = 0, t2v = 0
+    for (const p of points.slice(breakIdx)) {
+      const u   = p.x - xb
+      const u2  = u * u
+      const u3  = u2 * u
+      const rhs = p.y - (c * u + d)
+      s11  += u3 * u3
+      s12  += u3 * u2
+      s22  += u2 * u2
+      t1v  += u3 * rhs
+      t2v  += u2 * rhs
     }
 
-    const xMin = points[minIdx].x
-    const yMin = points[minIdx].y
+    const det  = s11 * s22 - s12 * s12
+    const aFit = Math.abs(det) > 1e-12 ? (t1v * s22 - t2v * s12) / det : 0
+    const bFit = Math.abs(det) > 1e-12 ? (s11 * t2v - s12 * t1v) / det : 0
 
+    const curveFn = (x: number) => {
+      if (x <= xb) return y1 + slope * (x - x1)
+      const u = x - xb
+      return aFit * u * u * u + bFit * u * u + c * u + d
+    }
+
+    let totalErr = 0
+    for (const p of points) totalErr += (p.y - curveFn(p.x)) ** 2
+
+    return {
+      mode: 'linear_cubic_tail',
+      breakIdx, xBreak: xb, yBreak: yb,
+      slope, a: aFit, b: bFit, c, d,
+      err: totalErr, curve: curveFn,
+    }
+  }
+
+  // ── Rule 1: falling start → smooth minimum ───────────────────────────────
+
+  function fitSmoothMinimum(points: Pt[]): FitBase {
+    let minIdx = 1
+    for (let i = 1; i < points.length - 1; i++) {
+      if (points[i + 1].y > points[i].y) { minIdx = i; break }
+    }
+
+    const xMin  = points[minIdx].x
+    const yMin  = points[minIdx].y
     const xArr  = points.map(p => p.x)
     const yArr  = points.map(p => p.y)
     const dx    = xArr.map(x => x - xMin)
@@ -210,8 +217,7 @@ function fitLactateCurve(
     for (let beta = cfg.betaMin; beta <= cfg.betaMax + 1e-12; beta += cfg.betaStep) {
       const rhs = yArr.map((y, i) => y - yMin - beta * phi3p[i])
 
-      let num = 0
-      let den = 0
+      let num = 0, den = 0
       for (let i = 0; i < phi2.length; i++) {
         num += phi2[i] * rhs[i]
         den += phi2[i] * phi2[i]
@@ -229,7 +235,6 @@ function fitLactateCurve(
       if (!best || err < best.err) best = { alpha, beta, err }
     }
 
-    // Fallback if no valid fit found
     if (!best) best = { alpha: 0, beta: 0, err: Infinity }
 
     const { alpha, beta } = best
@@ -244,15 +249,20 @@ function fitLactateCurve(
     }
   }
 
+  // ── Routing ───────────────────────────────────────────────────────────────
+
   const s1 = localSlope(pts[0], pts[1])
+  const s2 = localSlope(pts[1], pts[2])
 
   let fit: FitBase
   if (s1 < 0) {
-    fit = fitSmoothMinimum(pts)
-  } else if (Math.abs(s1) <= cfg.horizontalThreshold) {
-    fit = fitPiecewiseFlatStart(pts)
+    fit = fitSmoothMinimum(pts)                    // Rule 1
+  } else if (s1 > cfg.horizontalThreshold) {
+    fit = fitPureCubic(pts)                        // Rule 2
+  } else if (Math.abs(s2) <= cfg.horizontalThreshold) {
+    fit = fitLinearCubicTail(pts, 2)               // Rule 3
   } else {
-    fit = fitExpFromStart(pts)
+    fit = fitLinearCubicTail(pts, 1)               // Rule 4
   }
 
   const xMin = pts[0].x
@@ -263,7 +273,7 @@ function fitLactateCurve(
     grid.push({ x, y: fit.curve(x) })
   }
 
-  return { firstSegmentSlope: s1, fit, grid }
+  return { firstSegmentSlope: s1, secondSegmentSlope: s2, fit, grid }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -292,31 +302,24 @@ export function smoothLactateCurve(
 
   const { fit, grid, firstSegmentSlope } = result
 
-  // Map grid → SmoothedPoint[]
   const smoothedCurve: SmoothedPoint[] = grid.map(p => ({
     power:   Math.round(p.x * 100) / 100,
     lactate: Math.round(Math.max(0.1, p.y) * 1000) / 1000,
   }))
 
-  // Derive SmoothModel fields from fit
   const horizontalThreshold = options.horizontalThreshold ?? 0.005
 
   const early_phase: 'flat' | 'slight_fall' | 'slight_rise' =
-    fit.mode === 'smooth_minimum_curve' ? 'slight_fall'
+    fit.mode === 'smooth_minimum_curve'              ? 'slight_fall'
     : Math.abs(firstSegmentSlope) <= horizontalThreshold ? 'flat'
     : 'slight_rise'
 
-  const v_break =
-    fit.xBreak ?? fit.xMin ?? fit.x0 ?? smoothedCurve[0]?.power ?? 0
+  const v_break = fit.xBreak ?? fit.xMin ?? smoothedCurve[0]?.power   ?? 0
+  const yBreak  = fit.yBreak ?? fit.yMin ?? smoothedCurve[0]?.lactate  ?? 0
+  const xFirst  = smoothedCurve[0]?.power ?? 0
 
-  const yBreak =
-    fit.yBreak ?? fit.yMin ?? fit.y0 ?? smoothedCurve[0]?.lactate ?? 0
-
-  const m = fit.m ?? 0
-  const b = fit.b ?? (fit.y0 ?? 0)
-  const A = fit.A ?? 0
-  const k = fit.k ?? 0
-  const xFirst = smoothedCurve[0]?.power ?? 0
+  // For modes without m/b, derive L0 from the curve value at xFirst
+  const L0 = fit.curve(xFirst)
 
   const smoothModel: SmoothModel = {
     model:       fit.mode,
@@ -324,11 +327,11 @@ export function smoothLactateCurve(
     early_phase,
     v_break:     Math.round(v_break * 100) / 100,
     params: {
-      L0:     Math.round((m * xFirst + b) * 10000) / 10000,
-      m:      Math.round(m               * 10000) / 10000,
-      A:      Math.round(A               * 10000) / 10000,
-      k:      Math.round(k               * 10000) / 10000,
-      yBreak: Math.round(yBreak          * 10000) / 10000,
+      L0:     Math.round(L0     * 10000) / 10000,
+      m:      0,
+      A:      0,
+      k:      0,
+      yBreak: Math.round(yBreak * 10000) / 10000,
     },
   }
 
