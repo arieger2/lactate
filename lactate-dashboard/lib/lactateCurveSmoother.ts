@@ -1,12 +1,11 @@
 /**
- * Lactate Curve Smoother — public API wrapper around fitLactateCurve
+ * Lactate Curve Smoother — public API wrapper around fitDataset5Optimized
  *
- * Routing rules based on s1 / s2:
- *   Rule 1a (s1 < 0, s2 >= threshold or short) → smooth_minimum_curve
- *   Rule 1b (s1 < 0, s2 < threshold, long)     → hybrid_polynomial
- *   Rule 2  (s1 > threshold)                   → pure_cubic
- *   Rule 3  (|s2| <= threshold)                → linear_cubic_tail at breakIdx 2
- *   Rule 4  (else)                             → linear_cubic_tail at breakIdx 1
+ * Mode: optimized_monotone_slope
+ *   - Searches over breakpoint indices (minBreakIndex..maxBreakIndex)
+ *   - Left side: polynomial of configurable degree with enforced rising portion
+ *   - Right tail: non-negative constrained least squares (u², u³, u⁴ terms)
+ *   - Picks best candidate by SSE
  */
 
 // ── Public types (unchanged) ──────────────────────────────────────────────────
@@ -34,282 +33,262 @@ export interface SmoothResult {
 interface Pt { x: number; y: number }
 
 interface FitCfg {
-  fineSteps:           number
-  horizontalThreshold: number
-  betaMin:             number
-  betaMax:             number
-  betaStep:            number
-  hybridBreakIndex:    number
+  fineSteps:            number
+  minBreakIndex:        number
+  maxBreakIndex:        number
+  leftDegrees:          number[]
+  slopeTolerance:       number
+  derivativeTolerance:  number
 }
 
 interface FitBase {
-  mode:      string
-  err:       number
-  curve:     (x: number) => number
-  // smooth_minimum_curve
-  xMin?:     number
-  yMin?:     number
-  minIdx?:   number
-  alpha?:    number
-  beta?:     number
-  // pure_cubic
-  a3?:       number
-  a2?:       number
-  a1?:       number
-  a0?:       number
-  // linear_cubic_tail / hybrid_polynomial
-  xBreak?:   number
-  yBreak?:   number
-  breakIdx?: number
-  slope?:    number
-  a?:        number
-  b?:        number
-  c?:        number
-  d?:        number
+  mode:           string
+  err:            number
+  curve:          (x: number) => number
+  breakIdx?:      number
+  xBreak?:        number
+  yBreak?:        number
+  leftDegree?:    number
+  xRise?:         number
+  leftCoeffsAsc?: number[]
+  slopeBreak?:    number
+  tailA?:         number
+  tailB?:         number
+  tailC?:         number
 }
 
 interface FitResult {
-  firstSegmentSlope:  number
-  secondSegmentSlope: number
-  fit:                FitBase
-  grid:               Pt[]
+  fit:        FitBase
+  candidates: FitBase[]
+  grid:       Pt[]
 }
 
 // ── Core algorithm ────────────────────────────────────────────────────────────
 
-function fitLactateCurve(
+function fitDataset5Optimized(
   data: Array<{ x: number | string; y: number | string }>,
   options: Partial<FitCfg> = {},
 ): FitResult {
   const cfg: FitCfg = {
     fineSteps:           options.fineSteps           ?? 400,
-    horizontalThreshold: options.horizontalThreshold ?? 0.005,
-    betaMin:             options.betaMin             ?? 0.0,
-    betaMax:             options.betaMax             ?? 0.001,
-    betaStep:            options.betaStep            ?? 0.000001,
-    hybridBreakIndex:    options.hybridBreakIndex    ?? 3,
+    minBreakIndex:       options.minBreakIndex       ?? 2,
+    maxBreakIndex:       options.maxBreakIndex       ?? 5,
+    leftDegrees:         options.leftDegrees         ?? [2, 3],
+    slopeTolerance:      options.slopeTolerance      ?? 1e-10,
+    derivativeTolerance: options.derivativeTolerance ?? 1e-8,
   }
 
   const pts: Pt[] = [...data]
     .map(d => ({ x: Number(d.x), y: Number(d.y) }))
     .sort((a, b) => a.x - b.x)
 
-  if (pts.length < 4) throw new Error('At least 4 data points required.')
+  if (pts.length < 5) throw new Error('At least 5 data points required.')
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  function localSlope(p1: Pt, p2: Pt): number {
-    const dx = p2.x - p1.x
-    return Math.abs(dx) < 1e-12 ? 0 : (p2.y - p1.y) / dx
+  function sumSquaredError(points: Pt[], curve: (x: number) => number): number {
+    let sse = 0
+    for (const p of points) { const d = p.y - curve(p.x); sse += d * d }
+    return sse
   }
 
-  /** Gauss-Jordan elimination with partial pivoting for 4×4 systems */
-  function solve4x4(M: number[][], v: number[]): number[] {
-    const a = M.map((row, i) => [...row, v[i]])
-    for (let i = 0; i < 4; i++) {
-      let maxRow = i
-      for (let r = i + 1; r < 4; r++) {
-        if (Math.abs(a[r][i]) > Math.abs(a[maxRow][i])) maxRow = r
+  function solveLinearSystem(A: number[][], b: number[]): number[] {
+    const n = A.length
+    const aug = A.map((row, i) => [...row, b[i]])
+    for (let col = 0; col < n; col++) {
+      let pivotRow = col
+      for (let r = col + 1; r < n; r++) {
+        if (Math.abs(aug[r][col]) > Math.abs(aug[pivotRow][col])) pivotRow = r
       }
-      ;[a[i], a[maxRow]] = [a[maxRow], a[i]]
-      const pivot = a[i][i]
-      if (Math.abs(pivot) < 1e-12) throw new Error('Singular matrix in solver.')
-      for (let j = i; j < 5; j++) a[i][j] /= pivot
-      for (let r = 0; r < 4; r++) {
-        if (r === i) continue
-        const f = a[r][i]
-        for (let j = i; j < 5; j++) a[r][j] -= f * a[i][j]
+      if (Math.abs(aug[pivotRow][col]) < 1e-12) throw new Error('Singular matrix.')
+      ;[aug[col], aug[pivotRow]] = [aug[pivotRow], aug[col]]
+      const pivot = aug[col][col]
+      for (let j = col; j <= n; j++) aug[col][j] /= pivot
+      for (let r = 0; r < n; r++) {
+        if (r === col) continue
+        const f = aug[r][col]
+        for (let j = col; j <= n; j++) aug[r][j] -= f * aug[col][j]
       }
     }
-    return [a[0][4], a[1][4], a[2][4], a[3][4]]
+    return aug.map(row => row[n])
   }
 
-  // ── Fit models ────────────────────────────────────────────────────────────
-
-  /** Rule 2: global least-squares cubic */
-  function fitPureCubic(points: Pt[]): FitBase {
-    const s = [0, 0, 0, 0, 0, 0, 0]
-    const t = [0, 0, 0, 0]
-    for (const p of points) {
-      const x = p.x, y = p.y, x2 = x * x, x3 = x2 * x
-      s[0]++; s[1] += x;    s[2] += x2;    s[3] += x3
-      s[4] += x3 * x; s[5] += x3 * x * x; s[6] += x3 * x * x * x
-      t[0] += y; t[1] += x * y; t[2] += x2 * y; t[3] += x3 * y
+  function fitPolynomialLeastSquares(xs: number[], ys: number[], degree: number): number[] {
+    const m = degree + 1
+    const A: number[][] = Array.from({ length: m }, () => Array(m).fill(0))
+    const b: number[]   = Array(m).fill(0)
+    for (let row = 0; row < m; row++) {
+      for (let col = 0; col < m; col++) {
+        let sum = 0
+        for (let i = 0; i < xs.length; i++) sum += xs[i] ** (row + col)
+        A[row][col] = sum
+      }
+      let rhs = 0
+      for (let i = 0; i < xs.length; i++) rhs += ys[i] * (xs[i] ** row)
+      b[row] = rhs
     }
-    const A = [
-      [s[6], s[5], s[4], s[3]],
-      [s[5], s[4], s[3], s[2]],
-      [s[4], s[3], s[2], s[1]],
-      [s[3], s[2], s[1], s[0]],
-    ]
-    const [a3, a2, a1, a0] = solve4x4(A, [t[3], t[2], t[1], t[0]])
-    const curveFn = (xv: number) => a3 * xv * xv * xv + a2 * xv * xv + a1 * xv + a0
-    let totalErr = 0
-    for (const p of points) totalErr += (p.y - curveFn(p.x)) ** 2
-    return { mode: 'pure_cubic', a3, a2, a1, a0, err: totalErr, curve: curveFn }
+    return solveLinearSystem(A, b)
   }
 
-  /** Rules 3/4: linear p1→pBreak, C1-smooth cubic tail */
-  function fitLinearCubicTail(points: Pt[], breakIdx: number): FitBase {
-    const p1 = points[0], pb = points[breakIdx]
-    const x1 = p1.x, y1 = p1.y, xb = pb.x, yb = pb.y
-    const slope = (yb - y1) / (xb - x1)
-    const c = slope, d = yb
+  function evalPolyAsc(coeffs: number[], xv: number): number {
+    let yv = 0, pow = 1
+    for (let i = 0; i < coeffs.length; i++) { yv += coeffs[i] * pow; pow *= xv }
+    return yv
+  }
 
-    let s11 = 0, s12 = 0, s22 = 0, t1v = 0, t2v = 0
-    for (const p of points.slice(breakIdx)) {
-      const u = p.x - xb, u2 = u * u, u3 = u2 * u
-      const rhs = p.y - (c * u + d)
-      s11 += u3 * u3; s12 += u3 * u2; s22 += u2 * u2
-      t1v += u3 * rhs; t2v += u2 * rhs
-    }
-    const det  = s11 * s22 - s12 * s12
-    const aFit = Math.abs(det) > 1e-12 ? (t1v * s22 - t2v * s12) / det : 0
-    const bFit = Math.abs(det) > 1e-12 ? (s11 * t2v - s12 * t1v) / det : 0
+  function evalPolyDerivativeAsc(coeffs: number[], xv: number): number {
+    let yv = 0, pow = 1
+    for (let i = 1; i < coeffs.length; i++) { yv += i * coeffs[i] * pow; pow *= xv }
+    return yv
+  }
 
-    const curveFn = (x: number) => {
-      if (x <= xb) return y1 + slope * (x - x1)
-      const u = x - xb
-      return aFit * u * u * u + bFit * u * u + c * u + d
+  function firstRiseXFromPoly(coeffs: number[], xMin: number, xMax: number, samples = 800): number | null {
+    for (let i = 0; i < samples; i++) {
+      const xv = xMin + (xMax - xMin) * (i / (samples - 1))
+      if (evalPolyDerivativeAsc(coeffs, xv) >= -cfg.slopeTolerance) return xv
     }
-    let totalErr = 0
-    for (const p of points) totalErr += (p.y - curveFn(p.x)) ** 2
+    return null
+  }
+
+  function derivativeNonDecreasing(coeffs: number[], xStart: number, xEnd: number, samples = 500): boolean {
+    let prev: number | null = null
+    for (let i = 0; i < samples; i++) {
+      const xv = xStart + (xEnd - xStart) * (i / (samples - 1))
+      const dv = evalPolyDerivativeAsc(coeffs, xv)
+      if (prev !== null && dv < prev - cfg.derivativeTolerance) return false
+      prev = dv
+    }
+    return true
+  }
+
+  /** Non-negative least squares for 3 variables via active-set enumeration */
+  function solveNNLS3(Arows: number[][], bvec: number[]): [number, number, number] {
+    const subsets = [
+      [], [0], [1], [2], [0, 1], [0, 2], [1, 2], [0, 1, 2],
+    ] as number[][]
+
+    let best: { x: [number, number, number]; sse: number } | null = null
+
+    for (const active of subsets) {
+      try {
+        if (active.length === 0) {
+          let sse = 0
+          for (const bv of bvec) sse += bv * bv
+          if (!best || sse < best.sse) best = { x: [0, 0, 0], sse }
+          continue
+        }
+        const k = active.length
+        const ATA: number[][] = Array.from({ length: k }, () => Array(k).fill(0))
+        const ATb: number[]   = Array(k).fill(0)
+        for (let i = 0; i < Arows.length; i++) {
+          for (let r = 0; r < k; r++) {
+            ATb[r] += Arows[i][active[r]] * bvec[i]
+            for (let c = 0; c < k; c++) {
+              ATA[r][c] += Arows[i][active[r]] * Arows[i][active[c]]
+            }
+          }
+        }
+        const sol = solveLinearSystem(ATA, ATb)
+        if (sol.some(v => v < -1e-12)) continue
+        const x: [number, number, number] = [0, 0, 0]
+        for (let i = 0; i < k; i++) x[active[i]] = Math.max(0, sol[i])
+        let sse = 0
+        for (let i = 0; i < Arows.length; i++) {
+          const pred = Arows[i][0] * x[0] + Arows[i][1] * x[1] + Arows[i][2] * x[2]
+          const r    = pred - bvec[i]
+          sse += r * r
+        }
+        if (!best || sse < best.sse) best = { x, sse }
+      } catch { /* singular — skip */ }
+    }
+
+    return best ? best.x : [0, 0, 0]
+  }
+
+  // ── Candidate builder ─────────────────────────────────────────────────────
+
+  function fitConstrainedCandidate(points: Pt[], breakIdx: number, leftDegree: number): FitBase | null {
+    if (leftDegree > breakIdx) return null
+
+    const leftPoints = points.slice(0, breakIdx + 1)
+    const leftX = leftPoints.map(p => p.x)
+    const leftY = leftPoints.map(p => p.y)
+
+    let leftCoeffs: number[]
+    try { leftCoeffs = fitPolynomialLeastSquares(leftX, leftY, leftDegree) }
+    catch { return null }
+
+    const xRise = firstRiseXFromPoly(leftCoeffs, leftX[0], leftX[leftX.length - 1])
+    if (xRise === null) return null
+
+    if (!derivativeNonDecreasing(leftCoeffs, xRise, points[breakIdx].x)) return null
+
+    const xb = points[breakIdx].x
+    const yb = evalPolyAsc(leftCoeffs, xb)
+    const sb = Math.max(0, evalPolyDerivativeAsc(leftCoeffs, xb))
+
+    // Right tail: yb + sb·u + a·u² + b·u³ + c·u⁴   with a,b,c ≥ 0
+    const tailPts = points.slice(breakIdx)
+    const Arows: number[][] = []
+    const bvec:  number[]   = []
+    for (const p of tailPts) {
+      const u = p.x - xb
+      Arows.push([u * u, u * u * u, u * u * u * u])
+      bvec.push(p.y - (yb + sb * u))
+    }
+
+    const [a, b, c] = solveNNLS3(Arows, bvec)
+
+    const curveFn = (xv: number) => {
+      if (xv <= xb) return evalPolyAsc(leftCoeffs, xv)
+      const u = xv - xb
+      return yb + sb * u + a * u * u + b * u * u * u + c * u * u * u * u
+    }
 
     return {
-      mode: 'linear_cubic_tail', breakIdx, xBreak: xb, yBreak: yb,
-      slope, a: aFit, b: bFit, c, d, err: totalErr, curve: curveFn,
+      mode:          'optimized_monotone_slope',
+      breakIdx,
+      xBreak:        xb,
+      yBreak:        yb,
+      leftDegree,
+      xRise,
+      leftCoeffsAsc: leftCoeffs,
+      slopeBreak:    sb,
+      tailA:         a,
+      tailB:         b,
+      tailC:         c,
+      err:           sumSquaredError(points, curveFn),
+      curve:         curveFn,
     }
   }
 
-  /** Rule 1a: falling start → smooth minimum */
-  function fitSmoothMinimum(points: Pt[]): FitBase {
-    let minIdx = 1
-    for (let i = 1; i < points.length - 1; i++) {
-      if (points[i + 1].y > points[i].y) { minIdx = i; break }
-    }
-    const xMin  = points[minIdx].x
-    const yMin  = points[minIdx].y
-    const xArr  = points.map(p => p.x)
-    const yArr  = points.map(p => p.y)
-    const dx    = xArr.map(x => x - xMin)
-    const phi2  = dx.map(v => v * v)
-    const phi3p = dx.map(v => Math.max(0, v) ** 3)
+  // ── Search ────────────────────────────────────────────────────────────────
 
-    let best: { alpha: number; beta: number; err: number } | null = null
-    for (let beta = cfg.betaMin; beta <= cfg.betaMax + 1e-12; beta += cfg.betaStep) {
-      const rhs = yArr.map((y, i) => y - yMin - beta * phi3p[i])
-      let num = 0, den = 0
-      for (let i = 0; i < phi2.length; i++) {
-        num += phi2[i] * rhs[i]
-        den += phi2[i] * phi2[i]
-      }
-      const alpha = den === 0 ? 0 : num / den
-      if (alpha < 0) continue
-      let err = 0
-      for (let i = 0; i < xArr.length; i++) {
-        err += (yArr[i] - (yMin + alpha * phi2[i] + beta * phi3p[i])) ** 2
-      }
-      if (!best || err < best.err) best = { alpha, beta, err }
-    }
-    if (!best) best = { alpha: 0, beta: 0, err: Infinity }
+  const minBI = Math.max(2, cfg.minBreakIndex)
+  const maxBI = Math.min(pts.length - 2, cfg.maxBreakIndex)
 
-    const { alpha, beta } = best
-    return {
-      mode: 'smooth_minimum_curve', minIdx, xMin, yMin, alpha, beta,
-      err:  best.err,
-      curve: (x: number) => {
-        const d = x - xMin
-        return yMin + alpha * d * d + beta * Math.max(0, d) ** 3
-      },
+  const candidates: FitBase[] = []
+  for (let breakIdx = minBI; breakIdx <= maxBI; breakIdx++) {
+    for (const leftDegree of cfg.leftDegrees) {
+      const cand = fitConstrainedCandidate(pts, breakIdx, leftDegree)
+      if (cand) candidates.push(cand)
     }
   }
 
-  /** Rule 1b: extended U-shape → cubic base + C1-smooth cubic ascent */
-  function fitHybridPolynomial(points: Pt[], breakIdx: number): FitBase {
-    if (points.length < breakIdx + 2) throw new Error('Not enough points for hybrid model.')
+  if (candidates.length === 0) throw new Error('No valid constrained candidate found.')
 
-    // Base cubic fitted to first breakIdx+1 points
-    const basePoints = points.slice(0, breakIdx + 1)
-    const buildSums = (subset: Pt[]) => {
-      const s = [0, 0, 0, 0, 0, 0, 0], t = [0, 0, 0, 0]
-      for (const p of subset) {
-        const x = p.x, y = p.y, x2 = x * x, x3 = x2 * x
-        s[0]++; s[1] += x;    s[2] += x2;    s[3] += x3
-        s[4] += x3 * x; s[5] += x3 * x * x; s[6] += x3 * x * x * x
-        t[0] += y; t[1] += x * y; t[2] += x2 * y; t[3] += x3 * y
-      }
-      return { s, t }
-    }
-    const { s, t } = buildSums(basePoints)
-    const A = [
-      [s[6], s[5], s[4], s[3]],
-      [s[5], s[4], s[3], s[2]],
-      [s[4], s[3], s[2], s[1]],
-      [s[3], s[2], s[1], s[0]],
-    ]
-    const [aB, bB, cB, dB] = solve4x4(A, [t[3], t[2], t[1], t[0]])
-    const baseCurve  = (x: number) => aB * x * x * x + bB * x * x + cB * x + dB
-    const baseDeriv  = (x: number) => 3 * aB * x * x + 2 * bB * x + cB
-
-    // Ascent cubic from breakpoint, C1-matched to base
-    const xb    = points[breakIdx].x
-    const yb    = baseCurve(xb)
-    const sb    = baseDeriv(xb)
-    const cA = sb, dA = yb
-
-    let s11 = 0, s12 = 0, s22 = 0, t1v = 0, t2v = 0
-    for (const p of points.slice(breakIdx)) {
-      const u = p.x - xb, u2 = u * u, u3 = u2 * u
-      const rhs = p.y - (cA * u + dA)
-      s11 += u3 * u3; s12 += u3 * u2; s22 += u2 * u2
-      t1v += u3 * rhs; t2v += u2 * rhs
-    }
-    const det  = s11 * s22 - s12 * s12
-    const aA   = Math.abs(det) > 1e-12 ? (t1v * s22 - t2v * s12) / det : 0
-    const bA   = Math.abs(det) > 1e-12 ? (s11 * t2v - s12 * t1v) / det : 0
-
-    const curveFn = (x: number) => {
-      if (x <= xb) return baseCurve(x)
-      const u = x - xb
-      return aA * u * u * u + bA * u * u + cA * u + dA
-    }
-    let totalErr = 0
-    for (const p of points) totalErr += (p.y - curveFn(p.x)) ** 2
-
-    return {
-      mode: 'hybrid_polynomial', breakIdx, xBreak: xb, yBreak: yb,
-      err: totalErr, curve: curveFn,
-    }
-  }
-
-  // ── Routing ───────────────────────────────────────────────────────────────
-
-  const s1 = localSlope(pts[0], pts[1])
-  const s2 = localSlope(pts[1], pts[2])
-
-  let fit: FitBase
-  if (s1 < 0) {
-    // Extended U-shape (s2 still falling/flat and enough points) → hybrid
-    fit = s2 < cfg.horizontalThreshold && pts.length > 5
-      ? fitHybridPolynomial(pts, cfg.hybridBreakIndex)
-      : fitSmoothMinimum(pts)
-  } else if (s1 > cfg.horizontalThreshold) {
-    fit = fitPureCubic(pts)
-  } else if (Math.abs(s2) <= cfg.horizontalThreshold) {
-    fit = fitLinearCubicTail(pts, 2)
-  } else {
-    fit = fitLinearCubicTail(pts, 1)
-  }
+  candidates.sort((a, b) => a.err - b.err)
+  const fit = candidates[0]
 
   const xMin = pts[0].x
   const xMax = pts[pts.length - 1].x
   const grid: Pt[] = []
   for (let i = 0; i <= cfg.fineSteps; i++) {
-    const x = xMin + (xMax - xMin) * (i / cfg.fineSteps)
-    grid.push({ x, y: fit.curve(x) })
+    const xv = xMin + (xMax - xMin) * (i / cfg.fineSteps)
+    grid.push({ x: xv, y: fit.curve(xv) })
   }
 
-  return { firstSegmentSlope: s1, secondSegmentSlope: s2, fit, grid }
+  return { fit, candidates, grid }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -317,41 +296,42 @@ function fitLactateCurve(
 export function smoothLactateCurve(
   rawData: Array<{ power: number | string; lactate: number | string }>,
   options: {
-    fineSteps?:           number
-    horizontalThreshold?: number
+    fineSteps?: number
   } = {},
 ): SmoothResult | null {
-  if (!rawData || rawData.length < 4) return null
+  if (!rawData || rawData.length < 5) return null
 
   let result: FitResult
+  let ptsFirst: Pt[] = []
   try {
     const pts = rawData.map(d => ({
       x: parseFloat(String(d.power   ?? 0)),
       y: parseFloat(String(d.lactate ?? 0)),
     })).filter(p => p.x > 0 && p.y > 0)
 
-    if (pts.length < 4) return null
-    result = fitLactateCurve(pts, options)
+    if (pts.length < 5) return null
+    ptsFirst = pts.sort((a, b) => a.x - b.x)
+    result = fitDataset5Optimized(ptsFirst, options)
   } catch {
     return null
   }
 
-  const { fit, grid, firstSegmentSlope } = result
+  const { fit, grid } = result
 
   const smoothedCurve: SmoothedPoint[] = grid.map(p => ({
     power:   Math.round(p.x * 100) / 100,
     lactate: Math.round(Math.max(0.1, p.y) * 1000) / 1000,
   }))
 
-  const horizontalThreshold = options.horizontalThreshold ?? 0.005
-
+  // Derive early_phase from first two data points
+  const s1 = ptsFirst.length >= 2
+    ? (ptsFirst[1].y - ptsFirst[0].y) / Math.max(1e-12, ptsFirst[1].x - ptsFirst[0].x)
+    : 0
   const early_phase: 'flat' | 'slight_fall' | 'slight_rise' =
-    fit.mode === 'smooth_minimum_curve' || fit.mode === 'hybrid_polynomial' ? 'slight_fall'
-    : Math.abs(firstSegmentSlope) <= horizontalThreshold ? 'flat'
-    : 'slight_rise'
+    s1 < -0.005 ? 'slight_fall' : s1 > 0.005 ? 'slight_rise' : 'flat'
 
-  const v_break = fit.xBreak ?? fit.xMin ?? smoothedCurve[0]?.power   ?? 0
-  const yBreak  = fit.yBreak ?? fit.yMin ?? smoothedCurve[0]?.lactate  ?? 0
+  const v_break = fit.xBreak ?? smoothedCurve[0]?.power   ?? 0
+  const yBreak  = fit.yBreak ?? smoothedCurve[0]?.lactate  ?? 0
   const xFirst  = smoothedCurve[0]?.power ?? 0
   const L0      = fit.curve(xFirst)
 
