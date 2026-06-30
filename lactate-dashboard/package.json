@@ -1,6 +1,7 @@
 {
   "name": "lactate-dashboard",
   "version": "0.1.0",
+  "description": "A Next.js dashboard for turning blood lactate step-test data into plausible performance curves, comparing scientific threshold methods, and adding AI-assisted threshold interpretation.",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -1,35 +1,47 @@
 # Lactate Dashboard
 
-Ein wissenschaftliches Dashboard zur Laktatdiagnostik und Trainingszonenberechnung für Ausdauersportler.
+Lactate Dashboard is a scientific training-analysis application for endurance sports. It turns blood lactate step-test data into a usable performance curve, compares established threshold methods, and adds AI-assisted threshold proposals so coaches and athletes can evaluate scientific formulas against expert-style interpretation.
+
+## GitHub Description
+
+Turn blood lactate step-test data into plausible performance curves, compare scientific threshold methods, and add AI-assisted threshold interpretation for more reliable training guidance.
+
+## Motivation
+
+Blood lactate testing is widely used to steer endurance training, but the practical workflow is messy. Devices and apps can measure lactate reliably enough, yet the resulting training guidance often becomes inconsistent for two reasons:
+
+1. Raw step-test measurements are noisy, incomplete, or affected by measurement artifacts, which makes the resulting lactate curve harder to interpret.
+2. Different scientific threshold models can produce different LT1 and LT2 results for the same athlete, which makes training decisions less consistent.
+
+This project addresses both problems:
+
+- It builds a more plausible lactate-performance curve from measured sensor data using smoothing, interpolation, and scientifically grounded curve handling.
+- It combines multiple published threshold methods with AI-assisted analysis so sports-science expertise can be brought into the workflow and compared directly against formula-based results.
 
 ## Features
 
-- **Echtzeit-Laktatdatenvisualisierung** mit interaktiven Charts
-- **8 wissenschaftliche Schwellenmethoden** (DMAX, Dickhuth, Mader, Log-Log, etc.)
-- **Automatische Trainingszonenberechnung** (5-Zonen-Modell)
-- **Manuell anpassbare Zonengrenzen** mit Drag & Drop
-- **Fettoxidationsanalyse** (FatMax)
-- **Kundenverwaltung** und Session-Tracking
-- **PostgreSQL-Datenbank** für persistente Datenspeicherung
+- Interactive lactate curve visualization for step-test analysis
+- Multiple scientific threshold methods including DMAX, Dickhuth, Mader, and ModDMAX
+- AI-assisted threshold analysis via an n8n workflow integrated with the dashboard API
+- Automatic training-zone calculation with support for manual threshold adjustments
+- Incomplete-stage interpolation and curve smoothing to stabilize noisy test data
+- Customer, session, and test protocol management backed by PostgreSQL
 
-## Dokumentation
+## Documentation
 
 - **[USER_GUIDE.md](./USER_GUIDE.md)** - Complete setup and usage instructions
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Technical architecture and system design  
-- **[Wissenschaftliche Schwellenmethoden](./docs/THRESHOLD_METHODS.md)** - Scientific threshold methods with physiological explanations
-- **[API & Webhooks](./docs/API_WEBHOOKS.md)** - API endpoints and webhook integration (AI-Analyse)
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Technical architecture and system design
+- **[docs/THRESHOLD_METHODS.md](./docs/THRESHOLD_METHODS.md)** - Scientific threshold methods with physiological explanations
+- **[docs/API_WEBHOOKS.md](./docs/API_WEBHOOKS.md)** - API endpoints and webhook integration for AI analysis
 
 ## Tech Stack
 
-- Next.js 16 (Turbopack)
+- Next.js 16
 - React 19
-- ECharts (Apache)
+- TypeScript
+- ECharts
 - PostgreSQL
-- TailwindCSS
-
----
-
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+- Tailwind CSS
 
 ## Getting Started
 
