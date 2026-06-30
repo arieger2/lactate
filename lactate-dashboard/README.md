@@ -47,6 +47,9 @@ This project addresses both problems:
 
 First, run the development server:
 
+```sh
+
+```
 ```bash
 npm run dev
 # or
